@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "FB Post Summarizer",
-  "version": "1.0.0",
-  "description": "Tự động detect bài viết dài trên Facebook và tóm tắt bằng AI",
-  "permissions": ["storage"],
+  "name": "Social Post Summarizer",
+  "version": "1.1.0",
+  "description": "Tóm tắt bài viết dài trên Facebook, X, LinkedIn, Reddit bằng AI",
+  "permissions": ["storage", "contextMenus"],
   "host_permissions": [
     "https://generativelanguage.googleapis.com/*",
     "https://api.groq.com/*"
@@ -13,7 +13,14 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://www.facebook.com/*", "https://m.facebook.com/*"],
+      "matches": [
+        "https://www.facebook.com/*",
+        "https://m.facebook.com/*",
+        "https://x.com/*",
+        "https://twitter.com/*",
+        "https://www.linkedin.com/*",
+        "https://www.reddit.com/*"
+      ],
       "js": ["content.js"],
       "css": ["content.css"],
       "run_at": "document_idle"
