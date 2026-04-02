@@ -95,7 +95,10 @@
   }
 
   function closeOverlay() {
-    if (activePanel) { activePanel.classList.remove("fbs-visible"); activePanel = null; }
+    if (activePanel) {
+      activePanel.classList.remove("fbs-visible");
+      activePanel = null;
+    }
     if (backdrop) backdrop.classList.remove("fbs-visible");
   }
 
@@ -133,7 +136,7 @@
 
   function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
 
-  function inject(target, postText, seeMoreClickable, textContainer) {
+  function inject(target, seeMoreClickable, textContainer) {
     if (injected.has(target)) return;
     if (target.querySelector(".fbs-wrap")) return;
     injected.add(target);
@@ -161,15 +164,22 @@
 
       body.innerHTML = '<div class="fbs-loading"><div class="fbs-spinner"></div><span>Đang tóm tắt...</span></div>';
 
-      // Nếu chưa có text, click "Xem thêm" để expand rồi lấy text
-      let text = postText;
-      if (!text && seeMoreClickable && textContainer) {
+      // Click "Xem thêm" để lấy full text, lưu lại HTML gốc để restore
+      let savedHTML = null;
+      if (seeMoreClickable && textContainer) {
+        savedHTML = textContainer.innerHTML;
         try { seeMoreClickable.click(); } catch (e) {}
         await new Promise(r => setTimeout(r, 800));
-        text = cleanText(textContainer.innerText || "");
       }
 
-      if (!text || text.length < MIN_LEN) {
+      const text = cleanText((textContainer || target).innerText || "");
+
+      // Restore bài viết về trạng thái thu gọn
+      if (savedHTML && textContainer) {
+        textContainer.innerHTML = savedHTML;
+      }
+
+      if (!text || text.length < 100) {
         body.innerHTML = '<div class="fbs-error">Bài viết quá ngắn để tóm tắt.</div>';
         return;
       }
@@ -186,15 +196,16 @@
   function processSeeMore(sm) {
     const textContainer = findTextContainer(sm);
     if (!textContainer) return;
-    if ((textContainer.innerText || "").trim().length < 150) return;
+    const previewText = (textContainer.innerText || "").trim();
+    if (previewText.length < 150) return;
 
     const target = findInjectTarget(textContainer);
     if (injected.has(target) || target.querySelector(".fbs-wrap")) return;
 
-    // Chỉ inject nút, KHÔNG click "Xem thêm"
-    // Khi user click "Tóm tắt", lúc đó mới expand và lấy text
+    // Lưu reference để lấy text khi user click tóm tắt
+    // Không click "Xem thêm" — lấy text preview hiện có
     const clickable = findClickable(sm);
-    inject(target, null, clickable, textContainer);
+    inject(target, clickable, textContainer);
   }
 
   function scan() {
