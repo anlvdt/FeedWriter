@@ -133,7 +133,7 @@
 
   function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
 
-  function inject(target, postText) {
+  function inject(target, postText, seeMoreClickable, textContainer) {
     if (injected.has(target)) return;
     if (target.querySelector(".fbs-wrap")) return;
     injected.add(target);
@@ -160,8 +160,22 @@
       if (loaded) return;
 
       body.innerHTML = '<div class="fbs-loading"><div class="fbs-spinner"></div><span>Đang tóm tắt...</span></div>';
+
+      // Nếu chưa có text, click "Xem thêm" để expand rồi lấy text
+      let text = postText;
+      if (!text && seeMoreClickable && textContainer) {
+        try { seeMoreClickable.click(); } catch (e) {}
+        await new Promise(r => setTimeout(r, 800));
+        text = cleanText(textContainer.innerText || "");
+      }
+
+      if (!text || text.length < MIN_LEN) {
+        body.innerHTML = '<div class="fbs-error">Bài viết quá ngắn để tóm tắt.</div>';
+        return;
+      }
+
       try {
-        const r = await chrome.runtime.sendMessage({ action: "summarize", text: postText });
+        const r = await chrome.runtime.sendMessage({ action: "summarize", text });
         if (r && r.error) { body.innerHTML = '<div class="fbs-error">' + esc(r.error) + '</div>'; }
         else if (r && r.summary) { loaded = true; body.innerHTML = '<div class="fbs-result">' + fmt(r.summary) + '</div>'; }
         else { body.innerHTML = '<div class="fbs-error">Không nhận được phản hồi.</div>'; }
@@ -177,13 +191,10 @@
     const target = findInjectTarget(textContainer);
     if (injected.has(target) || target.querySelector(".fbs-wrap")) return;
 
+    // Chỉ inject nút, KHÔNG click "Xem thêm"
+    // Khi user click "Tóm tắt", lúc đó mới expand và lấy text
     const clickable = findClickable(sm);
-    try { clickable.click(); } catch (e) {}
-
-    setTimeout(() => {
-      const text = cleanText(textContainer.innerText || "");
-      if (text.length >= MIN_LEN) inject(target, text);
-    }, 700);
+    inject(target, null, clickable, textContainer);
   }
 
   function scan() {
