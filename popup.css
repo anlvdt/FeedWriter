@@ -48,3 +48,24 @@ button:hover { opacity: 0.9; }
 }
 
 .links a:hover { text-decoration: underline; }
+
+.input-group {
+  display: flex; gap: 6px;
+}
+
+.input-group input { flex: 1; }
+
+.icon-btn {
+  width: 40px; padding: 0; display: flex; align-items: center; justify-content: center;
+  border: 1px solid #333; border-radius: 8px; background: #16162a; color: #aaa;
+  cursor: pointer; transition: border-color 0.2s; flex-shrink: 0;
+}
+
+.icon-btn:hover { border-color: #a855f7; color: #fff; }
+
+.test-btn {
+  width: 100%; padding: 8px; margin-top: 8px; border: 1px solid #333; border-radius: 8px;
+  background: transparent; color: #aaa; font-size: 13px; cursor: pointer; transition: all 0.2s;
+}
+
+.test-btn:hover { border-color: #a855f7; color: #fff; }

@@ -23,77 +23,68 @@ async function handleSummarize(text) {
       return { error: "Chưa nhập API Key. Click icon extension để cài đặt." };
     }
 
-    if (provider === "groq") {
-      return await callGroq(apiKey, text);
-    } else {
-      return await callGemini(apiKey, text);
+    const callFn = provider === "groq" ? callGroq : callGemini;
+    const maxRetries = 2;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const result = await callFn(apiKey, text);
+      if (!result.rateLimited) return result;
+      // Rate limited — wait and retry
+      const wait = (attempt + 1) * 3000;
+      await new Promise(r => setTimeout(r, wait));
     }
+
+    return { error: "API đang quá tải. Vui lòng thử lại sau vài phút." };
   } catch (e) {
     return { error: "Lỗi: " + e.message };
   }
 }
 
-// === GROQ API (Llama 3.3 70B) ===
-// Free: 14,400 requests/day, 6000 tokens/min
 async function callGroq(apiKey, text) {
-  const resp = await fetch(
-    "https://api.groq.com/openai/v1/chat/completions",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer " + apiKey,
-      },
-      body: JSON.stringify({
-        model: "llama-3.3-70b-versatile",
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: text },
-        ],
-        temperature: 0.3,
-        max_tokens: 512,
-      }),
-    }
-  );
+  const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + apiKey,
+    },
+    body: JSON.stringify({
+      model: "llama-3.3-70b-versatile",
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: text },
+      ],
+      temperature: 0.3,
+      max_tokens: 512,
+    }),
+  });
 
+  if (resp.status === 429) return { rateLimited: true };
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
-    return {
-      error: "Groq API lỗi: " + (err.error?.message || resp.statusText),
-    };
+    return { error: "Groq API lỗi: " + (err.error?.message || resp.statusText) };
   }
 
   const result = await resp.json();
-  const summary = result.choices?.[0]?.message?.content || "Không thể tóm tắt.";
-  return { summary };
+  return { summary: result.choices?.[0]?.message?.content || "Không thể tóm tắt." };
 }
 
-// === GEMINI API (backup) ===
 async function callGemini(apiKey, text) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-
   const resp = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      contents: [
-        {
-          parts: [{ text: SYSTEM_PROMPT + "\n\nBài viết:\n" + text }],
-        },
-      ],
+      contents: [{ parts: [{ text: SYSTEM_PROMPT + "\n\nBài viết:\n" + text }] }],
       generationConfig: { temperature: 0.3, maxOutputTokens: 512 },
     }),
   });
 
+  if (resp.status === 429) return { rateLimited: true };
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
-    return {
-      error: "Gemini API lỗi: " + (err.error?.message || resp.statusText),
-    };
+    return { error: "Gemini API lỗi: " + (err.error?.message || resp.statusText) };
   }
 
   const result = await resp.json();
-  const summary =
-    result.candidates?.[0]?.content?.parts?.[0]?.text || "Không thể tóm tắt.";
-  return { summary };
+  return { summary: result.candidates?.[0]?.content?.parts?.[0]?.text || "Không thể tóm tắt." };
 }

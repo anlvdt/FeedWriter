@@ -29,7 +29,12 @@
 
     <div class="field">
       <label for="apiKey">API Key</label>
-      <input type="password" id="apiKey" placeholder="Nhập API key">
+      <div class="input-group">
+        <input type="password" id="apiKey" placeholder="Nhập API key">
+        <button type="button" id="toggleKey" class="icon-btn" title="Hiện/ẩn key">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+      </div>
     </div>
 
     <div class="field">
@@ -38,6 +43,7 @@
     </div>
 
     <button id="saveBtn">Lưu cài đặt</button>
+    <button id="testBtn" class="test-btn">Test kết nối</button>
     <div id="status" class="status"></div>
 
     <div class="links">
