@@ -320,26 +320,18 @@
 
     let inserted = false;
 
-    // 1) Wrap "Xem thêm" + button together (nowrap)
+    // 1) Insert after "Xem thêm" text element (don't wrap/move it)
     if (!inserted && seeMoreOriginal && seeMoreOriginal.parentElement) {
       try {
-        const container = document.createElement("span");
-        container.style.cssText = "display:inline-flex;align-items:baseline;white-space:nowrap;";
-        seeMoreOriginal.parentElement.insertBefore(container, seeMoreOriginal);
-        container.appendChild(seeMoreOriginal);
-        container.appendChild(wrap);
+        seeMoreOriginal.parentElement.insertBefore(wrap, seeMoreOriginal.nextSibling);
         inserted = true;
       } catch (e) {}
     }
 
-    // 2) After clickable
+    // 2) Insert after clickable
     if (!inserted && seeMoreClickable && seeMoreClickable.parentElement) {
       try {
-        const container = document.createElement("span");
-        container.style.cssText = "display:inline-flex;align-items:baseline;white-space:nowrap;";
-        seeMoreClickable.parentElement.insertBefore(container, seeMoreClickable);
-        container.appendChild(seeMoreClickable);
-        container.appendChild(wrap);
+        seeMoreClickable.parentElement.insertBefore(wrap, seeMoreClickable.nextSibling);
         inserted = true;
       } catch (e) {}
     }
@@ -362,24 +354,22 @@
       e.stopPropagation();
       openOverlay('<div class="fbs-loading"><div class="fbs-spinner"></div><span>Đang tóm tắt...</span></div>', false);
 
-      // Expand "See more" to get full text
-      let savedHTML = null;
-      if (seeMoreClickable && textContainer) {
-        savedHTML = textContainer.innerHTML;
+      // Expand to get full text
+      if (seeMoreClickable) {
         try { seeMoreClickable.click(); } catch (_) {}
         await new Promise(r => setTimeout(r, 800));
       }
 
       const text = cleanText((textContainer || target).innerText || "");
 
-      // Restore collapsed state
-      if (savedHTML && textContainer) {
-        textContainer.innerHTML = savedHTML;
-        // Re-inject button since innerHTML wipe removed it
-        setTimeout(() => {
-          injected.delete(target);
-          scan();
-        }, 100);
+      // Try to collapse back by clicking "See less" / "Ẩn bớt"
+      if (textContainer) {
+        const collapseBtn = Array.from(textContainer.querySelectorAll('div[role="button"], span'))
+          .find(el => {
+            const t = (el.textContent || "").trim().toLowerCase();
+            return t === "ẩn bớt" || t === "see less" || t === "show less";
+          });
+        if (collapseBtn) try { collapseBtn.click(); } catch (_) {}
       }
 
       await summarizeText(text);
