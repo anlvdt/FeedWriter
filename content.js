@@ -20,15 +20,15 @@
 
   const SITE = location.hostname.includes("facebook") ? "facebook"
     : location.hostname.includes("x.com") || location.hostname.includes("twitter") ? "x"
-    : location.hostname.includes("linkedin") ? "linkedin"
-    : location.hostname.includes("reddit") ? "reddit" : "other";
+      : location.hostname.includes("linkedin") ? "linkedin"
+        : location.hostname.includes("reddit") ? "reddit" : "other";
 
   const SEE_MORE_KEYWORDS = {
-    facebook: ["xem thêm","see more","voir plus","mehr anzeigen","もっと見る","더 보기","ver más","ver mais"],
+    facebook: ["xem thêm", "see more", "voir plus", "mehr anzeigen", "もっと見る", "더 보기", "ver más", "ver mais"],
     x: ["show more"],
-    linkedin: ["see more","xem thêm","...more"],
+    linkedin: ["see more", "xem thêm", "...more"],
     reddit: [],
-    other: ["see more","xem thêm"],
+    other: ["see more", "xem thêm"],
   };
   const SEE_MORE = SEE_MORE_KEYWORDS[SITE] || SEE_MORE_KEYWORDS.other;
 
@@ -47,8 +47,13 @@
       el.setAttribute("data-fbs-theme", currentTheme);
     });
   }
+  let themeTimer = null;
+  function throttledApplyTheme() {
+    if (themeTimer) return;
+    themeTimer = setTimeout(() => { themeTimer = null; applyTheme(); }, 500);
+  }
   setTimeout(applyTheme, 1000);
-  new MutationObserver(applyTheme).observe(document.body, { attributes: true, attributeFilter: ["class", "style"] });
+  new MutationObserver(throttledApplyTheme).observe(document.body, { attributes: true, attributeFilter: ["class", "style"] });
 
   // === SCAN LOGIC ===
   function findNewSeeMoreElements() {
@@ -78,8 +83,9 @@
       if (!p || p === document.body) return false;
       const role = p.getAttribute("role") || "";
       if (["navigation", "banner", "dialog", "complementary"].includes(role)) return true;
-      const pos = getComputedStyle(p).position;
-      if (pos === "fixed" || pos === "sticky") return true;
+      // Only check computed style for elements that might be fixed/sticky (cheaper than always calling getComputedStyle)
+      if (p.style.position === "fixed" || p.style.position === "sticky") return true;
+      if (p.classList.contains("fixed") || p.classList.contains("sticky")) return true;
     }
     return false;
   }
@@ -181,7 +187,7 @@
   function stopSummarize() {
     if (!isSummarizing) return;
     isSummarizing = false;
-    if (currentPort) { try { currentPort.disconnect(); } catch (_) {} currentPort = null; }
+    if (currentPort) { try { currentPort.disconnect(); } catch (_) { } currentPort = null; }
     if (panelBody) {
       openOverlay(panelBody.innerHTML.replace(/<span class="fbs-cursor"><\/span>/g, "") +
         '<div class="fbs-error">Đã dừng.</div>', false);
@@ -249,12 +255,24 @@
   }
 
   // === STREAMING SUMMARIZE ===
-  async function summarizeText(text) {
+  async function wakeServiceWorker() {
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage({ action: "ping" }, () => {
+          // ignore chrome.runtime.lastError — just waking SW
+          void chrome.runtime.lastError;
+          resolve();
+        });
+      } catch (_) { resolve(); }
+    });
+  }
+
+  async function summarizeText(text, type = "summary") {
     if (!text || text.length < 50) {
       openOverlay('<div class="fbs-error">Text quá ngắn để tóm tắt.</div>', false);
       return;
     }
-    const key = hashText(text);
+    const key = hashText(text) + "_" + type;
     if (summaryCache.has(key)) {
       openOverlay('<div class="fbs-result">' + fmt(summaryCache.get(key)) + '</div>', false);
       return;
@@ -265,10 +283,13 @@
     }
 
     isSummarizing = true;
-    openOverlay('<div class="fbs-loading"><div class="fbs-spinner"></div><span>Đang kết nối AI...</span></div>', false);
+    const title = type === "affiliate" ? "Đang viết bài Affiliate..." : "Đang kết nối AI...";
+    openOverlay('<div class="fbs-loading"><div class="fbs-spinner"></div><span>' + title + '</span></div>', false);
 
+    // Wake SW before connecting port (MV3 SW dies after ~30s idle)
+    await wakeServiceWorker();
     currentPort = chrome.runtime.connect({ name: "summarize-stream" });
-    currentPort.postMessage({ action: "summarize", text, site: SITE });
+    currentPort.postMessage({ action: "summarize", text, site: SITE, type });
 
     let first = true;
     currentPort.onMessage.addListener((msg) => {
@@ -279,11 +300,11 @@
         isSummarizing = false;
         summaryCache.set(key, msg.full);
         openOverlay('<div class="fbs-result">' + fmt(msg.full) + '</div>', false);
-        try { currentPort.disconnect(); } catch (_) {} currentPort = null;
+        try { currentPort.disconnect(); } catch (_) { } currentPort = null;
       } else if (msg.action === "error") {
         isSummarizing = false;
         openOverlay('<div class="fbs-error">' + esc(msg.error) + '</div>', false);
-        try { currentPort.disconnect(); } catch (_) {} currentPort = null;
+        try { currentPort.disconnect(); } catch (_) { } currentPort = null;
       }
     });
 
@@ -299,9 +320,17 @@
     });
   }
 
-  // === CONTEXT MENU ===
+  // === CONTEXT MENU & UNSHORTEN ===
   chrome.runtime.onMessage.addListener((msg) => {
-    if (msg.action === "summarize-selection" && msg.text) summarizeText(msg.text);
+    if (msg.action === "summarize-selection" && msg.text) summarizeText(msg.text, msg.type);
+    if (msg.action === "unshorten-result") {
+      if (msg.error) {
+        alert(msg.error);
+      } else if (msg.text) {
+        navigator.clipboard.writeText(msg.text)
+          .catch(() => alert("Lỗi ghi clipboard. Link gốc là:\n\n" + msg.text));
+      }
+    }
   });
 
   // === INJECT BUTTON ===
@@ -325,7 +354,7 @@
       try {
         seeMoreOriginal.parentElement.insertBefore(wrap, seeMoreOriginal.nextSibling);
         inserted = true;
-      } catch (e) {}
+      } catch (e) { }
     }
 
     // 2) Insert after clickable
@@ -333,12 +362,12 @@
       try {
         seeMoreClickable.parentElement.insertBefore(wrap, seeMoreClickable.nextSibling);
         inserted = true;
-      } catch (e) {}
+      } catch (e) { }
     }
 
     // 3) Append to text container
     if (!inserted && textContainer) {
-      try { textContainer.appendChild(wrap); inserted = true; } catch (e) {}
+      try { textContainer.appendChild(wrap); inserted = true; } catch (e) { }
     }
 
     // 4) Fallback absolute
@@ -356,7 +385,7 @@
 
       // Expand to get full text
       if (seeMoreClickable) {
-        try { seeMoreClickable.click(); } catch (_) {}
+        try { seeMoreClickable.click(); } catch (_) { }
         await new Promise(r => setTimeout(r, 800));
       }
 
@@ -369,7 +398,7 @@
             const t = (el.textContent || "").trim().toLowerCase();
             return t === "ẩn bớt" || t === "see less" || t === "show less";
           });
-        if (collapseBtn) try { collapseBtn.click(); } catch (_) {}
+        if (collapseBtn) try { collapseBtn.click(); } catch (_) { }
       }
 
       await summarizeText(text);

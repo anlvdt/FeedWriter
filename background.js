@@ -1,4 +1,4 @@
-// Background service worker — Social Post Summarizer v1.4.0
+// Background service worker — Social Content Repurposer v2.0.0
 
 // === CONTEXT MENU ===
 chrome.runtime.onInstalled.addListener(() => {
@@ -7,14 +7,58 @@ chrome.runtime.onInstalled.addListener(() => {
     title: "Tóm tắt đoạn text này",
     contexts: ["selection"],
   });
+  chrome.contextMenus.create({
+    id: "affiliate-rewrite",
+    title: "Chế bài Affiliate Marketing",
+    contexts: ["selection"],
+  });
+  chrome.contextMenus.create({
+    id: "unshorten-shopee",
+    title: "Bóc Link Shopee (No Cookie)",
+    contexts: ["selection"],
+  });
 });
 
-chrome.contextMenus.onClicked.addListener((info, tab) => {
+async function clearShopeeCookies() {
+  const domains = [".shopee.vn", "shopee.vn", ".shope.ee", "shope.ee"];
+  for (const d of domains) {
+    const cookies = await chrome.cookies.getAll({ domain: d });
+    for (const c of cookies) {
+      await chrome.cookies.remove({ url: "https://" + c.domain + c.path, name: c.name });
+    }
+  }
+}
+
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === "summarize-selection" && info.selectionText) {
     chrome.tabs.sendMessage(tab.id, {
       action: "summarize-selection",
       text: info.selectionText,
+      type: "summary",
     });
+  } else if (info.menuItemId === "affiliate-rewrite" && info.selectionText) {
+    chrome.tabs.sendMessage(tab.id, {
+      action: "summarize-selection",
+      text: info.selectionText,
+      type: "affiliate",
+    });
+  } else if (info.menuItemId === "unshorten-shopee" && info.selectionText) {
+    const urlMatches = info.selectionText.match(/https?:\/\/shope\.ee\/[^\s]*/);
+    if (!urlMatches) {
+      chrome.tabs.sendMessage(tab.id, { action: "unshorten-result", error: "Không tìm thấy link shope.ee trong phần bôi đen" });
+      return;
+    }
+    try {
+      const resp = await fetch(urlMatches[0], { method: "GET", redirect: "follow" });
+      const finalUrl = resp.url;
+      const cleanMatch = finalUrl.match(/-i\.(\d+)\.(\d+)/);
+      const output = cleanMatch ? "https://shopee.vn/product/" + cleanMatch[1] + "/" + cleanMatch[2] : finalUrl;
+      await clearShopeeCookies();
+      chrome.tabs.sendMessage(tab.id, { action: "unshorten-result", text: output });
+      chrome.tabs.create({ url: "https://affiliate.shopee.vn/offer/custom_link" });
+    } catch (e) {
+      chrome.tabs.sendMessage(tab.id, { action: "unshorten-result", error: "Lỗi extract: " + e.message });
+    }
   }
 });
 
@@ -39,17 +83,24 @@ chrome.runtime.onStartup.addListener(async () => {
 });
 
 // === DEFAULT PROMPT ===
-const DEFAULT_PROMPT = `Tóm tắt bài viết dưới đây. Quy tắc bắt buộc:
-- CHỈ dùng thông tin có trong bài viết, KHÔNG thêm, KHÔNG suy luận, KHÔNG bịa.
-- Trả về 3-5 bullet points (dùng "•"), mỗi ý 1-2 câu ngắn gọn.
-- Không mở đầu, không kết luận, không giải thích thêm. Chỉ trả về các dòng tóm tắt.`;
+const SUMMARY_PROMPT = `Đóng vai tôi, viết lại nội dung sau thành một status để đăng Facebook cá nhân. Quy tắc bắt buộc:
+- Văn phong tự nhiên, chân thật, chia sẻ góc nhìn cá nhân (dưới 200 chữ).
+- Giữ thông điệp cốt lõi của bài gốc, TUYỆT ĐỐI không đạo văn.
+- Không dùng từ ngữ sáo rỗng hay văn mẫu AI (như "tóm lại", "nhìn chung", "bài viết này").
+- Viết thẳng vào vấn đề như một bài post đời thường trên mạng xã hội.`;
+
+const AFFILIATE_PROMPT = `Đóng vai người dùng đang review sản phẩm chân thực. Viết lại bài sau để làm affiliate marketing. Quy tắc bắt buộc:
+- Viết 1 bài review mộc mạc, ngắn gọn (dưới 150 chữ).
+- Giữ nguyên các điểm mạnh sản phẩm từ bài gốc, né 100% đạo văn.
+- Không chào hỏi, không kết luận thừa.
+- Ở cuối bài, CHỈ để đúng 1 dòng: "👉 Link mua ở đây nha: [LINK_SHOPEE_CỦA_TÔI]"`;
 
 const MAX_INPUT_CHARS = 8000;
 
-async function getSystemPrompt() {
+async function getSystemPrompt(type) {
   const data = await chrome.storage.sync.get(["customPrompt", "outputLang"]);
   const lang = data.outputLang || "auto";
-  let prompt = data.customPrompt || DEFAULT_PROMPT;
+  let prompt = type === "affiliate" ? AFFILIATE_PROMPT : (data.customPrompt || SUMMARY_PROMPT);
   if (lang === "vi") prompt += "\n- Luôn trả lời bằng tiếng Việt, dịch nếu bài viết bằng ngôn ngữ khác.";
   else if (lang === "en") prompt += "\n- Always respond in English, translate if the post is in another language.";
   else prompt += "\n- Nếu bài viết bằng tiếng Anh hoặc ngôn ngữ khác tiếng Việt, dịch tóm tắt sang tiếng Việt. Nếu bằng tiếng Việt, giữ nguyên.";
@@ -64,12 +115,12 @@ chrome.runtime.onConnect.addListener((port) => {
   port.onMessage.addListener(async (msg) => {
     if (msg.action !== "summarize") return;
     try {
-      const result = await handleStream(msg.text, msg.site, port, controller.signal);
+      const result = await handleStream(msg.text, msg.site, port, controller.signal, msg.type);
       if (result && result.error) port.postMessage({ action: "error", error: result.error });
       else if (result && result.summary) port.postMessage({ action: "done", full: result.summary });
     } catch (e) {
       if (e.name !== "AbortError") {
-        try { port.postMessage({ action: "error", error: e.message }); } catch (_) {}
+        try { port.postMessage({ action: "error", error: e.message }); } catch (_) { }
       }
     }
   });
@@ -79,17 +130,18 @@ chrome.runtime.onConnect.addListener((port) => {
 
 // === FALLBACK: non-streaming for test/context menu ===
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === "ping") { sendResponse({ ok: true }); return true; }
   if (request.action === "summarize") {
-    const fakePort = { postMessage: () => {} };
+    const fakePort = { postMessage: () => { } };
     const controller = new AbortController();
-    handleStream(request.text, request.site || "unknown", fakePort, controller.signal)
+    handleStream(request.text, request.site || "unknown", fakePort, controller.signal, "summary")
       .then(r => sendResponse(r || { error: "Unknown error" }))
       .catch(e => sendResponse({ error: e.message }));
     return true;
   }
 });
 
-async function handleStream(text, site, port, signal) {
+async function handleStream(text, site, port, signal, type = "summary") {
   const data = await chrome.storage.sync.get(["apiKey", "provider"]);
   const apiKey = data.apiKey;
   const provider = data.provider || "groq";
@@ -99,7 +151,7 @@ async function handleStream(text, site, port, signal) {
   const truncated = text.length > MAX_INPUT_CHARS
     ? text.substring(0, MAX_INPUT_CHARS) + "\n[...bài viết đã được cắt ngắn]"
     : text;
-  const systemPrompt = await getSystemPrompt();
+  const systemPrompt = await getSystemPrompt(type);
   const callFn = provider === "groq" ? callGroqStream : callGeminiStream;
 
   for (let attempt = 0; attempt <= 2; attempt++) {
@@ -140,16 +192,17 @@ async function processStream(response, port, signal, parseLine) {
     const lines = buffer.split("\n");
     buffer = lines.pop();
     for (const line of lines) {
-      if (!line.trim().startsWith("data: ")) continue;
-      const dataStr = line.replace(/^data: /, "").trim();
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data: ") && trimmed !== "data:") continue;
+      const dataStr = trimmed.replace(/^data:\s*/, "");
       if (dataStr === "[DONE]" || !dataStr) continue;
       try {
         const token = parseLine(JSON.parse(dataStr));
         if (token) {
           fullText += token;
-          try { port.postMessage({ action: "chunk", text: token, full: fullText }); } catch (_) {}
+          try { port.postMessage({ action: "chunk", text: token, full: fullText }); } catch (_) { }
         }
-      } catch (e) {}
+      } catch (e) { }
     }
   }
   return { summary: fullText };
