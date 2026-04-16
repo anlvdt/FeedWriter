@@ -147,7 +147,7 @@
     panel = document.createElement("div");
     panel.className = "fbs-panel";
     panel.innerHTML =
-      '<div class="fbs-panel-head"><span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> <span class="fbs-title-text">Tóm tắt AI</span></span>' +
+      '<div class="fbs-panel-head"><span><svg width="16" height="16" viewBox="0 0 128 128" fill="currentColor"><path d="M64 14 C36.4 14 14 36.4 14 64 C14 74.3 17.1 84 22.4 92 L28.8 85.6 C25.1 79.2 23 71.8 23 64 C23 41.3 41.3 23 64 23 C68.8 23 73.4 23.8 77.7 25.4 L68 34 L96 38 L94 10 L84.4 18.6 C78.1 15.6 71.2 14 64 14 Z"/><path d="M104.6 36 L98.2 42.4 C101.9 48.8 104 56.2 104 64 C104 86.7 85.7 105 64 105 C59.2 105 54.6 104.2 50.3 102.6 L60 94 L32 90 L34 118 L43.6 109.4 C49.9 112.4 56.8 114 64 114 C91.6 114 114 91.6 114 64 C114 53.7 110.9 44 105.6 36 Z"/><path d="M64 36 C64 54 54 64 36 64 C54 64 64 74 64 92 C64 74 74 64 92 64 C74 64 64 54 64 36 Z"/></svg> <span class="fbs-title-text">Tóm tắt AI</span></span>' +
       '<div class="fbs-close" role="button" tabindex="0">&#10005;</div></div>' +
       '<div class="fbs-panel-body"></div>' +
       '<div class="fbs-panel-footer">' +
@@ -250,10 +250,10 @@
     d.setAttribute("role", "button");
     d.setAttribute("tabindex", "0");
     d.innerHTML =
-      '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">' +
-      '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>' +
-      '<polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/>' +
-      '<line x1="16" y1="17" x2="8" y2="17"/></svg><span title="Click: Viết Status | Shift+Click: Affiliate"> Tóm tắt</span>';
+      '<svg width="12" height="12" viewBox="0 0 128 128" fill="currentColor">' +
+      '<path d="M64 14 C36.4 14 14 36.4 14 64 C14 74.3 17.1 84 22.4 92 L28.8 85.6 C25.1 79.2 23 71.8 23 64 C23 41.3 41.3 23 64 23 C68.8 23 73.4 23.8 77.7 25.4 L68 34 L96 38 L94 10 L84.4 18.6 C78.1 15.6 71.2 14 64 14 Z"/>' +
+      '<path d="M104.6 36 L98.2 42.4 C101.9 48.8 104 56.2 104 64 C104 86.7 85.7 105 64 105 C59.2 105 54.6 104.2 50.3 102.6 L60 94 L32 90 L34 118 L43.6 109.4 C49.9 112.4 56.8 114 64 114 C91.6 114 114 91.6 114 64 C114 53.7 110.9 44 105.6 36 Z"/>' +
+      '<path d="M64 36 C64 54 54 64 36 64 C54 64 64 74 64 92 C64 74 74 64 92 64 C74 64 64 54 64 36 Z"/></svg><span title="Click: Viết Status | Shift+Click: Affiliate"> Tóm tắt</span>';
     return d;
   }
 
@@ -263,7 +263,7 @@
     d.setAttribute("role", "button");
     d.setAttribute("tabindex", "0");
     d.style.cssText = "cursor:pointer;font-size:inherit;font-family:inherit;background:none;border:none;padding:0;margin:0;display:inline;line-height:inherit;vertical-align:baseline;";
-    d.innerHTML = ' · <span title="Click: Viết Status | Shift+Click: Affiliate" style="cursor:pointer;display:inline-flex;align-items:center;gap:3px;vertical-align:baseline;color:#4fc3f7;font-weight:600;font-size:0.92em;background:rgba(79,195,247,0.13);padding:0px 6px 1px;border-radius:8px;transition:background 0.15s"><svg style="width:11px;height:11px;vertical-align:-1px;flex-shrink:0;stroke:#4fc3f7" viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>Tóm tắt</span>';
+    d.innerHTML = ' · <span title="Click: Viết Status | Shift+Click: Affiliate" style="cursor:pointer;display:inline-flex;align-items:center;gap:3px;vertical-align:baseline;color:#4fc3f7;font-weight:600;font-size:0.92em;background:rgba(79,195,247,0.13);padding:0px 6px 1px;border-radius:8px;transition:background 0.15s"><svg style="width:11px;height:11px;vertical-align:-1px;flex-shrink:0;fill:#4fc3f7" viewBox="0 0 128 128"><path d="M64 14 C36.4 14 14 36.4 14 64 C14 74.3 17.1 84 22.4 92 L28.8 85.6 C25.1 79.2 23 71.8 23 64 C23 41.3 41.3 23 64 23 C68.8 23 73.4 23.8 77.7 25.4 L68 34 L96 38 L94 10 L84.4 18.6 C78.1 15.6 71.2 14 64 14 Z"/><path d="M104.6 36 L98.2 42.4 C101.9 48.8 104 56.2 104 64 C104 86.7 85.7 105 64 105 C59.2 105 54.6 104.2 50.3 102.6 L60 94 L32 90 L34 118 L43.6 109.4 C49.9 112.4 56.8 114 64 114 C91.6 114 114 91.6 114 64 C114 53.7 110.9 44 105.6 36 Z"/><path d="M64 36 C64 54 54 64 36 64 C54 64 64 74 64 92 C64 74 74 64 92 64 C74 64 64 54 64 36 Z"/></svg>Tóm tắt</span>';
     const pill = d.querySelector("span");
     d.addEventListener("mouseenter", () => { pill.style.background = "rgba(79,195,247,0.28)"; });
     d.addEventListener("mouseleave", () => { pill.style.background = "rgba(79,195,247,0.13)"; });
