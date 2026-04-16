@@ -98,11 +98,13 @@
   width: 520px;
   max-width: 90vw;
   max-height: 70vh;
-  border-radius: 16px;
+  border-radius: 20px;
   overflow: hidden;
-  background: #1e1e2e;
+  background: rgba(30, 30, 46, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(168, 85, 247, 0.4);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
   z-index: 2147483647;
   flex-direction: column;
 }
@@ -389,9 +391,11 @@
 
 /* Light mode overrides — scoped to our own elements */
 .fbs-panel[data-fbs-theme="light"] {
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border-color: rgba(108, 92, 231, 0.2);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.15), inset 0 0 0 1px rgba(255, 255, 255, 0.5);
 }
 
 .fbs-panel[data-fbs-theme="light"] .fbs-panel-body {
