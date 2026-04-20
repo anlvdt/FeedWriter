@@ -2,3 +2,7 @@
 *.swp
 *.swo
 node_modules/
+
+# Internal docs
+Bộ các quy tắc VnReview*
+KARPATHY-AI-LEARNING-GUIDE*
