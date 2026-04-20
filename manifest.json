@@ -39,6 +39,12 @@
         "content.css"
       ],
       "run_at": "document_end"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["translate.js"],
+      "css": ["translate.css"],
+      "run_at": "document_end"
     }
   ],
   "action": {
