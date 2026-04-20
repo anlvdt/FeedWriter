@@ -3,7 +3,8 @@
   "name": "FeedWriter",
   "version": "2.1.0",
   "description": "Tóm tắt, viết status & affiliate từ bài viết Facebook bằng AI. Dịch từ Anh-Việt. Tối ưu cho Facebook.",
-  "author": "Lê Ẩn",
+  "author": "Le An (anlvdt)",
+  "homepage_url": "https://github.com/anlvdt/fb-post-summarizer",
   "permissions": [
     "storage",
     "contextMenus",

@@ -1,4 +1,6 @@
-// Background service worker — Social Content Repurposer v2.0.0
+// FeedWriter — Background service worker
+// https://github.com/anlvdt/fb-post-summarizer
+// Author: Le An (anlvdt)
 
 async function injectAndSend(tabId, message) {
   try {

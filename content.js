@@ -1,5 +1,8 @@
 (function () {
   "use strict";
+  // FeedWriter — Content script
+  // https://github.com/anlvdt/fb-post-summarizer
+  // Author: Le An (anlvdt)
 
   let MIN_LEN = 400;
   let scanTimer = null;

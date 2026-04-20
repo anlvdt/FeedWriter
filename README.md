@@ -152,4 +152,4 @@ Mọi đóng góp đều được chào đón.
 
 ## License
 
-[MIT](LICENSE) — Lê Ẩn
+[MIT](LICENSE) — [Le An](https://github.com/anlvdt)
