@@ -176,72 +176,56 @@ QUY TẮC CHÍNH TẢ BẮT BUỘC:
 - Viết hoa: tên người, tên công ty, địa danh, chức danh.
 - KHÔNG viết tắt địa danh ngắn: Việt Nam, Hà Nội (không viết VN, HN).`;
 
-// STATUS CHIA SẺ BÀI VIẾT - Đọc → Tóm tắt → Nhận định cá nhân + Quy tắc VnReview
-const STATUS_PROMPT = `Bạn là người dùng MXH chân thật, thích đọc và chia sẻ kiến thức.
+// STATUS CHIA SẺ BÀI VIẾT - Đọc → Phân tích → Nhận định → Viết status
+const STATUS_PROMPT = `Bạn là người hay đọc và chia sẻ những thứ hay ho trên MXH, giọng văn tự nhiên.
 
-BỐI CẢNH: Người dùng ĐỌC ĐƯỢC một bài viết hay trên mạng, muốn CHIA SẺ lại kèm NHẬN ĐỊNH CÁ NHÂN. KHÔNG BAO GIỜ nhận vơ nội dung, sản phẩm, hay trải nghiệm của người khác là của mình.
+NHIỆM VỤ: Đọc nội dung gốc, viết thành status MXH chia sẻ lại kèm nhận định cá nhân.
 
-NHIỆM VỤ: Viết status chia sẻ nội dung đã đọc + thêm góc nhìn/quan điểm cá nhân.
-
-PHONG CÁCH:
-- Xưng "MÌNH" - như đang chia sẻ với bạn bè thân
-- Giọng tự nhiên, có cảm xúc thật, KHÔNG PR, KHÔNG viral bait
-- RÕ RÀNG rằng đây là nội dung mình ĐỌC ĐƯỢC, không phải tự làm/tự trải nghiệm
-- Thêm quan điểm, nhận xét, hoặc liên hệ thực tế CỦA MÌNH
-
-CẤU TRÚC:
-1. HOOK (1-2 câu): Insight hay nhất từ bài viết HOẶC lý do mình thấy đáng chia sẻ
-2. TÓM TẮT (2-3 câu): Điểm chính từ bài viết gốc, ghi nguồn/credit tác giả nếu biết
-3. NHẬN ĐỊNH (1-2 câu): Quan điểm cá nhân, liên hệ thực tế, hoặc câu hỏi mở
-4. KẾT (1 câu): Kêu gọi tương tác hoặc dẫn dắt tò mò
-
-VÍ DỤ PHONG CÁCH:
-❌ "Mình dùng thử cái này được 2 tháng, phải nói là..." (nhận vơ trải nghiệm người khác)
-❌ "Mình vừa phát hiện ra..." (content gốc không phải của mình)
-❌ Viết như thể mình là tác giả hoặc người trải nghiệm trực tiếp
-✅ "Đọc được bài này thấy hay quá, tóm lại là: [nội dung]. Mình nghĩ..."
-✅ "Có một bài phân tích rất đáng đọc về [chủ đề]: [tóm tắt]. Theo mình thì..."
-✅ "[Insight hay] — đây là điều mình rút ra từ [bài viết/nguồn]. Cá nhân mình..."
-
-QUY TẮC VÀNG:
-- PHẢI ghi credit/nguồn nếu biết tác giả gốc
-- KHÔNG BAO GIỜ viết theo ngôi thứ nhất về trải nghiệm không phải của mình
-- Phân biệt rõ: đâu là nội dung bài gốc, đâu là nhận xét của mình
-- Đi thẳng vào nội dung, không dẫn dắt vòng vo
+QUY TRÌNH:
+1. PHÂN TÍCH: Bài viết nói về gì? Insight đáng giá nhất là gì?
+2. GÓC NHÌN: Mình (người chia sẻ) nghĩ gì về điều này? Liên hệ thực tế ra sao?
+3. VIẾT: Tổng hợp thành status hấp dẫn, xưng "mình", giọng kể bạn bè
 
 YÊU CẦU:
-- Tối đa 280 ký tự (Twitter) hoặc 3 đoạn ngắn
-- Tiêu đề hấp dẫn (3-6 từ IN HOA) nếu cần
-- KHÔNG copy nguyên văn bài gốc
-- VIẾT LẠI hoàn toàn bằng lời mình, nhưng GHI NGUỒN
+- 2-4 đoạn ngắn, tổng 100-250 từ
+- Đi thẳng vào insight/điểm hay nhất ngay câu đầu
+- Tóm nội dung gốc bằng lời mình, ghi credit tác giả/nguồn nếu biết
+- Thêm quan điểm cá nhân rõ ràng — đây là phần tạo giá trị
+- Kết bằng câu hỏi mở hoặc kêu gọi tương tác
+- Giọng tự nhiên, dễ đọc, có cảm xúc thật
+
+RANH GIỚI: Đây là nội dung mình ĐỌC ĐƯỢC và chia sẻ lại — KHÔNG viết như thể mình là tác giả gốc hay người trải nghiệm trực tiếp.
 ` + VNREVIEW_RULES;
 
-// STATUS NGẮN - Quick share + nhận xét + Quy tắc VnReview
-const STATUS_SHORT_PROMPT = `Viết status MXH cực ngắn chia sẻ lại nội dung đã đọc.
+// STATUS NGẮN - Quick share + nhận xét
+const STATUS_SHORT_PROMPT = `Viết status MXH cực ngắn chia sẻ nội dung hay vừa đọc.
 
-BỐI CẢNH: Người dùng đọc được bài viết hay, muốn chia sẻ nhanh kèm nhận xét.
+QUY TRÌNH:
+1. Chọn 1 insight đáng giá nhất từ bài gốc
+2. Tóm gọn 1-2 câu + thêm 1 câu nhận xét cá nhân
 
-Yêu cầu:
-- Tối đa 280 ký tự hoặc 3 câu ngắn
-- 1 câu tóm ý chính từ bài đọc + 1 câu nhận xét cá nhân
-- KHÔNG nhận vơ nội dung/trải nghiệm người khác là của mình
-- Ghi nguồn/credit tác giả nếu biết
-- Phân biệt rõ nội dung gốc vs quan điểm cá nhân
-- Không copy nguyên văn
+YÊU CẦU:
+- Tối đa 3 câu ngắn, dưới 280 ký tự
+- Ghi nguồn/credit nếu biết
+- Viết lại bằng lời mình, không copy, không nhận vơ là trải nghiệm của mình
+- Giọng tự nhiên, đi thẳng vào ý chính
 ` + VNREVIEW_RULES;
 
-// STATUS CẢM XÚC - Emotional share + nhận xét + Quy tắc VnReview
-const STATUS_EMOTIONAL_PROMPT = `Viết status MXH có cảm xúc, chia sẻ lại nội dung đã đọc được.
+// STATUS CẢM XÚC - Emotional share + cảm nhận cá nhân
+const STATUS_EMOTIONAL_PROMPT = `Viết status MXH có cảm xúc từ nội dung vừa đọc được.
 
-BỐI CẢNH: Người dùng đọc được bài viết gây cảm xúc, muốn chia sẻ kèm cảm nhận cá nhân.
+QUY TRÌNH:
+1. CẢMC XÚC: Đọc xong bài này, điều gì khiến mình ấn tượng/xúc động nhất?
+2. TÓM TẮT: Nội dung gốc nói gì? (2-3 câu, ghi credit nếu biết)
+3. LIÊN HỆ: Điều này gợi cho mình suy nghĩ/cảm xúc gì? Liên hệ thực tế ra sao?
 
-Yêu cầu:
-- Cấu trúc: Hook (điều ấn tượng nhất từ bài đọc) → Tóm tắt nội dung + credit nguồn → Cảm nhận/nhận xét cá nhân → Kêu gọi tương tác
-- KHÔNG nhận vơ trải nghiệm/nội dung người khác là của mình
-- Phân biệt rõ: đâu là nội dung bài gốc, đâu là cảm xúc/quan điểm CỦA MÌNH
-- Giọng chân thật, chia sẻ cảm xúc khi ĐỌC bài viết, KHÔNG drama
-- Dùng chi tiết cụ thể từ bài viết để tăng sức thuyết phục
-- Tối đa 150 từ
+YÊU CẦU:
+- 2-3 đoạn, tối đa 150 từ
+- Mở bằng cảm xúc/reaction thật khi đọc bài — không giả tạo, không drama
+- Dùng chi tiết cụ thể từ bài viết để tăng chiều sâu
+- Kết bằng câu hỏi hoặc suy ngẫm mở
+- Đây là nội dung mình ĐỌC ĐƯỢC — không viết như người trải nghiệm trực tiếp
+- Giọng kể chuyện, chân thật, có "hồn"
 ` + VNREVIEW_RULES;
 
 // AFFILIATE - Chân thật như đã dùng thử + Quy tắc VnReview
@@ -310,12 +294,12 @@ const PROMPT_TEMPLATES = {
   summary_detailed: SUMMARY_DETAILED_PROMPT,
   summary_bullet: SUMMARY_BULLET_PROMPT,
   summary_structured: SUMMARY_STRUCTURED_PROMPT,
-  
+
   // Status variants
   status: STATUS_PROMPT,
   status_short: STATUS_SHORT_PROMPT,
   status_emotional: STATUS_EMOTIONAL_PROMPT,
-  
+
   // Affiliate variants
   affiliate: AFFILIATE_PROMPT,
   affiliate_soft: AFFILIATE_SOFT_PROMPT,
@@ -330,18 +314,18 @@ async function getSystemPrompt(type, site) {
     "customSummaryPrompt", "customStatusPrompt", "customAffPrompt",
     "outputLang", "promptStyle", "summaryLength", "customInstructions"
   ]);
-  
+
   const lang = data.outputLang || "auto";
   const promptStyle = data.promptStyle || "default";
   const summaryLength = data.summaryLength || "medium";
   const customInstructions = data.customInstructions || "";
-  
+
   // Determine base type for prompt lookup
   const baseType = type.startsWith("affiliate") ? "affiliate"
     : type.startsWith("status") ? "status" : "summary";
-  
+
   let prompt;
-  
+
   // 1. Custom user prompt takes highest priority
   if (baseType === "affiliate" && data.customAffPrompt) {
     prompt = data.customAffPrompt;
@@ -363,7 +347,7 @@ async function getSystemPrompt(type, site) {
   else {
     prompt = PROMPT_TEMPLATES[type] || PROMPT_TEMPLATES[baseType] || PROMPT_TEMPLATES.summary;
   }
-  
+
   // === SMART CONTEXT: Adapt prompt based on source platform ===
   const siteHints = {
     facebook: "\n\nNGỮ CẢNH: Bài viết từ Facebook. Giọng văn thường casual, cá nhân. Nếu là bài chia sẻ link/tin tức, tập trung vào thông tin. Nếu là status cá nhân, giữ cảm xúc và quan điểm.",
@@ -375,15 +359,15 @@ async function getSystemPrompt(type, site) {
   if (site && siteHints[site]) {
     prompt += siteHints[site];
   }
-  
+
   // === SMART CONTEXT: Auto-detect content type ===
   prompt += "\n\nTRƯỚC KHI VIẾT, hãy tự xác định loại nội dung (tin tức/ý kiến cá nhân/review sản phẩm/hướng dẫn/câu chuyện) và điều chỉnh giọng văn phù hợp.";
-  
+
   // Add custom instructions if provided
   if (customInstructions) {
     prompt += "\n\nYÊU CẦU BỔ SUNG:\n" + customInstructions;
   }
-  
+
   // Add language instruction
   if (lang === "vi") {
     prompt += "\n- Luôn trả lời bằng tiếng Việt, dịch nếu bài viết bằng ngôn ngữ khác.";
@@ -392,7 +376,7 @@ async function getSystemPrompt(type, site) {
   } else {
     prompt += "\n- Nếu bài viết bằng tiếng Anh hoặc ngôn ngữ khác tiếng Việt, dịch tóm tắt sang tiếng Việt. Nếu bằng tiếng Việt, giữ nguyên.";
   }
-  
+
   return prompt;
 }
 
@@ -447,10 +431,10 @@ const translateCache = new Map();
 async function translateWord(word) {
   const key = word.toLowerCase().trim();
   if (translateCache.has(key)) return translateCache.get(key);
-  
+
   const data = await chrome.storage.sync.get(["apiKey", "provider"]);
   if (!data.apiKey) return { error: "Chưa nhập API Key." };
-  
+
   const prompt = `Dịch từ/cụm từ tiếng Anh sang tiếng Việt. Trả lời NGẮN GỌN theo format:
 [phiên âm] — nghĩa 1, nghĩa 2
 (loại từ) giải thích ngắn nếu cần
@@ -462,7 +446,7 @@ Ví dụ:
 Từ cần dịch: "${key}"`;
 
   const provider = data.provider || "groq";
-  
+
   try {
     let result;
     if (provider === "groq") {
@@ -493,7 +477,7 @@ Từ cần dịch: "${key}"`;
       const json = await resp.json();
       result = json.candidates?.[0]?.content?.parts?.[0]?.text || "";
     }
-    
+
     const output = { word: key, translation: result.trim() };
     translateCache.set(key, output);
     // Keep cache small
@@ -551,11 +535,11 @@ function computeNgramOverlap(source, output, n = 4) {
     }
     return ngrams;
   };
-  
+
   const srcNgrams = getNgrams(normalize(source), n);
   const outNgrams = getNgrams(normalize(output), n);
   if (outNgrams.size === 0) return 0;
-  
+
   let overlap = 0;
   for (const ng of outNgrams) {
     if (srcNgrams.has(ng)) overlap++;
@@ -567,7 +551,7 @@ function computeNgramOverlap(source, output, n = 4) {
 function detectRepetition(text) {
   const sentences = text.split(/[.!?。]\s*/).filter(s => s.trim().length > 10);
   if (sentences.length < 2) return 0;
-  
+
   let dupes = 0;
   const seen = new Set();
   for (const s of sentences) {
@@ -582,18 +566,18 @@ function detectRepetition(text) {
 function postProcessOutput(output, sourceText, type) {
   const issues = [];
   let processed = output.trim();
-  
+
   // 1. Empty or near-empty check
   if (!processed || processed.length < 10) {
     return { text: processed, quality: "fail", issues: ["Output trống hoặc quá ngắn."] };
   }
-  
+
   // 2. Length validation based on type
   const minLen = { summary: 20, status: 15, affiliate: 30 };
   const maxLen = { summary: 2000, status: 1500, affiliate: 3000 };
   const baseType = type.startsWith("affiliate") ? "affiliate"
     : type.startsWith("status") ? "status" : "summary";
-  
+
   if (processed.length < (minLen[baseType] || 20)) {
     issues.push("Output ngắn bất thường.");
   }
@@ -606,7 +590,7 @@ function postProcessOutput(output, sourceText, type) {
       issues.push("Output đã được cắt ngắn.");
     }
   }
-  
+
   // 3. Copy detection (n-gram overlap)
   if (sourceText && sourceText.length > 50) {
     const overlap = computeNgramOverlap(sourceText, processed, 4);
@@ -614,19 +598,19 @@ function postProcessOutput(output, sourceText, type) {
       issues.push("⚠️ Output copy nhiều từ bài gốc (" + Math.round(overlap * 100) + "%).");
     }
   }
-  
+
   // 4. Repetition detection
   const repRate = detectRepetition(processed);
   if (repRate > 0.3) {
     issues.push("Output có nhiều câu lặp lại.");
   }
-  
+
   // 5. Clean formatting artifacts
   // Remove leading/trailing quotes that LLMs sometimes add
   processed = processed.replace(/^["'""'']+|["'""'']+$/g, "").trim();
   // Remove "Tóm tắt:" or "Summary:" prefix that LLMs sometimes prepend
   processed = processed.replace(/^(tóm tắt|summary|status|review|affiliate)\s*[:：]\s*/i, "").trim();
-  
+
   // 6. VnReview spelling rules auto-fix
   // Fix common currency formatting
   processed = processed.replace(/\bđô[ -]?la\b/gi, "USD");
@@ -640,13 +624,13 @@ function postProcessOutput(output, sourceText, type) {
   processed = processed.replace(/\bchủ nhật\b/gi, "Chủ nhật");
   // Fix month names (tháng một → tháng Một, but tháng 10 stays)
   processed = processed.replace(/\btháng (một|hai|ba|tư|năm|sáu|bảy|tám|chín)\b/gi, (m, mo) => "tháng " + mo.charAt(0).toUpperCase() + mo.slice(1));
-  
+
   // 7. Quality score
   let quality = "good";
   if (issues.some(i => i.includes("fail") || i.includes("trống"))) quality = "fail";
   else if (issues.some(i => i.includes("⚠️") || i.includes("copy"))) quality = "warn";
   else if (issues.length > 0) quality = "info";
-  
+
   return { text: processed, quality, issues };
 }
 
@@ -654,7 +638,7 @@ async function handleStream(text, site, port, signal, type = "summary") {
   // === INPUT GUARDRAILS ===
   const inputCheck = validateInput(text);
   if (!inputCheck.valid) return { error: inputCheck.error };
-  
+
   const data = await chrome.storage.sync.get(["apiKey", "provider", "summaryLength"]);
   const apiKey = data.apiKey;
   const provider = data.provider || "groq";
@@ -667,10 +651,10 @@ async function handleStream(text, site, port, signal, type = "summary") {
   const truncated = cleanedText.length > MAX_INPUT_CHARS
     ? cleanedText.substring(0, MAX_INPUT_CHARS) + "\n[...bài viết đã được cắt ngắn]"
     : cleanedText;
-  
+
   const systemPrompt = await getSystemPrompt(type, site);
   const callFn = provider === "groq" ? callGroqStream : callGeminiStream;
-  
+
   // Calculate max tokens based on length preference
   const maxTokensMap = { short: 256, medium: 512, long: 1024 };
   const maxTokens = maxTokensMap[summaryLength] || 512;
@@ -683,11 +667,11 @@ async function handleStream(text, site, port, signal, type = "summary") {
         // === OUTPUT GUARDRAILS ===
         const postResult = postProcessOutput(result.summary, text, type);
         result.summary = postResult.text;
-        
+
         // Attach quality metadata for UI
         result.quality = postResult.quality;
         result.issues = postResult.issues;
-        
+
         incrementBadge();
         saveHistory(text, result.summary, site, type);
       }
