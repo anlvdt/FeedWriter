@@ -194,7 +194,13 @@ CẤU TRÚC:
 
 VÍ DỤ PHONG CÁCH:
 ❌ "Vừa đọc được bài viết hay, chia sẻ với mọi người..."
+❌ "Mình vừa phát hiện ra một tính năng mới mà mọi người nên biết"
+❌ "Hôm nay mình muốn chia sẻ với các bạn về..."
+❌ "Mình nghĩ mọi người nên biết điều này..."
 ✅ "Mình dùng thử cái này được 2 tháng, phải nói là..."
+✅ "Cái này hay: [đi thẳng vào nội dung]"
+
+TUYỆT ĐỐI KHÔNG dùng câu mở đầu kiểu giới thiệu/dẫn dắt vòng vo. Đi THẲNG vào nội dung ngay câu đầu tiên.
 
 YÊU CẦU:
 - Tối đa 280 ký tự (Twitter) hoặc 3 đoạn ngắn
