@@ -127,6 +127,7 @@ YÊU CẦU:
 - Giọng tự nhiên, dễ hiểu như đang kể cho bạn bè
 - Giữ thông tin có giá trị thực, dữ liệu, kết luận
 - Bỏ ví dụ dài, chi tiết lan man, rào đón
+- CHỈ dùng thông tin CÓ TRONG bài gốc, KHÔNG bịa thêm số liệu/thông số/phiên bản
 - Trả lời bằng tiếng Việt`;
 
 // TÓM TẮT NGẮN - Quick overview
@@ -177,6 +178,12 @@ TIỀN VIỆT NAM:
 
 KHÔNG LẶP CẢM XÚC:
 - Mỗi cảm xúc/nhận xét chỉ nói MỘT lần. Không lặp "thật sự ngạc nhiên", "thật sự không hiểu", "quá đắt đỏ" trong cùng bài.
+
+CHỐNG BỊA THÔNG TIN (HALLUCINATION):
+- TUYỆT ĐỐI KHÔNG bịa số liệu, tên sản phẩm, phiên bản, thông số kỹ thuật, giá cả mà KHÔNG có trong bài gốc.
+- Nếu bài gốc không nêu con số cụ thể, KHÔNG được tự thêm con số.
+- Nếu không chắc chắn thông tin, KHÔNG viết. Bỏ qua còn hơn bịa.
+- Chỉ sử dụng thông tin CÓ TRONG bài gốc được cung cấp.
 
 QUY TẮC CHÍNH TẢ:
 - Câu ngắn, từ ngắn. Mỗi đoạn văn thể hiện MỘT ý.
@@ -241,6 +248,8 @@ YÊU CẦU:
 - Tiền VND viết gọn: "45 triệu đồng", KHÔNG viết "44.990.000 đồng"
 
 RANH GIỚI: Đây là nội dung mình ĐỌC ĐƯỢC và chia sẻ lại — KHÔNG viết như thể mình là tác giả gốc hay người trải nghiệm trực tiếp.
+
+CHỐNG BỊA: CHỈ dùng thông tin CÓ TRONG bài gốc. KHÔNG bịa số liệu, phiên bản, thông số, giá cả. Nếu bài gốc không nêu, KHÔNG thêm. Sai sự thật còn tệ hơn thiếu thông tin.
 ` + VNREVIEW_RULES;
 
 // STATUS NGẮN - Quick share + nhận xét
@@ -716,6 +725,16 @@ function postProcessOutput(output, sourceText, type) {
       processed = processed.replace(pat, "").trim();
       issues.push("Đã xóa câu dẫn dắt rỗng ở đầu bài.");
       break;
+    }
+  }
+
+  // 9. Hallucination detection: check if output contains numbers not in source
+  if (sourceText && sourceText.length > 50) {
+    const sourceNums = new Set((sourceText.match(/\d[\d.,]*\d|\d+/g) || []).map(n => n.replace(/[.,]/g, "")));
+    const outputNums = (processed.match(/\d[\d.,]*\d|\d+/g) || []).map(n => n.replace(/[.,]/g, ""));
+    const fabricated = outputNums.filter(n => n.length >= 2 && !sourceNums.has(n));
+    if (fabricated.length >= 2) {
+      issues.push("⚠️ Output có thể chứa số liệu bịa (" + fabricated.slice(0, 3).join(", ") + ") — không tìm thấy trong bài gốc.");
     }
   }
 
