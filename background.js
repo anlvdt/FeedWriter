@@ -163,9 +163,24 @@ Quy tắc:
 
 // === QUY TẮC CHÍNH TẢ VNREVIEW (áp dụng cho mọi output tiếng Việt) ===
 const VNREVIEW_RULES = `
-QUY TẮC CHÍNH TẢ BẮT BUỘC:
+QUY TẮC CHÍNH TẢ VÀ HÀNH VĂN BẮT BUỘC:
+
+CẤM MỞ ĐẦU BẰNG CÂU DẪN DẮT RỖNG:
+- TUYỆT ĐỐI KHÔNG bắt đầu bằng: "Mình vừa đọc được...", "Gần đây...", "Như chúng ta đã biết...", "Mới đây...", "Theo như mình được biết...", "Hôm nay mình đọc được..."
+- Câu đầu tiên PHẢI chứa thông tin thực, đi thẳng vào nội dung chính.
+- VD SAI: "Mình vừa đọc được tin tức về giá điện thoại cao cấp..."
+- VD ĐÚNG: "Huawei thay đổi chiến lược: bản Pro Max giá ngang Xiaomi Ultra."
+
+TIỀN VIỆT NAM:
+- Viết gọn bằng đơn vị triệu/tỷ: "45 triệu đồng", "1,2 tỷ đồng"
+- KHÔNG viết dạng đầy đủ: "44.990.000 đồng" → viết "gần 45 triệu đồng" hoặc "44,99 triệu đồng"
+
+KHÔNG LẶP CẢM XÚC:
+- Mỗi cảm xúc/nhận xét chỉ nói MỘT lần. Không lặp "thật sự ngạc nhiên", "thật sự không hiểu", "quá đắt đỏ" trong cùng bài.
+
+QUY TẮC CHÍNH TẢ:
 - Câu ngắn, từ ngắn. Mỗi đoạn văn thể hiện MỘT ý.
-- Chữ số: dấu chấm (.) chỉ hàng nghìn (VD: 1.500), dấu phảy (,) chỉ phần thập phân (VD: 2,2 mm).
+- Chữ số: dấu chấm (.) chỉ hàng nghìn (VD: 1.500), dấu phẩy (,) chỉ phần thập phân (VD: 2,2 mm).
 - Dấu chấm (.) cho inch, pixel, GHz: 8.9 inch, 18.2 megapixel, 2.2 GHz.
 - Viết bằng chữ số dưới 10 trước danh từ chỉ người/địa danh: "hai tỉnh", "năm nhóm người".
 - Dùng con số cho tuổi, số lượng, khoảng cách, %, tỷ lệ, nhiệt độ, tốc độ, tiền tệ, model máy.
@@ -186,13 +201,19 @@ QUY TRÌNH:
 2. GÓC NHÌN: Mình (người chia sẻ) nghĩ gì về điều này? Liên hệ thực tế ra sao?
 3. VIẾT: Tổng hợp thành status hấp dẫn, xưng "mình", giọng kể bạn bè
 
+QUAN TRỌNG — CÂU MỞ ĐẦU:
+- Câu đầu tiên PHẢI là thông tin cụ thể, có giá trị. Đi thẳng vào trọng tâm như đang viết tóm tắt.
+- CẤM bắt đầu bằng: "Mình vừa đọc/thấy/nghe...", "Gần đây...", "Mới đây...", "Như chúng ta đã biết..."
+- VD ĐÚNG: "Huawei thay đổi chiến lược định giá — bản Pro Max giờ ngang giá Xiaomi Ultra."
+- VD SAI: "Mình vừa đọc được một bài viết về giá điện thoại cao cấp..."
+
 YÊU CẦU:
 - 2-4 đoạn ngắn, tổng 100-250 từ
-- Đi thẳng vào insight/điểm hay nhất ngay câu đầu
 - Tóm nội dung gốc bằng lời mình, ghi credit tác giả/nguồn nếu biết
 - Thêm quan điểm cá nhân rõ ràng — đây là phần tạo giá trị
-- Kết bằng câu hỏi mở hoặc kêu gọi tương tác
-- Giọng tự nhiên, dễ đọc, có cảm xúc thật
+- Kết bằng câu hỏi mở CỤ THỂ (không hỏi chung chung kiểu "bạn nghĩ sao?")
+- Giọng tự nhiên, dễ đọc, có cảm xúc thật — nhưng mỗi cảm xúc chỉ nói MỘT lần
+- Tiền VND viết gọn: "45 triệu đồng", KHÔNG viết "44.990.000 đồng"
 
 RANH GIỚI: Đây là nội dung mình ĐỌC ĐƯỢC và chia sẻ lại — KHÔNG viết như thể mình là tác giả gốc hay người trải nghiệm trực tiếp.
 ` + VNREVIEW_RULES;
@@ -206,9 +227,11 @@ QUY TRÌNH:
 
 YÊU CẦU:
 - Tối đa 3 câu ngắn, dưới 280 ký tự
+- Câu đầu tiên PHẢI là thông tin cụ thể, CẤM câu dẫn dắt rỗng
 - Ghi nguồn/credit nếu biết
 - Viết lại bằng lời mình, không copy, không nhận vơ là trải nghiệm của mình
 - Giọng tự nhiên, đi thẳng vào ý chính
+- Tiền VND viết gọn: "45 triệu đồng", KHÔNG viết "44.990.000 đồng"
 ` + VNREVIEW_RULES;
 
 // STATUS CẢM XÚC - Emotional share + cảm nhận cá nhân
@@ -221,10 +244,12 @@ QUY TRÌNH:
 
 YÊU CẦU:
 - 2-3 đoạn, tối đa 150 từ
-- Mở bằng cảm xúc/reaction thật khi đọc bài — không giả tạo, không drama
+- Câu đầu tiên PHẢI chứa thông tin hoặc reaction cụ thể, CẤM câu dẫn dắt rỗng kiểu "Mình vừa đọc được..."
 - Dùng chi tiết cụ thể từ bài viết để tăng chiều sâu
-- Kết bằng câu hỏi hoặc suy ngẫm mở
+- Kết bằng câu hỏi hoặc suy ngẫm mở CỤ THỂ
 - Đây là nội dung mình ĐỌC ĐƯỢC — không viết như người trải nghiệm trực tiếp
+- Mỗi cảm xúc chỉ nói MỘT lần, không lặp
+- Tiền VND viết gọn: "45 triệu đồng"
 - Giọng kể chuyện, chân thật, có "hồn"
 ` + VNREVIEW_RULES;
 
@@ -628,6 +653,33 @@ function postProcessOutput(output, sourceText, type) {
   processed = processed.replace(/\bchủ nhật\b/gi, "Chủ nhật");
   // Fix month names (tháng một → tháng Một, but tháng 10 stays)
   processed = processed.replace(/\btháng (một|hai|ba|tư|năm|sáu|bảy|tám|chín)\b/gi, (m, mo) => "tháng " + mo.charAt(0).toUpperCase() + mo.slice(1));
+
+  // 7. Fix VND long format → short format (44.990.000 đồng → gần 45 triệu đồng)
+  processed = processed.replace(/(\d{1,3})\.(\d{3})\.(\d{3})\s*(?:đồng|VND|vnđ|VNĐ)/gi, (match, a, b, c) => {
+    const num = parseInt(a + b + c, 10);
+    if (num >= 1000000000) {
+      const ty = num / 1000000000;
+      return (ty % 1 === 0 ? ty.toString() : ty.toFixed(1).replace(".", ",")) + " tỷ đồng";
+    }
+    const trieu = num / 1000000;
+    if (trieu % 1 === 0) return trieu + " triệu đồng";
+    return trieu.toFixed(1).replace(".", ",") + " triệu đồng";
+  });
+
+  // 8. Remove empty lead-in sentences at the beginning
+  const leadInPatterns = [
+    /^[^\n.!?]*(?:mình|tôi|mình)\s+(?:vừa|mới|đã)\s+(?:đọc|xem|thấy|nghe|biết)\s+(?:được|thấy|về)?\s*[^\n.!?]*[.!?]\s*/i,
+    /^(?:gần đây|mới đây|dạo gần đây|thời gian gần đây)[,.]?\s*[^\n.!?]*[.!?]\s*/i,
+    /^(?:như (?:chúng ta|mọi người|các bạn) (?:đã |đều )?biết)[,.]?\s*[^\n.!?]*[.!?]\s*/i,
+    /^(?:hôm nay|hôm qua|sáng nay|tối qua)\s+(?:mình|tôi)\s+(?:đọc|xem|thấy|nghe)[^\n.!?]*[.!?]\s*/i,
+  ];
+  for (const pat of leadInPatterns) {
+    if (pat.test(processed)) {
+      processed = processed.replace(pat, "").trim();
+      issues.push("Đã xóa câu dẫn dắt rỗng ở đầu bài.");
+      break;
+    }
+  }
 
   // 7. Quality score
   let quality = "good";

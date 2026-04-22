@@ -41,7 +41,15 @@
       "run_at": "document_end"
     },
     {
-      "matches": ["<all_urls>"],
+      "matches": [
+        "https://www.facebook.com/*",
+        "https://m.facebook.com/*",
+        "https://*.threads.net/*",
+        "https://x.com/*",
+        "https://twitter.com/*",
+        "https://www.linkedin.com/*",
+        "https://www.reddit.com/*"
+      ],
       "js": ["translate.js"],
       "css": ["translate.css"],
       "run_at": "document_end"
