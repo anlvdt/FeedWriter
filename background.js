@@ -434,7 +434,7 @@ async function getSystemPrompt(type, site) {
   prompt += "\n\nTRƯỚC KHI VIẾT, hãy tự xác định loại nội dung (tin tức/ý kiến cá nhân/review sản phẩm/hướng dẫn/câu chuyện) và điều chỉnh giọng văn phù hợp.";
 
   if (baseType === "summary") {
-    prompt += "\n- QUAN TRỌNG: Tiêu đề (dòng đầu tiên) PHẢI ĐƯỢC VIẾT HOA TOÀN BỘ.";
+    prompt += "\n- Tiêu đề (dòng đầu tiên) viết bình thường, hệ thống sẽ tự động viết hoa.";
   }
 
   // Add custom instructions if provided
