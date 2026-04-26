@@ -35,12 +35,7 @@ const customAffPromptEl = document.getElementById("customAffPrompt");
 const saveBtn = document.getElementById("saveBtn");
 const status = document.getElementById("status");
 
-const SETTINGS_KEYS = [
-  "minLength", "outputLang", "summaryLength", "promptStyle",
-  "customInstructions", "customSummaryPrompt", "customAffPrompt"
-];
-
-chrome.storage.sync.get([...SETTINGS_KEYS, "apiKeys"], (d) => {
+chrome.storage.sync.get(["minLength","outputLang","summaryLength","promptStyle","customInstructions","customSummaryPrompt","customAffPrompt","apiKeys"], (d) => {
   if (d.minLength) minLengthInput.value = d.minLength;
   if (d.outputLang) outputLangSel.value = d.outputLang;
   if (d.summaryLength) summaryLengthSel.value = d.summaryLength;
@@ -48,8 +43,7 @@ chrome.storage.sync.get([...SETTINGS_KEYS, "apiKeys"], (d) => {
   if (d.customInstructions) customInstructionsEl.value = d.customInstructions;
   if (d.customSummaryPrompt) customSummaryPromptEl.value = d.customSummaryPrompt;
   if (d.customAffPrompt) customAffPromptEl.value = d.customAffPrompt;
-  const apiKeys = d.apiKeys || {};
-  const total = Object.values(apiKeys).reduce((s, arr) => s + (arr ? arr.length : 0), 0);
+  const total = Object.values(d.apiKeys || {}).reduce((s, a) => s + (a ? a.length : 0), 0);
   if (total === 0) showStatus('Chưa có API Key. Thêm ở tab "API Keys".', "error");
 });
 
@@ -72,12 +66,14 @@ function showStatus(msg, type) {
   setTimeout(() => { status.style.display = "none"; }, 4000);
 }
 
+function esc(s) { const d = document.createElement("span"); d.textContent = s; return d.innerHTML; }
+
 // === API KEYS ===
 const newApiKeyInput = document.getElementById("newApiKey");
 const addKeyBtn = document.getElementById("addKeyBtn");
 const keyStatus = document.getElementById("keyStatus");
 const testBtn = document.getElementById("testBtn");
-
+const keyEmptyState = document.getElementById("keyEmptyState");
 function showKeyStatus(msg, type) {
   keyStatus.textContent = msg;
   keyStatus.className = "status " + type;
@@ -100,20 +96,21 @@ function detectProvider(key) {
 
 const ALL_PROVIDERS = ["groq", "gemini", "cerebras", "sambanova", "openrouter"];
 
-function esc(s) { const d = document.createElement("span"); d.textContent = s; return d.innerHTML; }
-
 async function loadKeyLists() {
   const data = await chrome.storage.sync.get(["apiKeys"]);
   const apiKeys = data.apiKeys || {};
   const localData = await chrome.storage.local.get(["keyStatus"]);
-  const keyStatusData = localData.keyStatus || {};
+  const ks = localData.keyStatus || {};
+  let totalKeys = 0;
   for (const p of ALL_PROVIDERS) {
     const keys = apiKeys[p] || [];
+    totalKeys += keys.length;
     const cap = p.charAt(0).toUpperCase() + p.slice(1);
     const wrapper = document.getElementById("keyList" + cap);
     if (wrapper) wrapper.style.display = keys.length > 0 ? "block" : "none";
-    renderKeyList(p, keys, keyStatusData);
+    renderKeyList(p, keys, ks);
   }
+  if (keyEmptyState) keyEmptyState.style.display = totalKeys === 0 ? "block" : "none";
 }
 
 function renderKeyList(provider, keys, keyStatusData) {
@@ -135,7 +132,7 @@ function renderKeyList(provider, keys, keyStatusData) {
     return '<div class="key-item">' +
       '<span class="key-item-text">' + esc(maskKey(key)) + '</span>' +
       '<span class="key-item-status ' + cls + '">' + txt + '</span>' +
-      '<button class="key-item-delete" data-provider="' + provider + '" data-idx="' + i + '" title="Xóa">x</button>' +
+      '<button class="key-item-delete" data-provider="' + provider + '" data-idx="' + i + '" title="Xóa key">&times;</button>' +
       '</div>';
   }).join("");
 
@@ -170,19 +167,18 @@ testBtn.addEventListener("click", async () => {
   const data = await chrome.storage.sync.get(["apiKeys"]);
   const total = Object.values(data.apiKeys || {}).reduce((s, a) => s + (a ? a.length : 0), 0);
   if (total === 0) { showKeyStatus("Chưa có API Key", "error"); return; }
-  showKeyStatus("Đang test...", "success");
+  testBtn.disabled = true;
+  testBtn.textContent = "Đang test...";
   try {
     const r = await chrome.runtime.sendMessage({ action: "test-connection" });
-    if (r?.ok) {
-      showKeyStatus("OK — " + r.provider, "success");
-    } else {
-      showKeyStatus(r?.error || "Lỗi không xác định", "error");
-    }
+    showKeyStatus(r?.ok ? "OK — " + r.provider : (r?.error || "Lỗi"), r?.ok ? "success" : "error");
   } catch (e) { showKeyStatus("Lỗi: " + e.message, "error"); }
+  testBtn.disabled = false;
+  testBtn.textContent = "Test kết nối";
 });
 
 // Migrate old single apiKey
-async function migrateApiKeys() {
+(async () => {
   const data = await chrome.storage.sync.get(["apiKey", "apiKeys", "provider"]);
   const apiKeys = data.apiKeys || {};
   for (const p of ALL_PROVIDERS) { if (!apiKeys[p]) apiKeys[p] = []; }
@@ -191,8 +187,8 @@ async function migrateApiKeys() {
     if (!apiKeys[provider].includes(data.apiKey)) apiKeys[provider].push(data.apiKey);
     await chrome.storage.sync.set({ apiKeys });
   }
-}
-migrateApiKeys().then(() => loadKeyLists());
+  loadKeyLists();
+})();
 
 // === HISTORY ===
 let historyData = [];
@@ -205,7 +201,7 @@ async function loadHistory() {
   const actions = document.getElementById("historyActions");
   detail.style.display = "none";
   list.style.display = "block";
-  actions.style.display = "block";
+  actions.style.display = historyData.length > 0 ? "block" : "none";
   if (historyData.length === 0) { list.innerHTML = '<p class="empty">Chưa có lịch sử</p>'; return; }
   list.innerHTML = historyData.map((h, i) => {
     const bt = h.type || "summary";
@@ -246,7 +242,7 @@ document.getElementById("exportBtn").addEventListener("click", async () => {
   const data = await chrome.storage.local.get("history");
   const blob = new Blob([JSON.stringify(data.history || [], null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob); const a = document.createElement("a");
-  a.href = url; a.download = "summarizer-history.json"; a.click(); URL.revokeObjectURL(url);
+  a.href = url; a.download = "feedwriter-history.json"; a.click(); URL.revokeObjectURL(url);
 });
 
 document.getElementById("exportMdBtn").addEventListener("click", async () => {
@@ -255,7 +251,7 @@ document.getElementById("exportMdBtn").addEventListener("click", async () => {
   let md = "# Lịch sử FeedWriter\n\n";
   hist.forEach(h => {
     md += `## ${new Date(h.date).toLocaleString("vi")} - ${h.site || ""}\n\n`;
-    md += `> ${h.text.replace(/\n/g, "\n> ").substring(0, 500)}...\n\n${h.summary}\n\n---\n\n`;
+    md += `> ${(h.text || "").replace(/\n/g, "\n> ").substring(0, 500)}...\n\n${h.summary}\n\n---\n\n`;
   });
   const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
   const url = URL.createObjectURL(blob); const a = document.createElement("a");
@@ -263,6 +259,7 @@ document.getElementById("exportMdBtn").addEventListener("click", async () => {
 });
 
 document.getElementById("clearBtn").addEventListener("click", async () => {
+  if (!confirm("Xóa toàn bộ lịch sử?")) return;
   await chrome.storage.local.remove("history"); loadHistory();
 });
 
@@ -271,7 +268,6 @@ let reviewItems = [];
 
 function setAlarmButtonState(on) {
   document.getElementById("setAlarmBtn").classList.toggle("alarm-active", on);
-  document.getElementById("clearAlarmBtn").classList.remove("alarm-active");
 }
 
 async function loadReviewTab() {
@@ -282,14 +278,16 @@ async function loadReviewTab() {
   }
   const alarmData = await chrome.storage.local.get("reviewAlarm");
   const alarm = alarmData.reviewAlarm;
+  const alarmEl = document.getElementById("alarmStatus");
   if (alarm && alarm.enabled) {
-    document.getElementById("reviewTime").value = String(alarm.hour).padStart(2, "0") + ":" + String(alarm.minute).padStart(2, "0");
-    document.getElementById("alarmStatus").textContent = "Bật — " + String(alarm.hour).padStart(2, "0") + ":" + String(alarm.minute).padStart(2, "0") + " mỗi ngày";
-    document.getElementById("alarmStatus").style.color = "var(--success)";
+    const t = String(alarm.hour).padStart(2, "0") + ":" + String(alarm.minute).padStart(2, "0");
+    document.getElementById("reviewTime").value = t;
+    alarmEl.textContent = "Bật — " + t + " mỗi ngày";
+    alarmEl.className = "review-alarm-status alarm-on";
     setAlarmButtonState(true);
   } else {
-    document.getElementById("alarmStatus").textContent = "Chưa bật";
-    document.getElementById("alarmStatus").style.color = "var(--text-muted)";
+    alarmEl.textContent = "Chưa bật";
+    alarmEl.className = "review-alarm-status";
     setAlarmButtonState(false);
   }
 }
@@ -306,10 +304,12 @@ function renderReviewResults() {
       '<div class="review-item-meta">' + esc(item.author || item.site || "") + ' · ' + esc(item.aiReason || "") + '</div></div>' +
       (item.aiScore ? '<span class="review-item-score">' + item.aiScore + '</span>' : '') + img + '</div>';
   }).join("");
-  document.getElementById("selectAllReview").checked = true;
-  document.getElementById("selectAllReview").addEventListener("change", (e) => {
+  // Use a single delegated handler instead of re-adding listeners
+  const selectAll = document.getElementById("selectAllReview");
+  selectAll.checked = true;
+  selectAll.onchange = (e) => {
     list.querySelectorAll(".review-check").forEach(cb => { cb.checked = e.target.checked; });
-  });
+  };
 }
 
 document.getElementById("aiReviewBtn").addEventListener("click", async () => {
@@ -339,16 +339,23 @@ document.getElementById("setAlarmBtn").addEventListener("click", async () => {
   const t = document.getElementById("reviewTime").value; if (!t) return;
   const [h, m] = t.split(":").map(Number);
   await chrome.storage.local.set({ reviewAlarm: { hour: h, minute: m, enabled: true } });
-  document.getElementById("alarmStatus").textContent = "Bật — " + t + " mỗi ngày";
-  document.getElementById("alarmStatus").style.color = "var(--success)";
+  const alarmEl = document.getElementById("alarmStatus");
+  alarmEl.textContent = "Bật — " + t + " mỗi ngày";
+  alarmEl.className = "review-alarm-status alarm-on";
   setAlarmButtonState(true);
   chrome.runtime.sendMessage({ action: "set-review-alarm", hour: h, minute: m }).catch(() => { });
 });
 
 document.getElementById("clearAlarmBtn").addEventListener("click", async () => {
   await chrome.storage.local.set({ reviewAlarm: { enabled: false } });
-  document.getElementById("alarmStatus").textContent = "Đã tắt";
-  document.getElementById("alarmStatus").style.color = "var(--text-muted)";
+  const alarmEl = document.getElementById("alarmStatus");
+  alarmEl.textContent = "Đã tắt";
+  alarmEl.className = "review-alarm-status";
   setAlarmButtonState(false);
   chrome.runtime.sendMessage({ action: "clear-review-alarm" }).catch(() => { });
 });
+
+// === ABOUT: load version from manifest ===
+const ver = chrome.runtime.getManifest().version;
+const verEl = document.getElementById("aboutVersion");
+if (verEl) verEl.textContent = "FeedWriter v" + ver;

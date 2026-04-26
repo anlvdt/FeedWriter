@@ -209,6 +209,7 @@ body.light .btn-primary { background: linear-gradient(135deg, #7c3aed, #a855f7);
 .review-alarm-row { display: flex; gap: 6px; align-items: center; }
 .review-time-input { width: 130px; padding: 5px 8px; font-size: 12px; flex-shrink: 0; color-scheme: var(--color-scheme); }
 .review-alarm-status { font-size: 10px; color: var(--text-muted); margin-top: 4px; }
+.review-alarm-status.alarm-on { color: var(--success); }
 .alarm-active { border-color: var(--success) !important; color: var(--success) !important; background: var(--success-bg) !important; }
 
 /* About tab */

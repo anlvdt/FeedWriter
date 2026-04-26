@@ -312,22 +312,6 @@ const PROMPT_TEMPLATES = {
 
 const PROVIDER_PRIORITY = ["groq", "cerebras", "sambanova", "gemini", "openrouter"];
 
-const CALL_FN_STREAM_MAP = {
-  groq: "callGroqStream",
-  gemini: "callGeminiStream",
-  cerebras: "callCerebrasStream",
-  sambanova: "callSambanovaStream",
-  openrouter: "callOpenrouterStream",
-};
-
-const CALL_FN_NONSTREAM_MAP = {
-  groq: "callGroqNonStream",
-  gemini: "callGeminiNonStream",
-  cerebras: "callCerebrasNonStream",
-  sambanova: "callSambanovaNonStream",
-  openrouter: "callOpenrouterNonStream",
-};
-
 // Get the best available key across ALL providers
 async function getAvailableKey() {
   const data = await chrome.storage.sync.get(["apiKeys"]);
@@ -373,12 +357,6 @@ async function getAvailableKey() {
   if (totalKeys === 0) return { key: null, provider: null, noKeys: true };
   const waitMin = Math.max(1, Math.ceil((soonestTime - now) / 60000));
   return { key: null, provider: null, allLimited: true, waitMinutes: waitMin, total: totalKeys };
-}
-
-// Legacy single-provider getApiKey (kept for backward compat in some paths)
-async function getApiKey(provider) {
-  const result = await getAvailableKey();
-  return result;
 }
 
 async function markKeyRateLimited(key, retryAfterMs) {
@@ -606,11 +584,6 @@ async function translateWord(word) {
   const key = word.toLowerCase().trim();
   if (translateCache.has(key)) return translateCache.get(key);
 
-  const keyInfo = await getAvailableKey();
-  if (!keyInfo.key) return { error: "Chưa nhập API Key." };
-  const apiKey = keyInfo.key;
-  const provider = keyInfo.provider;
-
   const prompt = `Dịch từ/cụm từ tiếng Anh sang tiếng Việt. Trả lời NGẮN GỌN theo format:
 [phiên âm] — nghĩa 1, nghĩa 2
 (loại từ) giải thích ngắn nếu cần
@@ -621,30 +594,39 @@ Ví dụ:
 
 Từ cần dịch: "${key}"`;
 
-  try {
-    let result;
-    // Use non-streaming call for translation (works for all providers)
-    const callFnMap = {
-      groq: callGroqNonStream,
-      gemini: callGeminiNonStream,
-      cerebras: callCerebrasNonStream,
-      sambanova: callSambanovaNonStream,
-      openrouter: callOpenrouterNonStream,
-    };
-    const callFn = callFnMap[provider] || callGroqNonStream;
-    result = await callFn(apiKey, prompt, "You are a concise English-Vietnamese dictionary.");
+  const nonStreamFns = {
+    groq: callGroqNonStream,
+    gemini: callGeminiNonStream,
+    cerebras: callCerebrasNonStream,
+    sambanova: callSambanovaNonStream,
+    openrouter: callOpenrouterNonStream,
+  };
 
-    const output = { word: key, translation: (result || "").trim() };
-    translateCache.set(key, output);
-    // Keep cache small
-    if (translateCache.size > 200) {
-      const first = translateCache.keys().next().value;
-      translateCache.delete(first);
+  // Try up to 3 times (different keys/providers on each attempt)
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const keyInfo = await getAvailableKey();
+    if (!keyInfo.key) return { error: "Chưa có API Key khả dụng." };
+
+    const callFn = nonStreamFns[keyInfo.provider] || callGroqNonStream;
+    try {
+      const result = await callFn(keyInfo.key, prompt, "You are a concise English-Vietnamese dictionary.");
+      const output = { word: key, translation: (result || "").trim() };
+      translateCache.set(key, output);
+      if (translateCache.size > 200) {
+        const first = translateCache.keys().next().value;
+        translateCache.delete(first);
+      }
+      return output;
+    } catch (e) {
+      // If rate limited, mark key and retry with next
+      if (e.message && (e.message.includes("429") || e.message.toLowerCase().includes("rate") || e.message.toLowerCase().includes("limit"))) {
+        await markKeyRateLimited(keyInfo.key, parseRetryAfter(e.message));
+        continue;
+      }
+      return { error: e.message };
     }
-    return output;
-  } catch (e) {
-    return { error: e.message };
   }
+  return { error: "Tất cả key đều bị rate limit." };
 }
 
 // === HELPER: Intelligent text cleaning ===
@@ -931,36 +913,21 @@ async function saveHistory(text, summary, site, type, sourceUrl, imageUrl, autho
   await chrome.storage.local.set({ history });
 }
 
-// === AI REVIEW: Đề xuất tin hay ===
+// reviewTodayHistory uses getAvailableKey with retry on rate limit
 async function reviewTodayHistory() {
   const localData = await chrome.storage.local.get("history");
-
-  const keyInfo = await getAvailableKey();
-  if (!keyInfo.key) {
-    if (keyInfo.noKeys) return { error: "Chưa có API Key. Thêm ở tab API Keys." };
-    if (keyInfo.allLimited) return { error: "Tất cả key đều bị rate limit. Thử lại sau ~" + keyInfo.waitMinutes + " phút." };
-    return { error: "Không tìm được key khả dụng." };
-  }
-  const apiKey = keyInfo.key;
-  const provider = keyInfo.provider;
-  const data = { history: localData.history };
-
-  const history = data.history || [];
+  const history = localData.history || [];
   const today = new Date().toISOString().slice(0, 10);
   const todayItems = history.filter(h => h.date && h.date.startsWith(today));
 
   if (todayItems.length === 0) return { error: "Chưa có bài tóm tắt nào hôm nay." };
 
-  // Cap at 20 most recent items; truncate each to keep prompt under token limit
   const MAX_ITEMS = 20;
-  const SUMMARY_CAP = 200;
-  const TITLE_CAP = 80;
   const cappedItems = todayItems.slice(0, MAX_ITEMS);
 
-  // Build prompt for AI to review
   const itemsList = cappedItems.map((h, i) => {
-    const title = (h.postTitle || "N/A").substring(0, TITLE_CAP);
-    const summary = (h.summary || "").substring(0, SUMMARY_CAP);
+    const title = (h.postTitle || "N/A").substring(0, 80);
+    const summary = (h.summary || "").substring(0, 200);
     return `[${i}] Nguồn: ${h.site} | Tác giả: ${h.author || "N/A"} | Tiêu đề: ${title}\nTóm tắt: ${summary}\nLink: ${h.sourceUrl || "N/A"}`;
   }).join("\n\n");
 
@@ -978,40 +945,50 @@ Trả về ĐÚNG JSON array, mỗi phần tử là index của bài được ch
 
 CHỈ trả về JSON, không giải thích thêm.`;
 
-  try {
-    const callFnMap = {
-      groq: callGroqNonStream,
-      gemini: callGeminiNonStream,
-      cerebras: callCerebrasNonStream,
-      sambanova: callSambanovaNonStream,
-      openrouter: callOpenrouterNonStream,
-    };
-    const callFn = callFnMap[provider] || callGroqNonStream;
-    const result = await callFn(apiKey, itemsList, systemPrompt);
-    if (!result) return { error: "AI không phản hồi." };
+  const nonStreamFns = {
+    groq: callGroqNonStream,
+    gemini: callGeminiNonStream,
+    cerebras: callCerebrasNonStream,
+    sambanova: callSambanovaNonStream,
+    openrouter: callOpenrouterNonStream,
+  };
 
-    // Parse AI response
-    const jsonMatch = result.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) return { error: "AI phản hồi không hợp lệ." };
+  // Retry up to 3 times with different keys/providers
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const keyInfo = await getAvailableKey();
+    if (!keyInfo.key) {
+      if (keyInfo.noKeys) return { error: "Chưa có API Key. Thêm ở tab API Keys." };
+      if (keyInfo.allLimited) return { error: "Tất cả key bị rate limit. Thử lại sau ~" + keyInfo.waitMinutes + " phút." };
+      return { error: "Không tìm được key khả dụng." };
+    }
 
-    const picks = JSON.parse(jsonMatch[0]);
-    const recommended = picks
-      .filter(p => typeof p.index === "number" && p.index >= 0 && p.index < todayItems.length)
-      .map(p => ({
-        ...todayItems[p.index],
-        aiScore: p.score || 0,
-        aiReason: p.reason || "",
-      }));
+    const callFn = nonStreamFns[keyInfo.provider] || callGroqNonStream;
+    try {
+      const result = await callFn(keyInfo.key, itemsList, systemPrompt);
+      if (!result) return { error: "AI không phản hồi." };
 
-    // Save recommendations
-    await chrome.storage.local.set({
-      aiReview: { date: today, items: recommended, reviewedAt: new Date().toISOString() }
-    });
+      const jsonMatch = result.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) return { error: "AI phản hồi không hợp lệ." };
 
-    return { success: true, count: recommended.length, items: recommended };
-  } catch (e) {
-    return { error: "Lỗi AI Review: " + e.message };
+      const picks = JSON.parse(jsonMatch[0]);
+      const recommended = picks
+        .filter(p => typeof p.index === "number" && p.index >= 0 && p.index < todayItems.length)
+        .map(p => ({ ...todayItems[p.index], aiScore: p.score || 0, aiReason: p.reason || "" }));
+
+      await chrome.storage.local.set({
+        aiReview: { date: today, items: recommended, reviewedAt: new Date().toISOString() }
+      });
+
+      return { success: true, count: recommended.length, items: recommended };
+    } catch (e) {
+      if (e.message && (e.message.includes("429") || e.message.toLowerCase().includes("rate"))) {
+        await markKeyRateLimited(keyInfo.key, parseRetryAfter(e.message));
+        continue;
+      }
+      return { error: "Lỗi AI Review: " + e.message };
+    }
   }
+  return { error: "Tất cả key bị rate limit." };
 }
 
 // Non-streaming API calls for AI review

@@ -13,7 +13,7 @@
 
     <div class="tabs">
       <button class="tab active" data-tab="settings">Cài đặt</button>
-      <button class="tab" data-tab="apikeys">API Keys</button>
+      <button class="tab" data-tab="apikeys">Keys</button>
       <button class="tab" data-tab="history">Lịch sử</button>
       <button class="tab" data-tab="review">Tin hay</button>
       <button class="tab" data-tab="about">About</button>
@@ -80,6 +80,8 @@
       <div class="apikey-info">
         Tự động rotate key khi bị rate limit. Tự động chuyển provider khi tất cả key của 1 provider hết hạn.
       </div>
+
+      <div id="keyEmptyState" class="empty" style="display:none">Chưa có key nào. Dán key vào ô trên để bắt đầu.</div>
 
       <div id="keyListGroq" class="key-list" style="display:none">
         <div class="key-list-header">Groq <span class="key-limit-badge">100K token/ngày/key</span></div>
@@ -205,7 +207,7 @@
       </div>
 
       <div style="text-align:center; margin-top:10px;">
-        <a href="https://github.com/anlvdt/fb-post-summarizer" target="_blank" style="color:var(--text-muted); font-size:11px; text-decoration:none;">FeedWriter v2.1 — GitHub</a>
+        <a id="aboutVersion" href="https://github.com/anlvdt/fb-post-summarizer" target="_blank" style="color:var(--text-muted); font-size:11px; text-decoration:none;">FeedWriter</a>
       </div>
     </div>
   </div>

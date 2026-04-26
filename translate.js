@@ -89,7 +89,14 @@
     const rect = range.getBoundingClientRect();
     if (rect.width === 0 && rect.height === 0) return;
 
-    showTranslateTooltip(text, rect);
+    // Wake service worker before sending message (MV3 SW may be asleep)
+    chrome.runtime.sendMessage({ action: "ping" }, () => {
+      if (chrome.runtime.lastError) {
+        // SW couldn't wake — context likely invalidated
+        return;
+      }
+      showTranslateTooltip(text, rect);
+    });
   });
 
   document.addEventListener("mousedown", (e) => {
