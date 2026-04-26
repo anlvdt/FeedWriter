@@ -217,6 +217,7 @@ CHỐNG BỊA THÔNG TIN (HALLUCINATION):
 
 QUY TẮC CHÍNH TẢ:
 - Câu ngắn, từ ngắn. Mỗi đoạn văn thể hiện MỘT ý.
+- THUẬT NGỮ CÔNG NGHỆ: "code/coding" dịch là "lập trình" hoặc giữ nguyên "code", TUYỆT ĐỐI KHÔNG dịch thành "mã hóa". "coder" = "lập trình viên". "source code" = "mã nguồn".
 - Chữ số: dấu chấm (.) chỉ hàng nghìn (VD: 1.500), dấu phẩy (,) chỉ phần thập phân (VD: 2,2 mm).
 - Dấu chấm (.) cho inch, pixel, GHz: 8.9 inch, 18.2 megapixel, 2.2 GHz.
 - Viết bằng chữ số dưới 10 trước danh từ chỉ người/địa danh: "hai tỉnh", "năm nhóm người".
@@ -748,6 +749,7 @@ function postProcessOutput(output, sourceText, type) {
   // Remove "Tóm tắt:" or "Summary:" prefix that LLMs sometimes prepend
   processed = processed.replace(/^(tóm tắt|summary|status|review|affiliate)\s*[:：]\s*/i, "").trim();
 
+  // Viết hoa toàn bộ dòng tiêu đề đầu tiên
   if (type && type.startsWith("summary")) {
     const lines = processed.split("\n");
     for (let i = 0; i < lines.length; i++) {
