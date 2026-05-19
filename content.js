@@ -784,13 +784,13 @@ function copyResult() {
 
   // Add Shopee products to copied text if available
   if (currentShopeeProducts && currentShopeeProducts.length > 0) {
-    console.log('[FeedWriter] Adding Shopee products to copy:', currentShopeeProducts.length);
+    console.log('[FeedWriter] Adding Shopee product to copy:', currentShopeeProducts[0]);
     try {
-      const productsText = window.formatProductListForSummary(currentShopeeProducts);
-      console.log('[FeedWriter] Products text:', productsText);
-      text = text + productsText;
+      const productText = window.formatSingleProduct(currentShopeeProducts[0]);
+      console.log('[FeedWriter] Product text:', productText);
+      text = text + productText;
     } catch (error) {
-      console.error('[FeedWriter] Error formatting products for copy:', error);
+      console.error('[FeedWriter] Error formatting product for copy:', error);
     }
   } else {
     console.log('[FeedWriter] No Shopee products to add');
@@ -830,13 +830,13 @@ async function handlePostStatus() {
 
     // Add Shopee products to text if available
     if (currentShopeeProducts && currentShopeeProducts.length > 0) {
-      console.log('[FeedWriter] Adding Shopee products to post:', currentShopeeProducts.length);
+      console.log('[FeedWriter] Adding Shopee product to post:', currentShopeeProducts[0]);
       try {
-        const productsText = window.formatProductListForSummary(currentShopeeProducts);
-        console.log('[FeedWriter] Products text:', productsText);
-        text = text + productsText;
+        const productText = window.formatSingleProduct(currentShopeeProducts[0]);
+        console.log('[FeedWriter] Product text:', productText);
+        text = text + productText;
       } catch (error) {
-        console.error('[FeedWriter] Error formatting products for post:', error);
+        console.error('[FeedWriter] Error formatting product for post:', error);
       }
     } else {
       console.log('[FeedWriter] No Shopee products to add to post');
