@@ -100,13 +100,16 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
       // Temporarily override globalCustomSourceLink if user typed something manually
       const oldGithubLink = typeof globalCustomSourceLink !== 'undefined' ? globalCustomSourceLink : '';
       if (typeof globalCustomSourceLink !== 'undefined') globalCustomSourceLink = githubUrl || '';
-      
-      commentText.textContent = window.buildCommentText(url, cleanAuthor, cleanSource);
-      
+
+      const commentContent = window.buildCommentText(url, cleanAuthor, cleanSource);
+      // Use innerHTML with <br> to preserve line breaks
+      commentText.innerHTML = commentContent.replace(/\n/g, '<br>');
+
       // Restore
       if (typeof globalCustomSourceLink !== 'undefined') globalCustomSourceLink = oldGithubLink;
     } else {
-      commentText.textContent = "• Nguồn bài viết:\n  " + (url || "(chưa có link bài gốc)") + (githubUrl ? "\n• Mã nguồn (Github/Repo): " + githubUrl : "");
+      const fallbackContent = "• Nguồn bài viết:\n  " + (url || "(chưa có link bài gốc)") + (githubUrl ? "\n• Mã nguồn (Github/Repo): " + githubUrl : "");
+      commentText.innerHTML = fallbackContent.replace(/\n/g, '<br>');
     }
   }
 

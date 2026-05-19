@@ -828,20 +828,6 @@ async function handlePostStatus() {
     text = text.trim();
     if (!text) return;
 
-    // Add Shopee products to text if available
-    if (currentShopeeProducts && currentShopeeProducts.length > 0) {
-      console.log('[FeedWriter] Adding Shopee product to post:', currentShopeeProducts[0]);
-      try {
-        const productText = window.formatSingleProduct(currentShopeeProducts[0]);
-        console.log('[FeedWriter] Product text:', productText);
-        text = text + productText;
-      } catch (error) {
-        console.error('[FeedWriter] Error formatting product for post:', error);
-      }
-    } else {
-      console.log('[FeedWriter] No Shopee products to add to post');
-    }
-
     // Lấy metadata từ DOM element (nếu có)
     const _element = lastSummarizeParams?._element || null;
     const rawUrl = _element ? extractPostPermalink(_element) : location.href;
@@ -1018,8 +1004,8 @@ function buildCommentText(cleanUrl, author, source) {
 
   out = out.replace("{link}", linkStr);
 
-  // Cleanup extra spaces
-  out = out.split('\n').map(line => line.replace(/\s+/g, ' ').trim()).join('\n').trim();
+  // Cleanup extra spaces but preserve intentional line breaks
+  out = out.split('\n').map(line => line.replace(/\s+/g, ' ').trim()).filter(line => line).join('\n');
   if (!out) out = "• Nguồn bài viết:\n  " + linkStr;
 
   // Add Shopee product if available

@@ -183,7 +183,7 @@ async function shortenURL(longUrl) {
  * @returns {string} - Formatted text
  */
 function formatSingleProduct(product) {
-  return `\n\n🛍️ **Gợi ý mua sắm:**\n**${product.title}**\n🔗 ${product.link}\n`;
+  return `\n\n🛍️ **Gợi ý mua sắm:**\n\n**${product.title}**\n\n🔗 ${product.link}`;
 }
 
 // Export functions
