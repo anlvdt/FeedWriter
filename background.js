@@ -719,6 +719,64 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  // === SHORTEN URL (bypass CORS) ===
+  if (request.action === "shorten-url") {
+    (async () => {
+      try {
+        const longUrl = request.url;
+
+        // Try TinyURL first
+        try {
+          const response = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}`, {
+            method: 'GET',
+          });
+
+          if (response.ok) {
+            const shortUrl = await response.text();
+            if (shortUrl && shortUrl.startsWith('http')) {
+              console.log('[FeedWriter] TinyURL success:', shortUrl);
+              sendResponse({ success: true, shortUrl: shortUrl });
+              return;
+            }
+          }
+        } catch (error) {
+          console.warn('[FeedWriter] TinyURL failed:', error);
+        }
+
+        // Fallback to is.gd
+        try {
+          const params = new URLSearchParams({
+            format: 'simple',
+            url: longUrl,
+          });
+
+          const response = await fetch(`https://is.gd/create.php?${params}`, {
+            method: 'GET',
+          });
+
+          if (response.ok) {
+            const shortUrl = await response.text();
+            if (shortUrl && shortUrl.startsWith('http')) {
+              console.log('[FeedWriter] is.gd success:', shortUrl);
+              sendResponse({ success: true, shortUrl: shortUrl });
+              return;
+            }
+          }
+        } catch (error) {
+          console.warn('[FeedWriter] is.gd failed:', error);
+        }
+
+        // If both fail, return original URL
+        console.warn('[FeedWriter] URL shortening failed, using original URL');
+        sendResponse({ success: true, shortUrl: longUrl });
+      } catch (error) {
+        console.error('[FeedWriter] Error shortening URL:', error);
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+    return true;
+  }
+
   // === AGENT POSTED — show browser notification ===
   if (request.action === "agent-posted") {
     const preview = (request.preview || "").substring(0, 80);

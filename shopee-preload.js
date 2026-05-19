@@ -46,19 +46,38 @@ async function getDailyProductLinks(affiliateId) {
 
   // If links exist and are from today, return them
   if (stored.shopeeLinksDate === today && stored.shopeeLinks && stored.shopeeLinks.length === 24) {
-    console.log('[Shopee] Using cached links from today:', today);
-    return stored.shopeeLinks;
+    // Check if links are shortened (not full shopee.vn URLs)
+    const firstLink = stored.shopeeLinks[0]?.link || '';
+    if (firstLink.includes('shopee.vn/search')) {
+      console.log('[Shopee] Cached links are not shortened, regenerating...');
+      // Clear old cache and regenerate
+    } else {
+      console.log('[Shopee] Using cached links from today:', today);
+      return stored.shopeeLinks;
+    }
   }
 
   // Generate new links for today
   console.log('[Shopee] Generating new links for:', today);
-  const links = PRELOADED_PRODUCTS.map(product => {
+
+  // Generate links with URL shortening
+  const links = [];
+  for (const product of PRELOADED_PRODUCTS) {
     const shopeeURL = generateShopeeSearchURL(product.keyword, affiliateId);
-    return {
+
+    // Shorten URL
+    let shortURL = shopeeURL;
+    try {
+      shortURL = await shortenURL(shopeeURL);
+    } catch (error) {
+      console.warn('[Shopee] Failed to shorten URL for:', product.title, error);
+    }
+
+    links.push({
       title: product.title,
-      link: shopeeURL, // Use full URL directly (no shortening for speed)
-    };
-  });
+      link: shortURL,
+    });
+  }
 
   // Save to storage
   await new Promise(resolve => {
@@ -129,12 +148,42 @@ function generateShopeeSearchURL(keyword, affiliateId) {
 }
 
 /**
+ * Shorten URL using background service worker (bypass CORS)
+ * @param {string} longUrl - URL to shorten
+ * @returns {Promise<string>} - Shortened URL
+ */
+async function shortenURL(longUrl) {
+  try {
+    const response = await new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage(
+        { action: 'shorten-url', url: longUrl },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else if (response.success) {
+            resolve(response.shortUrl);
+          } else {
+            reject(new Error(response.error || 'Unknown error'));
+          }
+        }
+      );
+    });
+
+    console.log('[Shopee] URL shortened:', response);
+    return response;
+  } catch (error) {
+    console.warn('[Shopee] URL shortening failed:', error);
+    return longUrl; // Return original URL if shortening fails
+  }
+}
+
+/**
  * Format single product for display
  * @param {Object} product - Product object
  * @returns {string} - Formatted text
  */
 function formatSingleProduct(product) {
-  return `\n\n🛍️ **Sản phẩm hot:**\n**${product.title}**\n🔗 ${product.link}\n`;
+  return `\n\n🛍️ **Gợi ý mua sắm:**\n**${product.title}**\n🔗 ${product.link}\n`;
 }
 
 // Export functions

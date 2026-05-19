@@ -1022,6 +1022,16 @@ function buildCommentText(cleanUrl, author, source) {
   out = out.split('\n').map(line => line.replace(/\s+/g, ' ').trim()).join('\n').trim();
   if (!out) out = "• Nguồn bài viết:\n  " + linkStr;
 
+  // Add Shopee product if available
+  if (currentShopeeProducts && currentShopeeProducts.length > 0) {
+    try {
+      const productText = window.formatSingleProduct(currentShopeeProducts[0]);
+      out += productText;
+    } catch (error) {
+      console.error('[FeedWriter] Error adding Shopee to source:', error);
+    }
+  }
+
   return out;
 }
 
@@ -2541,14 +2551,11 @@ async function addShopeeProductsToSummary(text, summaryHtml) {
 
     console.log('[FeedWriter] Got product:', product);
 
-    // Store product for copy function
+    // Store product for copy function (don't display in panel)
     currentShopeeProducts = [product];
 
-    // Generate product text
-    const productText = window.formatSingleProduct(product);
-
-    // Return summary with product
-    return summaryHtml + productText;
+    // Return summary without product (product only appears when copying)
+    return summaryHtml;
   } catch (error) {
     console.error('[FeedWriter] Error adding Shopee product:', error);
     currentShopeeProducts = [];

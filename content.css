@@ -1307,10 +1307,10 @@
   flex: 1;
   min-width: 0;
   padding: 7px 10px;
-  border: 1.5px dashed rgba(168, 85, 247, 0.35);
+  border: 1.5px solid rgba(255, 255, 255, 0.15);
   border-radius: 8px;
-  background: rgba(168, 85, 247, 0.06);
-  color: #e4e6eb;
+  background: rgba(255, 255, 255, 0.95);
+  color: #1a1a1a;
   font-size: 12px;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   outline: none;
@@ -1318,25 +1318,25 @@
 }
 
 .fbs-sp-link-field:hover {
-  border-color: rgba(168, 85, 247, 0.5);
-  background: rgba(168, 85, 247, 0.08);
+  border-color: rgba(168, 85, 247, 0.3);
+  background: rgba(255, 255, 255, 1);
 }
 
 .fbs-sp-link-field:focus {
   border-style: solid;
-  border-color: rgba(168, 85, 247, 0.6);
-  background: rgba(168, 85, 247, 0.1);
+  border-color: rgba(168, 85, 247, 0.5);
+  background: rgba(255, 255, 255, 1);
   box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.12);
 }
 
 .fbs-sp-link-field.has-value {
   border-style: solid;
   border-color: rgba(46, 213, 115, 0.4);
-  background: rgba(46, 213, 115, 0.06);
+  background: rgba(255, 255, 255, 1);
 }
 
 .fbs-sp-link-field::placeholder {
-  color: #888;
+  color: #666;
   font-style: italic;
 }
 
