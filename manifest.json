@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "FeedWriter",
-  "version": "2.2.0",
-  "description": "Tóm tắt bài viết bằng AI với tiêu đề hook mạnh, chỉnh sửa & copy thành status. Viết Status tối ưu reach. Chế bài affiliate. Dịch từ Anh-Việt.",
+  "version": "2.3.0",
+  "description": "Tóm tắt bài viết bằng AI với tiêu đề hook mạnh, chỉnh sửa & copy thành status. Viết Status tối ưu reach. Chế bài affiliate. Tự động tìm sản phẩm Shopee hot. Dịch từ Anh-Việt.",
   "author": "Le An (anlvdt)",
   "homepage_url": "https://github.com/anlvdt/fb-post-summarizer",
   "permissions": [
@@ -22,7 +22,10 @@
     "https://api.sambanova.ai/*",
     "https://openrouter.ai/*",
     "*://*.shope.ee/*",
-    "*://*.shopee.vn/*"
+    "*://*.shopee.vn/*",
+    "https://tiki.vn/*",
+    "https://tinyurl.com/*",
+    "https://is.gd/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -39,7 +42,7 @@
         "https://www.linkedin.com/*",
         "https://www.reddit.com/*"
       ],
-      "js": ["errors.js", "utils.js", "content-dom.js", "content-composer.js", "content.js", "auto-pilot.js"],
+      "js": ["errors.js", "utils.js", "shopee-api.js", "content-dom.js", "content-composer.js", "content.js", "auto-pilot.js"],
       "css": ["content.css"],
       "run_at": "document_end"
     },

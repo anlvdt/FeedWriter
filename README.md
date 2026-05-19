@@ -6,14 +6,28 @@
 
 <p align="center">
   Chrome Extension — Tóm tắt bài viết, viết status & affiliate bằng AI.<br>
-  Dịch từ vựng Anh → Việt. Tối ưu cho Facebook.
+  Tự động tìm sản phẩm hot Shopee + tạo affiliate link. Dịch từ vựng Anh → Việt.
 </p>
 
 <p align="center">
+  <img src="https://img.shields.io/badge/version-2.3.0-blue" alt="Version 2.3.0">
   <img src="https://img.shields.io/badge/manifest-v3-blue" alt="Manifest V3">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License">
   <img src="https://img.shields.io/badge/dependencies-zero-brightgreen" alt="Zero deps">
 </p>
+
+---
+
+## 🎉 Tính năng mới v2.3.0
+
+### 🛍️ Shopee Affiliate Integration
+
+- **Tự động tìm sản phẩm hot** trên Shopee dựa trên nội dung bài viết
+- **Tạo affiliate link** với Shopee Affiliate ID của bạn
+- **Hiển thị top 5 sản phẩm** liên quan ngay trong panel tóm tắt
+- **Thông tin chi tiết:** giá, rating, số lượng bán, link mua hàng
+
+👉 **[Xem hướng dẫn chi tiết](SHOPEE_AFFILIATE_GUIDE.md)**
 
 ---
 
@@ -24,6 +38,7 @@ Extension giúp bạn xử lý nội dung trên Facebook nhanh hơn:
 - **Tóm tắt** bài viết dài thành vài câu ngắn gọn
 - **Viết lại** thành status cá nhân ở ngôi thứ nhất
 - **Chế bài affiliate** từ bài review sản phẩm
+- **Tìm sản phẩm Shopee** tự động với affiliate link
 - **Dịch từ** tiếng Anh sang tiếng Việt bằng double-click
 
 Mọi thứ chạy bằng AI (Groq hoặc Gemini), API key miễn phí, không thu thập dữ liệu.

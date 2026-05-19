@@ -766,9 +766,36 @@ function stopSummarize() {
 function copyResult() {
   // If in edit mode, get text from textarea; otherwise use edited cache or display text
   const textarea = panelBody?.querySelector(".fbs-edit-textarea");
-  const text = textarea
-    ? textarea.value
-    : panelBody?.dataset?.editedText || panelBody?.innerText || "";
+  let text = "";
+
+  if (textarea) {
+    text = textarea.value;
+  } else if (panelBody?.dataset?.editedText) {
+    text = panelBody.dataset.editedText;
+  } else {
+    // Get text from fbs-result only (exclude product list HTML)
+    const resultEl = panelBody?.querySelector(".fbs-result");
+    if (resultEl) {
+      text = resultEl.innerText || resultEl.textContent || "";
+    } else {
+      text = panelBody?.innerText || "";
+    }
+  }
+
+  // Add Shopee products to copied text if available
+  if (currentShopeeProducts && currentShopeeProducts.length > 0) {
+    console.log('[FeedWriter] Adding Shopee products to copy:', currentShopeeProducts.length);
+    try {
+      const productsText = window.formatProductListForSummary(currentShopeeProducts);
+      console.log('[FeedWriter] Products text:', productsText);
+      text = text + productsText;
+    } catch (error) {
+      console.error('[FeedWriter] Error formatting products for copy:', error);
+    }
+  } else {
+    console.log('[FeedWriter] No Shopee products to add');
+  }
+
   navigator.clipboard.writeText(text).then(() => {
     const btn = panel.querySelector(".fbs-copy-btn");
     const orig = btn.innerHTML;
@@ -796,10 +823,24 @@ async function handlePostStatus() {
     } else if (panelBody.dataset.editedText) {
       text = panelBody.dataset.editedText;
     } else if (resultEl) {
-      text = resultEl.innerText;
+      text = resultEl.innerText || resultEl.textContent || "";
     }
     text = text.trim();
     if (!text) return;
+
+    // Add Shopee products to text if available
+    if (currentShopeeProducts && currentShopeeProducts.length > 0) {
+      console.log('[FeedWriter] Adding Shopee products to post:', currentShopeeProducts.length);
+      try {
+        const productsText = window.formatProductListForSummary(currentShopeeProducts);
+        console.log('[FeedWriter] Products text:', productsText);
+        text = text + productsText;
+      } catch (error) {
+        console.error('[FeedWriter] Error formatting products for post:', error);
+      }
+    } else {
+      console.log('[FeedWriter] No Shopee products to add to post');
+    }
 
     // Lấy metadata từ DOM element (nếu có)
     const _element = lastSummarizeParams?._element || null;
@@ -2464,3 +2505,161 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
   return false;
 });
+
+// === SHOPEE PRODUCTS INTEGRATION ===
+// Store current Shopee products for copy function
+let currentShopeeProducts = [];
+
+/**
+ * Add Shopee products to summary result
+ * @param {string} text - Original text to extract keywords from
+ * @param {string} summaryHtml - Current summary HTML
+ * @returns {Promise<string>} - Summary HTML with products appended
+ */
+async function addShopeeProductsToSummary(text, summaryHtml) {
+  try {
+    console.log('[FeedWriter] addShopeeProductsToSummary called');
+    console.log('[FeedWriter] window.findHotProductsWithAffiliateLinks exists:', typeof window.findHotProductsWithAffiliateLinks);
+    console.log('[FeedWriter] window.formatProductListAsHTML exists:', typeof window.formatProductListAsHTML);
+    console.log('[FeedWriter] window.formatProductListForSummary exists:', typeof window.formatProductListForSummary);
+
+    // Get settings
+    const settings = await new Promise(resolve => {
+      chrome.storage.sync.get(['shopeeAffiliateId', 'autoFindShopeeProducts'], resolve);
+    });
+
+    console.log('[FeedWriter] Shopee settings:', settings);
+
+    // Skip if auto-find is disabled
+    if (!settings.autoFindShopeeProducts) {
+      console.log('[FeedWriter] Auto-find Shopee products is disabled');
+      currentShopeeProducts = [];
+      return summaryHtml;
+    }
+
+    // Show loading skeleton
+    const loadingHtml = summaryHtml + `
+      <div class="fbs-product-list">
+        <div class="fbs-product-header">🛍️ Đang tìm sản phẩm hot...</div>
+        <div class="fbs-product-skeleton">
+          <div class="fbs-product-skeleton-image"></div>
+          <div class="fbs-product-skeleton-info">
+            <div class="fbs-product-skeleton-line"></div>
+            <div class="fbs-product-skeleton-line medium"></div>
+            <div class="fbs-product-skeleton-line short"></div>
+          </div>
+        </div>
+        <div class="fbs-product-skeleton">
+          <div class="fbs-product-skeleton-image"></div>
+          <div class="fbs-product-skeleton-info">
+            <div class="fbs-product-skeleton-line"></div>
+            <div class="fbs-product-skeleton-line medium"></div>
+            <div class="fbs-product-skeleton-line short"></div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Update UI with loading state
+    if (panelBody) {
+      panelBody.innerHTML = loadingHtml;
+    }
+
+    console.log('[FeedWriter] Finding Shopee products for text:', text.substring(0, 100));
+
+    // Find products
+    const products = await window.findHotProductsWithAffiliateLinks(
+      text,
+      settings.shopeeAffiliateId || ''
+    );
+
+    console.log('[FeedWriter] Found products:', products.length, products);
+
+    // Store products for copy function
+    currentShopeeProducts = products;
+
+    // Generate products HTML
+    const productsHtml = window.formatProductListAsHTML(products);
+
+    // Return summary with products
+    return summaryHtml + productsHtml;
+  } catch (error) {
+    console.error('[FeedWriter] Error adding Shopee products:', error);
+    currentShopeeProducts = [];
+    // Return original summary if error
+    return summaryHtml;
+  }
+}
+
+/**
+ * Enhance summarizeText to include Shopee products
+ */
+const originalSummarizeText = summarizeText;
+summarizeText = async function(text, type, element, tone) {
+  console.log('[FeedWriter] summarizeText wrapper called - type:', type, 'panelBody exists:', !!panelBody);
+
+  // Call original function
+  const result = await originalSummarizeText.call(this, text, type, element, tone);
+
+  console.log('[FeedWriter] Original summarizeText completed');
+
+  // Add Shopee products if type is summary
+  if (type === 'summary' && panelBody) {
+    console.log('[FeedWriter] Type is summary and panelBody exists');
+
+    // Wait for HTML to be rendered (streaming might still be in progress)
+    // Use MutationObserver to detect when fbs-result appears
+    const waitForResult = new Promise((resolve) => {
+      // Check immediately first
+      if (panelBody.innerHTML.includes('fbs-result')) {
+        console.log('[FeedWriter] fbs-result already exists');
+        resolve();
+        return;
+      }
+
+      console.log('[FeedWriter] Waiting for fbs-result to appear...');
+
+      // Set up observer
+      const observer = new MutationObserver((mutations) => {
+        if (panelBody.innerHTML.includes('fbs-result')) {
+          console.log('[FeedWriter] fbs-result detected by observer');
+          observer.disconnect();
+          resolve();
+        }
+      });
+
+      observer.observe(panelBody, {
+        childList: true,
+        subtree: true,
+        characterData: true
+      });
+
+      // Timeout after 30 seconds (increased from 10s)
+      setTimeout(() => {
+        console.log('[FeedWriter] Timeout waiting for fbs-result');
+        observer.disconnect();
+        resolve();
+      }, 30000);
+    });
+
+    await waitForResult;
+
+    const currentHtml = panelBody.innerHTML;
+    console.log('[FeedWriter] Current HTML includes fbs-result:', currentHtml.includes('fbs-result'));
+
+    if (currentHtml.includes('fbs-result')) {
+      console.log('[FeedWriter] Calling addShopeeProductsToSummary...');
+      console.log('[FeedWriter] Text length:', text.length);
+      console.log('[FeedWriter] Text preview:', text.substring(0, 200));
+      const enhancedHtml = await addShopeeProductsToSummary(text, currentHtml);
+      panelBody.innerHTML = enhancedHtml;
+      console.log('[FeedWriter] Enhanced HTML applied to panel');
+    }
+  } else {
+    console.log('[FeedWriter] Not summary or no panelBody - clearing products');
+    // Clear products if not summary
+    currentShopeeProducts = [];
+  }
+
+  return result;
+};

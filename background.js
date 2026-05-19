@@ -52,6 +52,8 @@ const DEFAULT_SETTINGS = {
   adDisplayMode: 'collapse',
   affiliateDisplayMode: 'collapse',
   blockedDomains: '',
+  shopeeAffiliateId: '',
+  autoFindShopeeProducts: false,
   theme: 'auto'
 };
 
@@ -680,6 +682,40 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .catch(error => {
         sendResponse({ success: false, error: error.message });
       });
+    return true;
+  }
+
+  // === FETCH TIKI API (bypass CORS) ===
+  if (request.action === "fetch-tiki-products") {
+    (async () => {
+      try {
+        const keyword = request.keyword || 'điện thoại';
+        const params = new URLSearchParams({
+          q: keyword,
+          limit: 5,
+          include: 'sale_attrs',
+          aggregations: 2,
+        });
+
+        const response = await fetch(`https://tiki.vn/api/v2/products?${params}`, {
+          method: 'GET',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'application/json',
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error(`Tiki API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        sendResponse({ success: true, data: data.data || [] });
+      } catch (error) {
+        console.error('[FeedWriter] Error fetching Tiki products:', error);
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
     return true;
   }
 

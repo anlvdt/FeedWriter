@@ -92,6 +92,8 @@ const hideAffiliatePostsEl = document.getElementById("hideAffiliatePosts");
 const adDisplayModeEl = document.getElementById("adDisplayMode");
 const affiliateDisplayModeEl = document.getElementById("affiliateDisplayMode");
 const blockedDomainsEl = document.getElementById("blockedDomains");
+const shopeeAffiliateIdEl = document.getElementById("shopeeAffiliateId");
+const autoFindShopeeProductsEl = document.getElementById("autoFindShopeeProducts");
 const saveBtn = document.getElementById("saveBtn");
 const status = document.getElementById("status");
 
@@ -110,6 +112,8 @@ chrome.storage.sync.get(
     "adDisplayMode",
     "affiliateDisplayMode",
     "blockedDomains",
+    "shopeeAffiliateId",
+    "autoFindShopeeProducts",
     "apiKeys",
   ],
   (d) => {
@@ -127,6 +131,8 @@ chrome.storage.sync.get(
     if (d.adDisplayMode) adDisplayModeEl.value = d.adDisplayMode;
     if (d.affiliateDisplayMode) affiliateDisplayModeEl.value = d.affiliateDisplayMode;
     if (d.blockedDomains) blockedDomainsEl.value = d.blockedDomains;
+    if (d.shopeeAffiliateId) shopeeAffiliateIdEl.value = d.shopeeAffiliateId;
+    if (d.autoFindShopeeProducts) autoFindShopeeProductsEl.checked = true;
     const total = Object.values(d.apiKeys || {}).reduce(
       (s, a) => s + (a ? a.length : 0),
       0,
@@ -159,6 +165,8 @@ saveBtn.addEventListener("click", () => {
       adDisplayMode: adDisplayModeEl.value,
       affiliateDisplayMode: affiliateDisplayModeEl.value,
       blockedDomains: blockedDomainsEl.value.trim(),
+      shopeeAffiliateId: shopeeAffiliateIdEl.value.trim(),
+      autoFindShopeeProducts: autoFindShopeeProductsEl.checked,
       languageAutoDetected: false, // User manually changed settings
     },
     () => {
