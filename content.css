@@ -1340,6 +1340,37 @@
   font-style: italic;
 }
 
+.fbs-sp-github-field {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1.5px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.95);
+  color: #1a1a1a;
+  font-size: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  outline: none;
+  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+}
+
+.fbs-sp-github-field:hover {
+  border-color: rgba(168, 85, 247, 0.3);
+  background: rgba(255, 255, 255, 1);
+}
+
+.fbs-sp-github-field:focus {
+  border-style: solid;
+  border-color: rgba(168, 85, 247, 0.5);
+  background: rgba(255, 255, 255, 1);
+  box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.12);
+}
+
+.fbs-sp-github-field::placeholder {
+  color: #666;
+  font-style: italic;
+}
+
 .fbs-sp-link-status {
   font-size: 10px;
   color: #888;

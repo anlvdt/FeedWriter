@@ -725,25 +725,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       try {
         const longUrl = request.url;
 
-        // Try TinyURL first
-        try {
-          const response = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}`, {
-            method: 'GET',
-          });
-
-          if (response.ok) {
-            const shortUrl = await response.text();
-            if (shortUrl && shortUrl.startsWith('http')) {
-              console.log('[FeedWriter] TinyURL success:', shortUrl);
-              sendResponse({ success: true, shortUrl: shortUrl });
-              return;
-            }
-          }
-        } catch (error) {
-          console.warn('[FeedWriter] TinyURL failed:', error);
-        }
-
-        // Fallback to is.gd
+        // Try is.gd first (no redirect delay)
         try {
           const params = new URLSearchParams({
             format: 'simple',
@@ -764,6 +746,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           }
         } catch (error) {
           console.warn('[FeedWriter] is.gd failed:', error);
+        }
+
+        // Fallback to TinyURL
+        try {
+          const response = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}`, {
+            method: 'GET',
+          });
+
+          if (response.ok) {
+            const shortUrl = await response.text();
+            if (shortUrl && shortUrl.startsWith('http')) {
+              console.log('[FeedWriter] TinyURL success:', shortUrl);
+              sendResponse({ success: true, shortUrl: shortUrl });
+              return;
+            }
+          }
+        } catch (error) {
+          console.warn('[FeedWriter] TinyURL failed:', error);
         }
 
         // If both fail, return original URL
