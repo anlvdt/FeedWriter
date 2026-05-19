@@ -345,26 +345,8 @@ function formatProductListForSummary(products) {
   let formatted = '\n\n🛍️ **Sản phẩm hot trên Shopee:**\n\n';
 
   products.forEach((product, index) => {
-    const discount = product.discount > 0 ? ` (-${product.discount}%)` : '';
-    const price = product.originalPrice > product.price
-      ? `~~${product.originalPrice.toLocaleString('vi-VN')}₫~~ **${product.price.toLocaleString('vi-VN')}₫**${discount}`
-      : `**${product.price.toLocaleString('vi-VN')}₫**`;
-
     formatted += `${index + 1}. **${product.title}**\n`;
-    if (product.price > 0) {
-      formatted += `   💰 ${price}\n`;
-    }
-    if (product.rating > 0) {
-      formatted += `   ⭐ ${product.rating}/5`;
-      if (product.reviewCount > 0) {
-        formatted += ` (${product.reviewCount.toLocaleString('vi-VN')} đánh giá)`;
-      }
-      formatted += `\n`;
-    }
-    if (product.sold > 0) {
-      formatted += `   📦 Đã bán: ${product.sold.toLocaleString('vi-VN')}\n`;
-    }
-    formatted += `   🔗 [Tìm trên Shopee](${product.affiliateLink})\n\n`;
+    formatted += `   🔗 ${product.affiliateLink}\n\n`;
   });
 
   formatted += `_💡 Nguồn: Tìm kiếm tự động từ Tiki API_\n`;
@@ -379,37 +361,19 @@ function formatProductListForSummary(products) {
  */
 function formatProductListAsHTML(products) {
   if (products.length === 0) {
-    return '<div class="fbs-no-products">Không tìm thấy sản phẩm hot</div>';
+    return '';
   }
 
-  let html = '<div class="fbs-product-list">';
-  html += '<div class="fbs-product-header">🛍️ Sản phẩm hot trên Shopee</div>';
+  let text = '\n\n🛍️ **Sản phẩm hot trên Shopee:**\n\n';
 
-  products.forEach(product => {
-    const discount = product.discount > 0 ? `<span class="fbs-product-discount">-${product.discount}%</span>` : '';
-    const priceHTML = product.originalPrice > product.price
-      ? `<span class="fbs-product-price-old">${product.originalPrice.toLocaleString('vi-VN')}₫</span> <span class="fbs-product-price">${product.price.toLocaleString('vi-VN')}₫</span> ${discount}`
-      : `<span class="fbs-product-price">${product.price > 0 ? product.price.toLocaleString('vi-VN') + '₫' : 'Liên hệ'}</span>`;
-
-    html += `
-      <div class="fbs-product-item">
-        ${product.thumbnail ? `<img src="${product.thumbnail}" alt="${product.title}" class="fbs-product-image" loading="lazy">` : ''}
-        <div class="fbs-product-info">
-          <div class="fbs-product-name">${product.title}</div>
-          ${product.price > 0 ? `<div class="fbs-product-price-row">${priceHTML}</div>` : ''}
-          <div class="fbs-product-meta">
-            ${product.rating > 0 ? `<span class="fbs-product-rating">⭐ ${product.rating}/5</span>` : ''}
-            ${product.sold > 0 ? `<span class="fbs-product-sold">📦 ${product.sold.toLocaleString('vi-VN')} đã bán</span>` : ''}
-          </div>
-          <a href="${product.affiliateLink}" target="_blank" class="fbs-product-link">Tìm trên Shopee →</a>
-        </div>
-      </div>
-    `;
+  products.forEach((product, index) => {
+    text += `${index + 1}. **${product.title}**\n`;
+    text += `   🔗 ${product.affiliateLink}\n\n`;
   });
 
-  html += '<div style="font-size:11px;color:#888;margin-top:12px;text-align:center;">💡 Nguồn: Tìm kiếm tự động từ Tiki API</div>';
-  html += '</div>';
-  return html;
+  text += '_💡 Nguồn: Tìm kiếm tự động từ Tiki API_\n';
+
+  return text;
 }
 
 // Export functions for use in other scripts (Chrome Extension environment)

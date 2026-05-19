@@ -2519,9 +2519,6 @@ let currentShopeeProducts = [];
 async function addShopeeProductsToSummary(text, summaryHtml) {
   try {
     console.log('[FeedWriter] addShopeeProductsToSummary called');
-    console.log('[FeedWriter] window.findHotProductsWithAffiliateLinks exists:', typeof window.findHotProductsWithAffiliateLinks);
-    console.log('[FeedWriter] window.formatProductListAsHTML exists:', typeof window.formatProductListAsHTML);
-    console.log('[FeedWriter] window.formatProductListForSummary exists:', typeof window.formatProductListForSummary);
 
     // Get settings
     const settings = await new Promise(resolve => {
@@ -2537,54 +2534,23 @@ async function addShopeeProductsToSummary(text, summaryHtml) {
       return summaryHtml;
     }
 
-    // Show loading skeleton
-    const loadingHtml = summaryHtml + `
-      <div class="fbs-product-list">
-        <div class="fbs-product-header">🛍️ Đang tìm sản phẩm hot...</div>
-        <div class="fbs-product-skeleton">
-          <div class="fbs-product-skeleton-image"></div>
-          <div class="fbs-product-skeleton-info">
-            <div class="fbs-product-skeleton-line"></div>
-            <div class="fbs-product-skeleton-line medium"></div>
-            <div class="fbs-product-skeleton-line short"></div>
-          </div>
-        </div>
-        <div class="fbs-product-skeleton">
-          <div class="fbs-product-skeleton-image"></div>
-          <div class="fbs-product-skeleton-info">
-            <div class="fbs-product-skeleton-line"></div>
-            <div class="fbs-product-skeleton-line medium"></div>
-            <div class="fbs-product-skeleton-line short"></div>
-          </div>
-        </div>
-      </div>
-    `;
+    console.log('[FeedWriter] Getting next product link...');
 
-    // Update UI with loading state
-    if (panelBody) {
-      panelBody.innerHTML = loadingHtml;
-    }
+    // Get next product link (fast, no API calls)
+    const product = await window.getNextProductLink(settings.shopeeAffiliateId || '');
 
-    console.log('[FeedWriter] Finding Shopee products for text:', text.substring(0, 100));
+    console.log('[FeedWriter] Got product:', product);
 
-    // Find products
-    const products = await window.findHotProductsWithAffiliateLinks(
-      text,
-      settings.shopeeAffiliateId || ''
-    );
+    // Store product for copy function
+    currentShopeeProducts = [product];
 
-    console.log('[FeedWriter] Found products:', products.length, products);
+    // Generate product text
+    const productText = window.formatSingleProduct(product);
 
-    // Store products for copy function
-    currentShopeeProducts = products;
-
-    // Generate products HTML
-    const productsHtml = window.formatProductListAsHTML(products);
-
-    // Return summary with products
-    return summaryHtml + productsHtml;
+    // Return summary with product
+    return summaryHtml + productText;
   } catch (error) {
-    console.error('[FeedWriter] Error adding Shopee products:', error);
+    console.error('[FeedWriter] Error adding Shopee product:', error);
     currentShopeeProducts = [];
     // Return original summary if error
     return summaryHtml;

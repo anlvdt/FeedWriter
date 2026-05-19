@@ -42,7 +42,7 @@
         "https://www.linkedin.com/*",
         "https://www.reddit.com/*"
       ],
-      "js": ["errors.js", "utils.js", "shopee-api.js", "content-dom.js", "content-composer.js", "content.js", "auto-pilot.js"],
+      "js": ["errors.js", "utils.js", "shopee-preload.js", "content-dom.js", "content-composer.js", "content.js", "auto-pilot.js"],
       "css": ["content.css"],
       "run_at": "document_end"
     },
