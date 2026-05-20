@@ -44,7 +44,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
   }
 
   preview.innerHTML =
-    '<div class="fbs-sp-header"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Preview Status <span class="fbs-sp-charcount">' +
+    '<div class="fbs-sp-header"><span class="fbs-sp-title-wrapper"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Preview Status</span> <span class="fbs-sp-charcount">' +
     text.length +
     " ký tự</span></div>" +
     imgHtml +
@@ -108,7 +108,10 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
       // Restore
       if (typeof globalCustomSourceLink !== 'undefined') globalCustomSourceLink = oldGithubLink;
     } else {
-      const fallbackContent = "• Nguồn bài viết:\n  " + (url || "(chưa có link bài gốc)") + (githubUrl ? "\n• Mã nguồn (Github/Repo): " + githubUrl : "");
+      let fallbackContent = `📌 NGUỒN THAM KHẢO:\n· Link gốc: ${url || "(chưa có link bài gốc)"}`;
+      if (githubUrl) {
+        fallbackContent += `\n· Repo/Mã nguồn: ${githubUrl}`;
+      }
       commentText.innerHTML = fallbackContent.replace(/\n/g, '<br>');
     }
   }
@@ -202,7 +205,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
     .querySelector(".fbs-sp-copy-comment")
     .addEventListener("click", async () => {
       const btn = preview.querySelector(".fbs-sp-copy-comment");
-      const content = commentText.textContent;
+      const content = commentText.innerText || commentText.textContent;
       if (!content) return;
       await navigator.clipboard.writeText(content);
 
@@ -343,7 +346,11 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
           sourceLine = window.buildCommentText(finalUrl, cleanAuthor, cleanSource);
           if (typeof globalCustomSourceLink !== 'undefined') globalCustomSourceLink = oldGithubLink;
         } else {
-          sourceLine = "• Nguồn bài viết:\n  " + (finalUrl || "(chưa có link bài gốc)") + (finalGithubUrl ? "\n• Mã nguồn (Github/Repo): " + finalGithubUrl : "");
+          let fallbackContent = `📌 NGUỒN THAM KHẢO:\n· Link gốc: ${finalUrl || "(chưa có link bài gốc)"}`;
+          if (finalGithubUrl) {
+            fallbackContent += `\n· Repo/Mã nguồn: ${finalGithubUrl}`;
+          }
+          sourceLine = fallbackContent;
         }
 
         // Bước 1: Xác định ảnh user muốn đăng
@@ -406,11 +413,11 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
         // Bước 5: Paste text + ảnh
         setStatus("Dán nội dung...");
         const cleanedText = text.replace(
-          /\s*(?:[—-]\s*\n\s*)?Nguồn\s+dưới\s+cmt\s+đầu\s*$/gi,
+          /\s*(?:[—-]\s*\n\s*)?Nguồn\s+dưới\s+(?:cmt|bình\s+luận|binh\s+luan)\s+đầu(?:\s+tiên)?\s*$/gi,
           ""
         ).trim();
         const formattedText = formatForFacebook(cleanedText);
-        const textWithFooter = formattedText + "\n\n━━━━━━━━━━\n👉 Nguồn dưới cmt đầu";
+        const textWithFooter = formattedText + getFacebookFooter(!!finalGithubUrl);
         pasteToLexical(editor, textWithFooter, imgFiles.length > 0 ? imgFiles : null);
 
         // Chờ upload hoàn tất (để user thấy ảnh đã render trước khi bấm Đăng)
@@ -438,6 +445,17 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
 }
 
 /**
+ * Generate standard premium Facebook footer with dynamic Call to Action
+ */
+function getFacebookFooter(hasRepo) {
+  if (hasRepo) {
+    return "\n━━━━━━━━━━\n👉 Link gốc & mã nguồn dưới bình luận đầu tiên";
+  } else {
+    return "\n━━━━━━━━━━\n👉 Chi tiết & nguồn dưới bình luận đầu tiên";
+  }
+}
+
+/**
  * Format AI-generated text for Facebook status posting
  * Transforms plain text into visually appealing Facebook format
  *
@@ -445,7 +463,9 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
  * @returns {string} - Facebook-optimized text
  */
 function formatForFacebook(text) {
-  let lines = text.split('\n');
+  // Loại bỏ hoàn toàn các markdown bold (**) và italic (*) khỏi bài đăng Facebook
+  const cleanText = text.replace(/\*\*(.*?)\*\*/g, "$1").replace(/\*(.*?)\*/g, "$1");
+  let lines = cleanText.split('\n');
   let formatted = [];
   let inBulletSection = false;
   let firstNonEmptyFound = false;
@@ -472,8 +492,8 @@ function formatForFacebook(text) {
       continue;
     }
 
-    // Detect bullet points
-    if (line.startsWith('·') || line.startsWith('•') || line.startsWith('-')) {
+    // Detect bullet points (supports ·, •, -, and *)
+    if (line.startsWith('·') || line.startsWith('•') || line.startsWith('-') || line.startsWith('*')) {
       if (!inBulletSection) {
         // Add spacing before bullet section
         if (formatted[formatted.length - 1] !== '') {
@@ -482,7 +502,7 @@ function formatForFacebook(text) {
         inBulletSection = true;
       }
       // Replace bullet with checkmark
-      const bulletText = line.replace(/^[·•\-]\s*/, '');
+      const bulletText = line.replace(/^[·•\-*]\s*/, '');
       formatted.push('✓ ' + bulletText);
       continue;
     }
@@ -505,8 +525,35 @@ function formatForFacebook(text) {
 function detectTitleEmoji(title) {
   const lower = title.toLowerCase();
 
-  // Technology/AI
-  if (lower.match(/ai|công nghệ|tech|phần mềm|app|tool|software|digital/)) return '🤖';
+  // Code / Frameworks / Git / Dev
+  if (lower.match(/github|gitlab|git|repo|code|coding|lập trình|react|typescript|javascript|python|c\+\+|rust|go|java|sql|postgres|database|mã nguồn/)) return '💻';
+
+  // UI/UX / Design / Aesthetics
+  if (lower.match(/ui|ux|design|giao diện|css|tailwind|color|typography|font|figma|thẩm mỹ|phối màu/)) return '🎨';
+
+  // Performance / Speed / Optimize
+  if (lower.match(/performance|speed|optimization|fast|lcp|cwv|memory|leak|tốc độ|tối ưu/)) return '⚡';
+
+  // Security / Privacy / Secure
+  if (lower.match(/security|privacy|auth|encryption|secure|hack|leak|bảo mật|quyền riêng tư/)) return '🔒';
+
+  // Mobile / iOS / Android
+  if (lower.match(/ios|android|mobile|swift|kotlin|flutter|react native|di động/)) return '📱';
+
+  // Web / Chrome / Browser / Extension
+  if (lower.match(/web|chrome|extension|browser|firefox|edge|manifest|trình duyệt|tiện ích/)) return '🌐';
+
+  // DevOps / Build / Deploy
+  if (lower.match(/docker|ci|cd|devops|deploy|build|setup|npm|yarn|pip|triển khai/)) return '🔧';
+
+  // Analytics / SEO / Growth
+  if (lower.match(/analytics|chart|graph|growth|seo|traffic|thống kê|biểu đồ/)) return '📈';
+
+  // Deep Learning / Research / Cognitive / Science
+  if (lower.match(/paper|research|science|brain|cognitive|deep learning|neural|nghiên cứu|khoa học|trí não/)) return '🧠';
+
+  // Technology/AI (generic)
+  if (lower.match(/ai|công nghệ|tech|phần mềm|app|tool|software|digital|chatgpt|claude|gemini/)) return '🤖';
 
   // Business/Money
   if (lower.match(/kinh doanh|tiền|thu nhập|doanh thu|marketing|bán hàng|business|money|revenue/)) return '💰';
@@ -622,7 +669,7 @@ window.fbsAgentPost = async function (summaryText, imageUrl, rawSourceUrl, postE
       if (window.buildCommentText) {
         commentText = window.buildCommentText("", postAuthor, postSource);
       } else {
-        commentText = "• Nguồn bài viết: (chưa có link bài gốc)";
+        commentText = "📌 NGUỒN THAM KHẢO:\n· Link gốc: (chưa có link bài gốc)";
       }
     }
   }
@@ -632,17 +679,16 @@ window.fbsAgentPost = async function (summaryText, imageUrl, rawSourceUrl, postE
   // Build final post text
   // AI thường đã include "—\nNguồn dưới cmt đầu" theo prompt yêu cầu.
   // Strip mọi instance có sẵn (nhiều format) rồi append đúng 1 lần.
-  let postText = summaryText.trim();
-  // Regex: match "—\nNguồn dưới cmt đầu" hoặc "-\nNguồn dưới cmt đầu" hoặc
-  // chỉ "Nguồn dưới cmt đầu" ở cuối (có thể có/không dấu gạch), case-insensitive
+  // Regex: match all variants of "Nguồn dưới cmt đầu" or "Nguồn dưới bình luận đầu tiên"
   postText = postText.replace(
-    /\s*(?:[—-]\s*\n\s*)?Nguồn\s+dưới\s+cmt\s+đầu\s*$/gi,
+    /\s*(?:[—-]\s*\n\s*)?Nguồn\s+dưới\s+(?:cmt|bình\s+luận|binh\s+luan)\s+đầu(?:\s+tiên)?\s*$/gi,
     ""
   ).trim();
   // Format for Facebook with emojis and visual hierarchy
   const formattedText = formatForFacebook(postText);
   // Append đúng 1 lần footer chuẩn với visual separator
-  postText = formattedText + "\n\n━━━━━━━━━━\n👉 Nguồn dưới cmt đầu";
+  const hasRepo = !!(typeof globalCustomSourceLink !== 'undefined' && globalCustomSourceLink);
+  postText = formattedText + getFacebookFooter(hasRepo);
 
   console.log("[Agent] fbsAgentPost called:", {
     textLength: postText.length,

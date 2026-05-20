@@ -725,22 +725,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       try {
         const longUrl = request.url;
 
-        // Try is.gd first (no redirect delay)
+        // 1. Try is.gd (Preferred)
         try {
           const params = new URLSearchParams({
             format: 'simple',
             url: longUrl,
           });
-
           const response = await fetch(`https://is.gd/create.php?${params}`, {
             method: 'GET',
           });
-
           if (response.ok) {
             const shortUrl = await response.text();
-            if (shortUrl && shortUrl.startsWith('http')) {
-              console.log('[FeedWriter] is.gd success:', shortUrl);
-              sendResponse({ success: true, shortUrl: shortUrl });
+            if (shortUrl && shortUrl.trim().startsWith('http')) {
+              console.log('[FeedWriter] is.gd success:', shortUrl.trim());
+              sendResponse({ success: true, shortUrl: shortUrl.trim() });
               return;
             }
           }
@@ -748,17 +746,54 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           console.warn('[FeedWriter] is.gd failed:', error);
         }
 
-        // Fallback to TinyURL
+        // 2. Try v.gd (Similar service to is.gd)
+        try {
+          const params = new URLSearchParams({
+            format: 'simple',
+            url: longUrl,
+          });
+          const response = await fetch(`https://v.gd/create.php?${params}`, {
+            method: 'GET',
+          });
+          if (response.ok) {
+            const shortUrl = await response.text();
+            if (shortUrl && shortUrl.trim().startsWith('http')) {
+              console.log('[FeedWriter] v.gd success:', shortUrl.trim());
+              sendResponse({ success: true, shortUrl: shortUrl.trim() });
+              return;
+            }
+          }
+        } catch (error) {
+          console.warn('[FeedWriter] v.gd failed:', error);
+        }
+
+        // 3. Try da.gd
+        try {
+          const response = await fetch(`https://da.gd/s?url=${encodeURIComponent(longUrl)}`, {
+            method: 'GET',
+          });
+          if (response.ok) {
+            const shortUrl = await response.text();
+            if (shortUrl && shortUrl.trim().startsWith('http')) {
+              console.log('[FeedWriter] da.gd success:', shortUrl.trim());
+              sendResponse({ success: true, shortUrl: shortUrl.trim() });
+              return;
+            }
+          }
+        } catch (error) {
+          console.warn('[FeedWriter] da.gd failed:', error);
+        }
+
+        // 4. Fallback to TinyURL
         try {
           const response = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}`, {
             method: 'GET',
           });
-
           if (response.ok) {
             const shortUrl = await response.text();
-            if (shortUrl && shortUrl.startsWith('http')) {
-              console.log('[FeedWriter] TinyURL success:', shortUrl);
-              sendResponse({ success: true, shortUrl: shortUrl });
+            if (shortUrl && shortUrl.trim().startsWith('http')) {
+              console.log('[FeedWriter] TinyURL success:', shortUrl.trim());
+              sendResponse({ success: true, shortUrl: shortUrl.trim() });
               return;
             }
           }
@@ -766,8 +801,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           console.warn('[FeedWriter] TinyURL failed:', error);
         }
 
-        // If both fail, return original URL
-        console.warn('[FeedWriter] URL shortening failed, using original URL');
+        // If all fail, return original URL
+        console.warn('[FeedWriter] All URL shortening services failed, using original URL');
         sendResponse({ success: true, shortUrl: longUrl });
       } catch (error) {
         console.error('[FeedWriter] Error shortening URL:', error);

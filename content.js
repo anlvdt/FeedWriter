@@ -974,21 +974,22 @@ function buildCommentText(cleanUrl, author, source) {
                SITE === "twitter" ? "X" :
                SITE === "linkedin" ? "LinkedIn" : "Web";
 
-  let isCustom = !!globalSourceTemplate && globalSourceTemplate !== "• Nguồn bài viết: {platform} {author} {source}\n  {link}";
-  let out = globalSourceTemplate || "• Nguồn bài viết: {platform} {author} {source}\n  {link}";
+  let isCustom = !!globalSourceTemplate && 
+                 globalSourceTemplate !== "• Nguồn bài viết: {platform} {author} {source}\n  {link}" &&
+                 globalSourceTemplate !== "• Nguồn bài viết: {platform} {author} {source}\\n  {link}";
 
-  if (!isCustom && !a && !s) {
-    // Hide "Facebook" generic label if no author/source info
-    out = "• Nguồn tham khảo:\n  {link}";
-  } else if (!isCustom) {
-    out = "• Nguồn bài viết: {platform} {author} {source}\n  {link}";
+  let out;
+  if (isCustom) {
+    out = globalSourceTemplate;
     out = out.replace("{platform}", plat);
     out = out.replace("{author}", a);
     out = out.replace("{source}", s && s !== a ? `(${s})` : "");
   } else {
-    out = out.replace("{platform}", plat);
-    out = out.replace("{author}", a);
-    out = out.replace("{source}", s && s !== a ? `(${s})` : "");
+    if (a) {
+      out = `📌 NGUỒN THAM KHẢO:\n· Tác giả: ${a}${s && s !== a ? ` (${s})` : ""} · ${plat}\n· Link gốc: {link}`;
+    } else {
+      out = `📌 NGUỒN THAM KHẢO:\n· Link gốc: {link}`;
+    }
   }
 
   let linkStr = cleanUrl || "(chưa có link bài gốc)";
@@ -996,7 +997,7 @@ function buildCommentText(cleanUrl, author, source) {
     if (out.includes("{repo}")) {
       out = out.replace("{repo}", globalCustomSourceLink);
     } else {
-      out += "\n• Mã nguồn (Github/Repo): " + globalCustomSourceLink;
+      out += "\n· Repo/Mã nguồn: " + globalCustomSourceLink;
     }
   } else {
     out = out.replace("{repo}", "");
@@ -1006,7 +1007,7 @@ function buildCommentText(cleanUrl, author, source) {
 
   // Cleanup extra spaces but preserve intentional line breaks
   out = out.split('\n').map(line => line.replace(/\s+/g, ' ').trim()).filter(line => line).join('\n');
-  if (!out) out = "• Nguồn bài viết:\n  " + linkStr;
+  if (!out) out = "📌 NGUỒN THAM KHẢO:\n· Link gốc: " + linkStr;
 
   // Add Shopee product if available
   if (currentShopeeProducts && currentShopeeProducts.length > 0) {
@@ -1017,6 +1018,9 @@ function buildCommentText(cleanUrl, author, source) {
       console.error('[FeedWriter] Error adding Shopee to source:', error);
     }
   }
+
+  // Strip any markdown bold/italic asterisks to ensure clean copy in comments
+  out = out.replace(/\*\*/g, "").replace(/\*/g, "");
 
   return out;
 }
@@ -1152,11 +1156,20 @@ function displayError(errorData) {
 
 function fmt(t) {
   // Normalize *** (old prompt artifact) to ** before escaping
-  const cleaned = t.trim().replace(/^\*{3}\s*/gm, "**");
+  let cleaned = t.trim().replace(/^\*{3}\s*/gm, "**");
+  
+  // Detect and extract the source footer beautifully
+  let footerHtml = "";
+  const footerRegex = /\s*(?:[—-]\s*\n\s*)?Nguồn\s+dưới\s+(?:cmt|bình\s+luận|binh\s+luan)\s+đầu(?:\s+tiên)?\s*$/i;
+  if (footerRegex.test(cleaned)) {
+    cleaned = cleaned.replace(footerRegex, "");
+    footerHtml = `<div class="fbs-source-footer">Nguồn dưới bình luận đầu tiên</div>`;
+  }
+  
   let html = esc(cleaned)
     .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
     .replace(/\*(.*?)\*/g, "<em>$1</em>")
-    .replace(/^[-•·]\s*/gm, "· ");
+    .replace(/^[-•·*]\s+/gm, "· ");
     
   // Tách các đoạn văn bằng dòng trống
   const paras = html.split(/\n{2,}/);
@@ -1174,28 +1187,41 @@ function fmt(t) {
         if (p.includes('Giải thích thuật ngữ') || p.includes('Giải thích:')) {
            // Đơn giản hóa regex để strip title của glossary
            let body = p.replace(/^(?:<strong>)?(?:\*\*)?(?:\*\*\*)?Giải thích.*?(?:<\/strong>)?(?:\*\*)?\s*(?:\n|<br>)?/i, "");
-           return `<div class="fbs-glossary"><div class="fbs-glossary-heading">Giải thích thuật ngữ</div><div class="fbs-glossary-item">${body.replace(/\n/g, '<br>')}</div></div>`;
+           const lines = body.split(/\n|<br>/i);
+           const itemsHtml = lines.map(l => {
+             const trimmed = l.trim();
+             if (!trimmed) return "";
+             const cleanItem = trimmed.replace(/^\s*·\s*/, '');
+             return `<div class="fbs-glossary-item">${cleanItem}</div>`;
+           }).filter(Boolean).join('');
+           return `<div class="fbs-glossary"><div class="fbs-glossary-heading">Giải thích thuật ngữ</div>${itemsHtml}</div>`;
         }
         
         // Xử lý Bullet points
         if (p.includes('· ')) {
-           const lines = p.split('\n');
+           const lines = p.split(/\n|<br>/i);
            const formattedLines = lines.map(l => {
-             if (l.trim().startsWith('·')) return `<div class="fbs-bullet">${l.replace(/^·\s*/, '')}</div>`;
-             return l;
+             const trimmed = l.trim();
+             if (trimmed.startsWith('·')) {
+               return `<div class="fbs-bullet">${l.replace(/^\s*·\s*/, '')}</div>`;
+             }
+             return trimmed ? `<div class="fbs-para">${l}</div>` : '';
            });
-           return `<div class="fbs-para">${formattedLines.join('')}</div>`;
+           return formattedLines.join('');
         }
         
         return `<div class="fbs-para">${p.replace(/\n/g, "<br>")}</div>`;
       }).join("");
       
+      if (footerHtml) result += footerHtml;
       return result;
     }
   }
 
   // Fallback nếu không tách được tiêu đề
-  return html.replace(/\n{2,}/g, '<div class="fbs-para-break"></div>').replace(/\n/g, "<br>");
+  let fallback = html.replace(/\n{2,}/g, '<div class="fbs-para-break"></div>').replace(/\n/g, "<br>");
+  if (footerHtml) fallback += footerHtml;
+  return fallback;
 }
 
 // === READ TIME ===

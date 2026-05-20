@@ -45,7 +45,7 @@ async function getDailyProductLinks(affiliateId) {
   });
 
   // If links exist and are from today, return them
-  if (stored.shopeeLinksDate === today && stored.shopeeLinks && stored.shopeeLinks.length === 24) {
+  if (stored.shopeeLinksDate === today && stored.shopeeLinks && stored.shopeeLinks.length === PRELOADED_PRODUCTS.length) {
     // Check if links are shortened (not full shopee.vn URLs)
     const firstLink = stored.shopeeLinks[0]?.link || '';
     if (firstLink.includes('shopee.vn/search')) {
@@ -108,8 +108,8 @@ async function getNextProductLink(affiliateId) {
 
   let index = stored.shopeeLinksIndex || 0;
 
-  // Wrap around if we've used all 24
-  if (index >= 24) {
+  // Wrap around if we've used all products
+  if (index >= PRELOADED_PRODUCTS.length) {
     index = 0;
   }
 
@@ -183,7 +183,7 @@ async function shortenURL(longUrl) {
  * @returns {string} - Formatted text
  */
 function formatSingleProduct(product) {
-  return `\n\n🛍️ **Gợi ý mua sắm:**\n\n**${product.title}**\n\n🔗 ${product.link}`;
+  return `\n🛍️ GỢI Ý MUA SẮM:\n· Sản phẩm: ${product.title}\n· Link Shopee: ${product.link}`;
 }
 
 // Export functions

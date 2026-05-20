@@ -13,8 +13,10 @@ const SHOPEE_CONFIG = {
 
   // URL shortener APIs
   shorteners: [
-    { name: 'tinyurl', endpoint: 'https://tinyurl.com/api-create.php', rateLimit: 60000 }, // 1 req/min
     { name: 'isgd', endpoint: 'https://is.gd/create.php', rateLimit: 30000 }, // 2 req/min
+    { name: 'vgd', endpoint: 'https://v.gd/create.php', rateLimit: 30000 },
+    { name: 'dagd', endpoint: 'https://da.gd/s', rateLimit: 10000 },
+    { name: 'tinyurl', endpoint: 'https://tinyurl.com/api-create.php', rateLimit: 60000 }, // 1 req/min
   ],
 
   // Rate limiting
@@ -224,26 +226,7 @@ function generateShopeeSearchURL(keyword, affiliateId) {
  * @returns {Promise<string>} - Shortened URL
  */
 async function shortenURL(longUrl) {
-  // Try TinyURL first
-  try {
-    await checkRateLimit('tinyurl', 60000); // 1 req/min
-
-    const response = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}`, {
-      method: 'GET',
-    });
-
-    if (response.ok) {
-      const shortUrl = await response.text();
-      if (shortUrl && shortUrl.startsWith('http')) {
-        console.log('[Shopee] TinyURL success:', shortUrl);
-        return shortUrl;
-      }
-    }
-  } catch (error) {
-    console.warn('[Shopee] TinyURL failed:', error);
-  }
-
-  // Fallback to is.gd
+  // 1. Try is.gd first
   try {
     await checkRateLimit('isgd', 30000); // 2 req/min
 
@@ -251,24 +234,80 @@ async function shortenURL(longUrl) {
       format: 'simple',
       url: longUrl,
     });
-
     const response = await fetch(`https://is.gd/create.php?${params}`, {
       method: 'GET',
     });
-
     if (response.ok) {
       const shortUrl = await response.text();
-      if (shortUrl && shortUrl.startsWith('http')) {
-        console.log('[Shopee] is.gd success:', shortUrl);
-        return shortUrl;
+      if (shortUrl && shortUrl.trim().startsWith('http')) {
+        console.log('[Shopee] is.gd success:', shortUrl.trim());
+        return shortUrl.trim();
       }
     }
   } catch (error) {
     console.warn('[Shopee] is.gd failed:', error);
   }
 
-  // If both fail, return original URL
-  console.warn('[Shopee] URL shortening failed, using original URL');
+  // 2. Try v.gd (similar to is.gd)
+  try {
+    await checkRateLimit('vgd', 30000);
+
+    const params = new URLSearchParams({
+      format: 'simple',
+      url: longUrl,
+    });
+    const response = await fetch(`https://v.gd/create.php?${params}`, {
+      method: 'GET',
+    });
+    if (response.ok) {
+      const shortUrl = await response.text();
+      if (shortUrl && shortUrl.trim().startsWith('http')) {
+        console.log('[Shopee] v.gd success:', shortUrl.trim());
+        return shortUrl.trim();
+      }
+    }
+  } catch (error) {
+    console.warn('[Shopee] v.gd failed:', error);
+  }
+
+  // 3. Try da.gd
+  try {
+    await checkRateLimit('dagd', 10000);
+
+    const response = await fetch(`https://da.gd/s?url=${encodeURIComponent(longUrl)}`, {
+      method: 'GET',
+    });
+    if (response.ok) {
+      const shortUrl = await response.text();
+      if (shortUrl && shortUrl.trim().startsWith('http')) {
+        console.log('[Shopee] da.gd success:', shortUrl.trim());
+        return shortUrl.trim();
+      }
+    }
+  } catch (error) {
+    console.warn('[Shopee] da.gd failed:', error);
+  }
+
+  // 4. Fallback to TinyURL
+  try {
+    await checkRateLimit('tinyurl', 60000); // 1 req/min
+
+    const response = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}`, {
+      method: 'GET',
+    });
+    if (response.ok) {
+      const shortUrl = await response.text();
+      if (shortUrl && shortUrl.trim().startsWith('http')) {
+        console.log('[Shopee] TinyURL success:', shortUrl.trim());
+        return shortUrl.trim();
+      }
+    }
+  } catch (error) {
+    console.warn('[Shopee] TinyURL failed:', error);
+  }
+
+  // If all fail, return original URL
+  console.warn('[Shopee] All URL shortening services failed, using original URL');
   return longUrl;
 }
 

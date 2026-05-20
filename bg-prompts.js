@@ -59,7 +59,9 @@ Yêu cầu:
 - Nắm bắt thông điệp cốt lõi nhất
 - Viết lại bằng lời mình, KHÔNG copy
 - Giọng tự nhiên
-- Nếu có thuật ngữ mới, giải thích ngắn 1 dòng bắt đầu bằng · trước dòng nguồn
+- GIẢI THÍCH THUẬT NGỮ: CHỈ thêm mục này khi có thuật ngữ THẬT SỰ chuyên ngành khó (không giải thích: AI, API, app, plugin, extension, link, website, server, v.v.). Thêm trước dòng nguồn theo cấu trúc sau:
+**Giải thích thuật ngữ:**
+· Thuật ngữ: Giải thích ngắn 1 câu.
 - Kết thúc: — rồi xuống dòng "Nguồn dưới cmt đầu"`;
 
 // TÓM TẮT CHI TIẾT - Detailed với cấu trúc
@@ -77,7 +79,9 @@ YÊU CẦU:
 - Mỗi đoạn cách nhau 1 dòng trống
 - Tối đa 150 từ
 - Viết lại hoàn toàn, KHÔNG copy
-- Nếu có thuật ngữ mới/khó, thêm "*** Giải thích thuật ngữ:" trước dòng nguồn
+- GIẢI THÍCH THUẬT NGỮ: CHỈ thêm mục này khi có thuật ngữ THẬT SỰ chuyên ngành khó (không giải thích: AI, API, app, plugin, extension, link, website, server, v.v.). Thêm trước dòng nguồn theo cấu trúc sau:
+**Giải thích thuật ngữ:**
+· Thuật ngữ: Giải thích ngắn 1 câu.
 - Kết thúc: — rồi xuống dòng "Nguồn dưới cmt đầu"`;
 
 // TÓM TẮT DẠNG BULLET - Easy to scan
@@ -90,7 +94,9 @@ Quy tắc:
 - Ưu tiên thông tin có giá trị, dữ liệu, kết luận
 - Bỏ ví dụ, chỉ giữ kết quả
 - 5-7 bullet max
-- Nếu có thuật ngữ mới/khó, thêm "*** Giải thích thuật ngữ:" trước dòng nguồn
+- GIẢI THÍCH THUẬT NGỮ: CHỈ thêm mục này khi có thuật ngữ THẬT SỰ chuyên ngành khó (không giải thích: AI, API, app, plugin, extension, link, website, server, v.v.). Thêm trước dòng nguồn theo cấu trúc sau:
+**Giải thích thuật ngữ:**
+· Thuật ngữ: Giải thích ngắn 1 câu.
 - Kết thúc: — rồi xuống dòng "Nguồn dưới cmt đầu"`;
 
 // === QUY TẮC CHÍNH TẢ VNREVIEW (áp dụng cho mọi output tiếng Việt) ===
@@ -205,7 +211,9 @@ YÊU CẦU:
 - Mỗi section: rút còn 1-3 ý quan trọng nhất
 - Giảm 50-70% nội dung
 - Viết lại, không copy
-- Nếu có thuật ngữ mới/khó, thêm "*** Giải thích thuật ngữ:" trước dòng nguồn
+- GIẢI THÍCH THUẬT NGỮ: CHỈ thêm mục này khi có thuật ngữ THẬT SỰ chuyên ngành khó (không giải thích: AI, API, app, plugin, extension, link, website, server, v.v.). Thêm trước dòng nguồn theo cấu trúc sau:
+**Giải thích thuật ngữ:**
+· Thuật ngữ: Giải thích ngắn 1 câu.
 - Kết thúc: — rồi xuống dòng "Nguồn dưới cmt đầu"`;
 
 // PROMPT MAP - All available templates

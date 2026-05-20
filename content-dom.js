@@ -1171,6 +1171,7 @@ const AFFILIATE_DOMAINS = [
 const SHORTENER_DOMAINS = [
   "bit.ly", "tinyurl.com", "cutt.ly", "s.id", "bom.so", "rb.gy",
   "shorturl.at", "linktr.ee", "beacons.ai", "lnk.bio", "solo.to",
+  "is.gd", "v.gd", "da.gd",
 ];
 
 const AFFILIATE_URL_PARAMS = ["aff", "ref", "utm_source", "utm_medium", "subid", "clickid", "affiliate_id"];

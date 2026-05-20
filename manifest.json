@@ -25,7 +25,9 @@
     "*://*.shopee.vn/*",
     "https://tiki.vn/*",
     "https://tinyurl.com/*",
-    "https://is.gd/*"
+    "https://is.gd/*",
+    "https://v.gd/*",
+    "https://da.gd/*"
   ],
   "background": {
     "service_worker": "background.js"
