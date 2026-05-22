@@ -44,12 +44,14 @@ if (chrome.runtime?.onConnect) {
 window.addEventListener("beforeunload", cleanup, { once: true });
 
 let hideAffiliatePosts = false;
+window.enableUnicodeBold = true;
 
-chrome.storage.sync.get(["minLength", "blockedDomains", "sourceTemplate", "customSourceLink", "hideAffiliatePosts"], (d) => {
+chrome.storage.sync.get(["minLength", "blockedDomains", "sourceTemplate", "customSourceLink", "hideAffiliatePosts", "enableUnicodeBold"], (d) => {
   if (d.minLength) MIN_LEN = d.minLength;
   if (d.sourceTemplate) globalSourceTemplate = d.sourceTemplate;
   if (d.customSourceLink) globalCustomSourceLink = d.customSourceLink;
   if (d.hideAffiliatePosts) hideAffiliatePosts = d.hideAffiliatePosts;
+  if (d.enableUnicodeBold !== undefined) window.enableUnicodeBold = d.enableUnicodeBold;
   if (d.blockedDomains) {
     const href = location.href;
     const blocked = d.blockedDomains.split("\n").map(s => s.trim()).filter(Boolean);
@@ -58,6 +60,12 @@ chrome.storage.sync.get(["minLength", "blockedDomains", "sourceTemplate", "custo
 
   // Auto-detect language from Facebook and set as default if not already set
   detectAndSetLanguage();
+});
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "sync" && changes.enableUnicodeBold) {
+    window.enableUnicodeBold = changes.enableUnicodeBold.newValue;
+  }
 });
 
 // Detect language from Facebook page and set as default
@@ -782,6 +790,9 @@ function copyResult() {
     }
   }
 
+  // Apply accent-safe Unicode formatting if enabled
+  text = applyUnicodeFormatting(text);
+
   // Add Shopee products to copied text if available
   if (currentShopeeProducts && currentShopeeProducts.length > 0) {
     console.log('[FeedWriter] Adding Shopee product to copy:', currentShopeeProducts[0]);
@@ -1155,73 +1166,81 @@ function displayError(errorData) {
 }
 
 function fmt(t) {
-  // Normalize *** (old prompt artifact) to ** before escaping
-  let cleaned = t.trim().replace(/^\*{3}\s*/gm, "**");
+  let text = t;
   
-  // Detect and extract the source footer beautifully
-  let footerHtml = "";
-  const footerRegex = /\s*(?:[—-]\s*\n\s*)?Nguồn\s+dưới\s+(?:cmt|bình\s+luận|binh\s+luan)\s+đầu(?:\s+tiên)?\s*$/i;
-  if (footerRegex.test(cleaned)) {
-    cleaned = cleaned.replace(footerRegex, "");
-    footerHtml = `<div class="fbs-source-footer">Nguồn dưới bình luận đầu tiên</div>`;
-  }
-  
-  let html = esc(cleaned)
-    .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*(.*?)\*/g, "<em>$1</em>")
-    .replace(/^[-•·*]\s+/gm, "· ");
-    
-  // Tách các đoạn văn bằng dòng trống
-  const paras = html.split(/\n{2,}/);
-  
-  if (paras.length > 1) {
-    // Dòng đầu tiên (không quá dài) thường là tiêu đề
-    const title = paras[0];
-    if (title.length < 200 && !title.includes('· ')) {
-      paras.shift();
-      let result = `<div class="fbs-title-line">${title.replace(/\n/g, "<br>")}</div>`;
-      
-      // Xử lý các đoạn còn lại
-      result += paras.map(p => {
-        // Xử lý Giải thích thuật ngữ
-        if (p.includes('Giải thích thuật ngữ') || p.includes('Giải thích:')) {
-           // Đơn giản hóa regex để strip title của glossary
-           let body = p.replace(/^(?:<strong>)?(?:\*\*)?(?:\*\*\*)?Giải thích.*?(?:<\/strong>)?(?:\*\*)?\s*(?:\n|<br>)?/i, "");
-           const lines = body.split(/\n|<br>/i);
-           const itemsHtml = lines.map(l => {
-             const trimmed = l.trim();
-             if (!trimmed) return "";
-             const cleanItem = trimmed.replace(/^\s*·\s*/, '');
-             return `<div class="fbs-glossary-item">${cleanItem}</div>`;
-           }).filter(Boolean).join('');
-           return `<div class="fbs-glossary"><div class="fbs-glossary-heading">Giải thích thuật ngữ</div>${itemsHtml}</div>`;
-        }
-        
-        // Xử lý Bullet points
-        if (p.includes('· ')) {
-           const lines = p.split(/\n|<br>/i);
-           const formattedLines = lines.map(l => {
-             const trimmed = l.trim();
-             if (trimmed.startsWith('·')) {
-               return `<div class="fbs-bullet">${l.replace(/^\s*·\s*/, '')}</div>`;
-             }
-             return trimmed ? `<div class="fbs-para">${l}</div>` : '';
-           });
-           return formattedLines.join('');
-        }
-        
-        return `<div class="fbs-para">${p.replace(/\n/g, "<br>")}</div>`;
-      }).join("");
-      
-      if (footerHtml) result += footerHtml;
-      return result;
+  // Format raw AI text into unified status format (if not already formatted)
+  const isAlreadyFormatted = text.includes("━━━━━━━━━━");
+  if (!isAlreadyFormatted) {
+    const hasRepo = !!(typeof globalCustomSourceLink !== 'undefined' && globalCustomSourceLink);
+    text = buildUnifiedStatusText(text, { hasRepo });
+    if (panelBody) {
+      panelBody.dataset.editedText = text;
     }
   }
 
-  // Fallback nếu không tách được tiêu đề
-  let fallback = html.replace(/\n{2,}/g, '<div class="fbs-para-break"></div>').replace(/\n/g, "<br>");
-  if (footerHtml) fallback += footerHtml;
-  return fallback;
+  // Escape HTML characters
+  let html = esc(text);
+
+  // Convert markdown bold/italic tags to beautiful HTML tags
+  html = html
+    .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.*?)\*/g, "<em>$1</em>");
+
+  // Highlight checkmarks
+  html = html.replace(/✓\s+/g, '<span style="color: #a855f7; font-weight: bold; margin-right: 8px;">✓</span> ');
+
+  // Highlight the separator beautifully
+  html = html.replace(/━━━━━━━━━━/g, '<div style="margin: 20px 0; border-top: 1px dashed rgba(255, 255, 255, 0.15); display: flex; align-items: center; justify-content: center; color: rgba(255, 255, 255, 0.25); font-size: 11px; letter-spacing: 0.1em; pointer-events: none;">━━━━━━━━━━</div>');
+
+  // Convert glossary sections if present
+  const lines = html.split("\n");
+  let formattedLines = [];
+  let inGlossary = false;
+  let glossaryItems = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (trimmed.includes("Giải thích thuật ngữ") || trimmed.includes("Giải thích:")) {
+      inGlossary = true;
+      glossaryItems = [];
+      continue;
+    }
+
+    if (inGlossary) {
+      if (!trimmed || trimmed.includes("━━━━━━━━━━")) {
+        inGlossary = false;
+        formattedLines.push(renderGlossaryCard(glossaryItems));
+        if (trimmed) formattedLines.push(line);
+      } else {
+        glossaryItems.push(line);
+      }
+      continue;
+    }
+
+    if (trimmed.includes("✓")) {
+      formattedLines.push(`<div class="fbs-bullet" style="margin-bottom: 8px;">${line}</div>`);
+    } else if (i === 0 && trimmed.length > 0) {
+      formattedLines.push(`<div class="fbs-title-line" style="font-size: 18px; font-weight: 800; line-height: 1.35; color: #f0e6ff; margin-bottom: 16px; border-left: 4px solid #a855f7; padding-left: 12px; margin-left: -4px;">${line}</div>`);
+    } else {
+      formattedLines.push(line ? `<div class="fbs-para" style="margin-bottom: 12px;">${line}</div>` : `<div style="height: 12px;"></div>`);
+    }
+  }
+
+  if (inGlossary && glossaryItems.length > 0) {
+    formattedLines.push(renderGlossaryCard(glossaryItems));
+  }
+
+  return formattedLines.join("");
+}
+
+function renderGlossaryCard(items) {
+  const itemsHtml = items.map(item => {
+    const cleanItem = item.replace(/✓\s*/, '').replace(/^[·•\-*]\s*/, '');
+    return `<div class="fbs-glossary-item" style="font-size: 14px; line-height: 1.6; color: #d0d4dc; padding: 4px 0; display: flex; gap: 8px;"><span style="color: #a855f7; opacity: 0.7;">•</span>${cleanItem}</div>`;
+  }).filter(Boolean).join('');
+  return `<div class="fbs-glossary" style="margin-top: 20px; padding: 16px 18px; background: rgba(168, 85, 247, 0.04); border-radius: 12px; border: 1px solid rgba(168, 85, 247, 0.15); border-left: 4px solid #a855f7;"><div class="fbs-glossary-heading" style="font-size: 13px; font-weight: 700; color: #e0d0f5; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px;">Giải thích thuật ngữ</div>${itemsHtml}</div>`;
 }
 
 // === READ TIME ===
@@ -1776,12 +1795,33 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
 
   function renderStream() {
     streamRafId = null;
+
+    // Estimate expected length based on generation type and tone
+    let expectedLength = 450;
+    if (type === "affiliate") expectedLength = 650;
+    else if (type === "status_share") expectedLength = 500;
+    else if (tone === "short") expectedLength = 200;
+    else if (tone === "bullet") expectedLength = 350;
+
+    const pct = Math.min(Math.floor((streamBuffer.length / expectedLength) * 100), 99);
+
     const existingResult = panelBody.querySelector(".fbs-result");
+    const progressBar = panelBody.querySelector(".fbs-progress-bar");
+    const progressLabel = panelBody.querySelector(".fbs-progress-label-text");
+
+    if (progressBar) progressBar.style.width = pct + "%";
+    if (progressLabel) progressLabel.textContent = `Đang tạo... ${pct}%`;
+
+    const htmlToInsert = fmt(streamBuffer);
     if (existingResult) {
-      existingResult.innerHTML = fmt(streamBuffer);
+      existingResult.innerHTML = htmlToInsert;
     } else {
       openOverlay(
-        '<div class="fbs-result">' + fmt(streamBuffer) + "</div>",
+        '<div class="fbs-progress-container">' +
+          '<div class="fbs-progress-text"><span class="fbs-progress-label-text">Đang tạo... ' + pct + '%</span></div>' +
+          '<div class="fbs-progress-bar-bg"><div class="fbs-progress-bar" style="width:' + pct + '%"></div></div>' +
+        '</div>' +
+        '<div class="fbs-result">' + htmlToInsert + "</div>",
         true,
       );
     }
@@ -1793,7 +1833,14 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
     if (msg.action === "chunk") {
       if (first) {
         first = false;
-        openOverlay('<div class="fbs-result"></div>', true);
+        openOverlay(
+          '<div class="fbs-progress-container">' +
+            '<div class="fbs-progress-text"><span class="fbs-progress-label-text">Đang tạo... 0%</span></div>' +
+            '<div class="fbs-progress-bar-bg"><div class="fbs-progress-bar" style="width:0%"></div></div>' +
+          '</div>' +
+          '<div class="fbs-result"></div>',
+          true,
+        );
       }
       streamBuffer = msg.full;
       // Throttle DOM updates to 1 per animation frame
@@ -1819,11 +1866,28 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
           msg.issues.map((i) => esc(i)).join("<br>") +
           "</div>";
       }
+
+      // Render final results but keep progress bar showing 100% temporarily
       openOverlay(
+        '<div class="fbs-progress-container">' +
+          '<div class="fbs-progress-text"><span class="fbs-progress-label-text">Hoàn thành! 100%</span></div>' +
+          '<div class="fbs-progress-bar-bg"><div class="fbs-progress-bar" style="width:100%; background:var(--success, #00b894)"></div></div>' +
+        '</div>' +
         '<div class="fbs-result">' + fmt(msg.full) + "</div>" + qualityHtml,
         false,
         type,
       );
+
+      // Smoothly fade out and remove the progress container
+      setTimeout(() => {
+        const progressContainer = panelBody ? panelBody.querySelector(".fbs-progress-container") : null;
+        if (progressContainer) {
+          progressContainer.style.transition = "opacity 0.4s ease";
+          progressContainer.style.opacity = "0";
+          setTimeout(() => progressContainer.remove(), 400);
+        }
+      }, 650);
+
       // Agent mode: score đã được tính trong cùng lần gọi AI → gửi decision ngay, không cần eval riêng
       if (window._fbsAgentMode && typeof msg.agentScore === "number") {
         window.dispatchEvent(

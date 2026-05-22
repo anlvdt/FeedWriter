@@ -74,7 +74,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["setup-wizard.html"],
+      "resources": [],
       "matches": ["<all_urls>"]
     }
   ],

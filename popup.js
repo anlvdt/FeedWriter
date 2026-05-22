@@ -39,20 +39,196 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', asy
 initTheme();
 
 // === SETUP WIZARD CHECK ===
-// Check if wizard has been completed, if not, redirect to wizard
+// Check if wizard has been completed, if not, show inline wizard
 async function checkWizardStatus() {
   const data = await chrome.storage.local.get('wizardCompleted');
+  const mainView = document.getElementById('main-view');
+  const wizardView = document.getElementById('wizard-view');
+
   if (!data.wizardCompleted) {
-    // Open wizard in new window
-    chrome.windows.create({
-      url: chrome.runtime.getURL('setup-wizard.html'),
-      type: 'popup',
-      width: 400,
-      height: 600
-    });
-    // Close current popup
-    window.close();
+    if (mainView) mainView.style.display = 'none';
+    if (wizardView) {
+      wizardView.style.display = 'block';
+      initWizard();
+    }
+  } else {
+    if (mainView) mainView.style.display = 'block';
+    if (wizardView) wizardView.style.display = 'none';
   }
+}
+
+function initWizard() {
+  let currentStep = 0;
+  const totalSteps = 4;
+
+  const progressDots = document.querySelectorAll('#wizard-view .wizard-progress-dot');
+  const steps = document.querySelectorAll('#wizard-view .wizard-step');
+
+  function goToStep(stepIndex) {
+    if (stepIndex < 0 || stepIndex >= totalSteps) return;
+
+    currentStep = stepIndex;
+
+    // Update progress dots
+    progressDots.forEach((dot, index) => {
+      dot.classList.remove('active', 'completed');
+      if (index < currentStep) {
+        dot.classList.add('completed');
+        dot.style.background = 'var(--success, #00b894)';
+        dot.style.width = '8px';
+        dot.style.borderRadius = '50%';
+      } else if (index === currentStep) {
+        dot.classList.add('active');
+        dot.style.background = 'var(--accent, #6c5ce7)';
+        dot.style.width = '24px';
+        dot.style.borderRadius = '4px';
+      } else {
+        dot.style.background = 'var(--border, #2d3748)';
+        dot.style.width = '8px';
+        dot.style.borderRadius = '50%';
+      }
+    });
+
+    // Update step visibility
+    steps.forEach((step, index) => {
+      if (index === currentStep) {
+        step.style.display = 'block';
+        step.classList.add('active');
+      } else {
+        step.style.display = 'none';
+        step.classList.remove('active');
+      }
+    });
+  }
+
+  // Bind navigation handlers
+  const step0Next = document.getElementById('wizardStep0Next');
+  const step1Back = document.getElementById('wizardStep1Back');
+  const step1Next = document.getElementById('wizardStep1Next');
+  const step1Skip = document.getElementById('wizardStep1Skip');
+  const step2Back = document.getElementById('wizardStep2Back');
+  const step2Next = document.getElementById('wizardStep2Next');
+  const step3Finish = document.getElementById('wizardStep3Finish');
+
+  if (step0Next) step0Next.onclick = () => goToStep(1);
+  if (step1Back) step1Back.onclick = () => goToStep(0);
+  if (step2Back) step2Back.onclick = () => goToStep(1);
+
+  const wizardApiKey = document.getElementById('wizardApiKey');
+  const wizardKeyStatus = document.getElementById('wizardKeyStatus');
+
+  function showWizardStatus(msg, type) {
+    if (!wizardKeyStatus) return;
+    wizardKeyStatus.textContent = msg;
+    wizardKeyStatus.className = 'status ' + type;
+    wizardKeyStatus.style.display = 'block';
+  }
+
+  if (wizardApiKey) {
+    wizardApiKey.oninput = () => {
+      if (wizardKeyStatus) wizardKeyStatus.style.display = 'none';
+    };
+  }
+
+  if (step1Next) {
+    step1Next.onclick = async () => {
+      const key = wizardApiKey ? wizardApiKey.value.trim() : '';
+      if (!key) {
+        showWizardStatus('⚠️ Vui lòng nhập API key', 'info');
+        return;
+      }
+
+      const saved = await saveWizardApiKey(key);
+      if (saved) {
+        setTimeout(() => {
+          goToStep(2);
+        }, 1000);
+      }
+    };
+  }
+
+  if (step1Skip) {
+    step1Skip.onclick = () => {
+      goToStep(2);
+    };
+  }
+
+  if (step2Next) {
+    step2Next.onclick = async () => {
+      const saved = await saveWizardSettings();
+      if (saved) {
+        goToStep(3);
+      }
+    };
+  }
+
+  if (step3Finish) {
+    step3Finish.onclick = async () => {
+      await chrome.storage.local.set({ wizardCompleted: true });
+      const wizardView = document.getElementById('wizard-view');
+      const mainView = document.getElementById('main-view');
+      if (wizardView) wizardView.style.display = 'none';
+      if (mainView) mainView.style.display = 'block';
+
+      // Load configurations and reload page
+      loadKeyLists();
+      location.reload();
+    };
+  }
+
+  async function saveWizardApiKey(key) {
+    const provider = detectProvider(key);
+    const data = await chrome.storage.sync.get(['apiKeys']);
+    const apiKeys = data.apiKeys || {};
+    for (const p of ALL_PROVIDERS) {
+      if (!apiKeys[p]) apiKeys[p] = [];
+    }
+    if (apiKeys[provider].includes(key)) {
+      showWizardStatus('⚠️ Key đã tồn tại', 'info');
+      return true;
+    }
+    apiKeys[provider].push(key);
+    await chrome.storage.sync.set({ apiKeys });
+    await chrome.storage.local.set({ backupApiKeys: apiKeys });
+    showWizardStatus(`✓ Đã thêm ${provider.toUpperCase()} key`, 'success');
+    return true;
+  }
+
+  async function saveWizardSettings() {
+    const wizardOutputLanguage = document.getElementById('wizardOutputLanguage');
+    const wizardSummaryLength = document.getElementById('wizardSummaryLength');
+    const wizardHideAffiliate = document.getElementById('wizardHideAffiliate');
+
+    const outputLanguage = wizardOutputLanguage ? wizardOutputLanguage.value : 'vi';
+    const summaryLength = wizardSummaryLength ? wizardSummaryLength.value : 'medium';
+    const hideAffiliatePosts = wizardHideAffiliate ? wizardHideAffiliate.checked : false;
+
+    try {
+      await chrome.storage.sync.set({
+        outputLanguage,
+        summaryLength,
+        hideAffiliatePosts,
+        languageAutoDetected: false
+      });
+      return true;
+    } catch (e) {
+      console.error(e);
+      return false;
+    }
+  }
+
+  // Load current values if they exist
+  chrome.storage.sync.get(['outputLanguage', 'summaryLength', 'hideAffiliatePosts'], (d) => {
+    const wizardOutputLanguage = document.getElementById('wizardOutputLanguage');
+    const wizardSummaryLength = document.getElementById('wizardSummaryLength');
+    const wizardHideAffiliate = document.getElementById('wizardHideAffiliate');
+
+    if (d.outputLanguage && wizardOutputLanguage) wizardOutputLanguage.value = d.outputLanguage;
+    if (d.summaryLength && wizardSummaryLength) wizardSummaryLength.value = d.summaryLength;
+    if (d.hideAffiliatePosts !== undefined && wizardHideAffiliate) wizardHideAffiliate.checked = d.hideAffiliatePosts;
+  });
+
+  goToStep(0);
 }
 
 // Run wizard check on popup load
@@ -94,8 +270,30 @@ const affiliateDisplayModeEl = document.getElementById("affiliateDisplayMode");
 const blockedDomainsEl = document.getElementById("blockedDomains");
 const shopeeAffiliateIdEl = document.getElementById("shopeeAffiliateId");
 const autoFindShopeeProductsEl = document.getElementById("autoFindShopeeProducts");
+const enableUnicodeBoldEl = document.getElementById("enableUnicodeBold");
 const saveBtn = document.getElementById("saveBtn");
 const status = document.getElementById("status");
+
+// Advanced Mode Controls
+const advancedModeToggle = document.getElementById("advancedModeToggle");
+const tabSettings = document.getElementById("tab-settings");
+const settingsModeTitle = document.querySelector(".settings-mode-title");
+
+function updateAdvancedModeView(enabled) {
+  if (enabled) {
+    tabSettings.classList.remove("hide-advanced");
+    if (settingsModeTitle) settingsModeTitle.textContent = "⚙️ Cài đặt nâng cao";
+  } else {
+    tabSettings.classList.add("hide-advanced");
+    if (settingsModeTitle) settingsModeTitle.textContent = "⚙️ Cài đặt cơ bản";
+  }
+}
+
+advancedModeToggle.addEventListener("change", async () => {
+  const enabled = advancedModeToggle.checked;
+  await chrome.storage.sync.set({ advancedModeEnabled: enabled });
+  updateAdvancedModeView(enabled);
+});
 
 chrome.storage.sync.get(
   [
@@ -114,7 +312,9 @@ chrome.storage.sync.get(
     "blockedDomains",
     "shopeeAffiliateId",
     "autoFindShopeeProducts",
+    "enableUnicodeBold",
     "apiKeys",
+    "advancedModeEnabled",
   ],
   (d) => {
     if (d.minLength) minLengthInput.value = d.minLength;
@@ -133,6 +333,13 @@ chrome.storage.sync.get(
     if (d.blockedDomains) blockedDomainsEl.value = d.blockedDomains;
     if (d.shopeeAffiliateId) shopeeAffiliateIdEl.value = d.shopeeAffiliateId;
     if (d.autoFindShopeeProducts) autoFindShopeeProductsEl.checked = true;
+    if (d.enableUnicodeBold !== false) enableUnicodeBoldEl.checked = true;
+    
+    // Set advanced mode toggle state
+    const advancedEnabled = !!d.advancedModeEnabled;
+    advancedModeToggle.checked = advancedEnabled;
+    updateAdvancedModeView(advancedEnabled);
+
     const total = Object.values(d.apiKeys || {}).reduce(
       (s, a) => s + (a ? a.length : 0),
       0,
@@ -167,6 +374,8 @@ saveBtn.addEventListener("click", () => {
       blockedDomains: blockedDomainsEl.value.trim(),
       shopeeAffiliateId: shopeeAffiliateIdEl.value.trim(),
       autoFindShopeeProducts: autoFindShopeeProductsEl.checked,
+      enableUnicodeBold: enableUnicodeBoldEl.checked,
+      advancedModeEnabled: advancedModeToggle.checked,
       languageAutoDetected: false, // User manually changed settings
     },
     () => {

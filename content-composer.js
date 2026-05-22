@@ -412,12 +412,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
 
         // Bước 5: Paste text + ảnh
         setStatus("Dán nội dung...");
-        const cleanedText = text.replace(
-          /\s*(?:[—-]\s*\n\s*)?Nguồn\s+dưới\s+(?:cmt|bình\s+luận|binh\s+luan)\s+đầu(?:\s+tiên)?\s*$/gi,
-          ""
-        ).trim();
-        const formattedText = formatForFacebook(cleanedText);
-        const textWithFooter = formattedText + getFacebookFooter(!!finalGithubUrl);
+        const textWithFooter = applyUnicodeFormatting(text);
         pasteToLexical(editor, textWithFooter, imgFiles.length > 0 ? imgFiles : null);
 
         // Chờ upload hoàn tất (để user thấy ảnh đã render trước khi bấm Đăng)
@@ -456,16 +451,72 @@ function getFacebookFooter(hasRepo) {
 }
 
 /**
- * Format AI-generated text for Facebook status posting
- * Transforms plain text into visually appealing Facebook format
- *
- * @param {string} text - AI-generated text with \n line breaks
- * @returns {string} - Facebook-optimized text
+ * Unicode sans-serif bold for standard English letters and digits (accent-safe)
  */
-function formatForFacebook(text) {
-  // Loại bỏ hoàn toàn các markdown bold (**) và italic (*) khỏi bài đăng Facebook
-  const cleanText = text.replace(/\*\*(.*?)\*\*/g, "$1").replace(/\*(.*?)\*/g, "$1");
-  let lines = cleanText.split('\n');
+function toUnicodeBold(str) {
+  let result = "";
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i);
+    if (c >= 65 && c <= 90) {
+      result += String.fromCodePoint(c + 120231);
+    } else if (c >= 97 && c <= 122) {
+      result += String.fromCodePoint(c + 120225);
+    } else if (c >= 48 && c <= 57) {
+      result += String.fromCodePoint(c + 120764);
+    } else {
+      result += str[i];
+    }
+  }
+  return result;
+}
+
+/**
+ * Unicode sans-serif italic for standard English letters (accent-safe)
+ */
+function toUnicodeItalic(str) {
+  let result = "";
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i);
+    if (c >= 65 && c <= 90) {
+      result += String.fromCodePoint(c + 120287);
+    } else if (c >= 97 && c <= 122) {
+      result += String.fromCodePoint(c + 120281);
+    } else {
+      result += str[i];
+    }
+  }
+  return result;
+}
+
+/**
+ * Apply Unicode Bold and Italic formatting depending on configuration
+ */
+function applyUnicodeFormatting(text) {
+  const isUnicodeBoldEnabled = (window.enableUnicodeBold !== false);
+  if (!isUnicodeBoldEnabled) {
+    return text.replace(/\*\*(.*?)\*\*/g, "$1").replace(/\*(.*?)\*/g, "$1");
+  }
+  let result = text;
+  result = result.replace(/\*\*(.*?)\*\*/g, (match, p1) => toUnicodeBold(p1));
+  result = result.replace(/\*(.*?)\*/g, (match, p1) => toUnicodeItalic(p1));
+  return result;
+}
+
+/**
+ * Convert raw AI response text into unified plain text status format
+ */
+function buildUnifiedStatusText(rawText, options = {}) {
+  // Normalize *** to **
+  let cleaned = rawText.trim().replace(/^\*{3}\s*/gm, "**");
+  
+  // Strip any existing footers & separators to prevent duplicates
+  const footerRegex = /\s*(?:[—-]\s*\n\s*)?Nguồn\s+dưới\s+(?:cmt|bình\s+luận|binh\s+luan)\s+đầu(?:\s+tiên)?\s*$/i;
+  cleaned = cleaned.replace(footerRegex, "");
+  cleaned = cleaned.replace(/━━━━━━━━━━\s*/g, "");
+  cleaned = cleaned.replace(/👉 (?:Link gốc & mã nguồn|Chi tiết & nguồn) dưới bình luận đầu tiên\s*$/i, "");
+  cleaned = cleaned.trim();
+
+  let lines = cleaned.split('\n');
   let formatted = [];
   let inBulletSection = false;
   let firstNonEmptyFound = false;
@@ -473,9 +524,68 @@ function formatForFacebook(text) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
 
-    // Skip empty lines (will add strategic spacing later)
     if (!line) {
-      // Add spacing between sections
+      if (formatted.length > 0 && formatted[formatted.length - 1] !== '') {
+        formatted.push('');
+      }
+      continue;
+    }
+
+    // First line is title
+    if (!firstNonEmptyFound) {
+      firstNonEmptyFound = true;
+      const emoji = detectTitleEmoji(line);
+      const cleanLine = line.replace(/^[\p{Emoji}\s]+/u, '');
+      formatted.push(emoji + ' ' + cleanLine.toUpperCase());
+      formatted.push('');
+      continue;
+    }
+
+    // Bullets
+    if (line.startsWith('·') || line.startsWith('•') || line.startsWith('-') || line.startsWith('*') || line.startsWith('✓')) {
+      if (!inBulletSection) {
+        if (formatted.length > 0 && formatted[formatted.length - 1] !== '') {
+          formatted.push('');
+        }
+        inBulletSection = true;
+      }
+      const bulletText = line.replace(/^[·•\-*✓]\s*/, '');
+      formatted.push('✓ ' + bulletText);
+      continue;
+    }
+
+    if (inBulletSection) {
+      formatted.push('');
+      inBulletSection = false;
+    }
+    formatted.push(line);
+  }
+
+  let result = formatted.join('\n');
+  const hasRepo = !!options.hasRepo;
+  result += "\n\n━━━━━━━━━━" + getFacebookFooter(hasRepo);
+  
+  return result;
+}
+
+/**
+ * Format AI-generated text for Facebook status posting
+ * Transforms plain text into visually appealing Facebook format
+ *
+ * @param {string} text - AI-generated text with \n line breaks
+ * @returns {string} - Facebook-optimized text
+ */
+function formatForFacebook(text) {
+  const processedText = applyUnicodeFormatting(text);
+  let lines = processedText.split('\n');
+  let formatted = [];
+  let inBulletSection = false;
+  let firstNonEmptyFound = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+
+    if (!line) {
       if (formatted.length > 0 && formatted[formatted.length - 1] !== '') {
         formatted.push('');
       }
@@ -485,31 +595,28 @@ function formatForFacebook(text) {
     // Detect title (first non-empty line)
     if (!firstNonEmptyFound) {
       firstNonEmptyFound = true;
-      // Add emoji prefix for title based on content
       const titleEmoji = detectTitleEmoji(line);
-      formatted.push(titleEmoji + ' ' + line.toUpperCase());
-      formatted.push(''); // Spacing after title
+      // Remove any existing emojis at the start to avoid doubling
+      const cleanLine = line.replace(/^[\p{Emoji}\s]+/u, '');
+      formatted.push(titleEmoji + ' ' + cleanLine.toUpperCase());
+      formatted.push('');
       continue;
     }
 
-    // Detect bullet points (supports ·, •, -, and *)
-    if (line.startsWith('·') || line.startsWith('•') || line.startsWith('-') || line.startsWith('*')) {
+    // Detect bullet points
+    if (line.startsWith('·') || line.startsWith('•') || line.startsWith('-') || line.startsWith('*') || line.startsWith('✓')) {
       if (!inBulletSection) {
-        // Add spacing before bullet section
-        if (formatted[formatted.length - 1] !== '') {
+        if (formatted.length > 0 && formatted[formatted.length - 1] !== '') {
           formatted.push('');
         }
         inBulletSection = true;
       }
-      // Replace bullet with checkmark
-      const bulletText = line.replace(/^[·•\-*]\s*/, '');
+      const bulletText = line.replace(/^[·•\-*✓]\s*/, '');
       formatted.push('✓ ' + bulletText);
       continue;
     }
 
-    // Regular paragraph
     if (inBulletSection) {
-      // Add spacing after bullet section
       formatted.push('');
       inBulletSection = false;
     }
