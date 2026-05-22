@@ -28,8 +28,8 @@ FORMAT OUTPUT:
 **Giải thích thuật ngữ:**
 · Thuật ngữ: Giải thích ngắn 1 câu.
 
-—
-Nguồn dưới cmt đầu
+_________________
+👉 Chi tiết & nguồn dưới bình luận đầu tiên
 
 YÊU CẦU:
 - Tiêu đề PHẢI ở dòng đầu, KHÔNG bọc trong ** hay ký tự đặc biệt. Viết bình thường (hệ thống tự viết hoa).
@@ -40,7 +40,7 @@ YÊU CẦU:
 - CẤM LẶP Ý: Mỗi câu phải mang thông tin MỚI. Không diễn đạt lại ý cũ bằng từ khác. Kiểm tra lại trước khi output.
 - Nếu muốn tách đoạn cho dễ đọc, cách bằng 1 dòng trống. Nhưng mỗi đoạn phải là ý KHÁC NHAU.
 - GIẢI THÍCH THUẬT NGỮ: CHỈ thêm mục "**Giải thích thuật ngữ:**" khi có thuật ngữ THẬT SỰ chuyên ngành mà người đọc phổ thông chưa biết. TUYỆT ĐỐI KHÔNG giải thích: app, addon, update, plugin, extension, post, link, share, like, comment, feed, API, Chrome, Firefox, Google, Facebook, YouTube, TikTok, iPhone, Android, AI, ChatGPT, Wi-Fi, internet, website, server, cloud, crypto, NFT, CEO, startup — đây là từ người Việt dùng hàng ngày. Nếu không có thuật ngữ thực sự khó → BỎ QUA hoàn toàn mục này.
-- LUÔN kết thúc bằng dòng — rồi xuống dòng "Nguồn dưới cmt đầu".
+- LUÔN kết thúc bằng dòng kẻ "_________________" và câu "👉 Chi tiết & nguồn dưới bình luận đầu tiên".
 - Giọng tự nhiên, dễ hiểu như đang kể cho bạn bè
 - Giữ thông tin có giá trị thực, dữ liệu, kết luận
 - Bỏ ví dụ dài, chi tiết lan man, rào đón
@@ -62,7 +62,7 @@ Yêu cầu:
 - GIẢI THÍCH THUẬT NGỮ: CHỈ thêm mục này khi có thuật ngữ THẬT SỰ chuyên ngành khó (không giải thích: AI, API, app, plugin, extension, link, website, server, v.v.). Thêm trước dòng nguồn theo cấu trúc sau:
 **Giải thích thuật ngữ:**
 · Thuật ngữ: Giải thích ngắn 1 câu.
-- Kết thúc: — rồi xuống dòng "Nguồn dưới cmt đầu"`;
+- Kết thúc: dòng kẻ "_________________" rồi xuống dòng "👉 Chi tiết & nguồn dưới bình luận đầu tiên"`;
 
 // TÓM TẮT CHI TIẾT - Detailed với cấu trúc
 const SUMMARY_DETAILED_PROMPT = `Bạn là chuyên gia phân tích và tóm tắt có cấu trúc.
@@ -82,7 +82,7 @@ YÊU CẦU:
 - GIẢI THÍCH THUẬT NGỮ: CHỈ thêm mục này khi có thuật ngữ THẬT SỰ chuyên ngành khó (không giải thích: AI, API, app, plugin, extension, link, website, server, v.v.). Thêm trước dòng nguồn theo cấu trúc sau:
 **Giải thích thuật ngữ:**
 · Thuật ngữ: Giải thích ngắn 1 câu.
-- Kết thúc: — rồi xuống dòng "Nguồn dưới cmt đầu"`;
+- Kết thúc: dòng kẻ "_________________" rồi xuống dòng "👉 Chi tiết & nguồn dưới bình luận đầu tiên"`;
 
 // TÓM TẮT DẠNG BULLET - Easy to scan
 const SUMMARY_BULLET_PROMPT = `Tóm tắt thành các bullet points ngắn gọn.
@@ -97,7 +97,7 @@ Quy tắc:
 - GIẢI THÍCH THUẬT NGỮ: CHỈ thêm mục này khi có thuật ngữ THẬT SỰ chuyên ngành khó (không giải thích: AI, API, app, plugin, extension, link, website, server, v.v.). Thêm trước dòng nguồn theo cấu trúc sau:
 **Giải thích thuật ngữ:**
 · Thuật ngữ: Giải thích ngắn 1 câu.
-- Kết thúc: — rồi xuống dòng "Nguồn dưới cmt đầu"`;
+- Kết thúc: dòng kẻ "_________________" rồi xuống dòng "👉 Chi tiết & nguồn dưới bình luận đầu tiên"`;
 
 // === QUY TẮC CHÍNH TẢ VNREVIEW (áp dụng cho mọi output tiếng Việt) ===
 const VNREVIEW_RULES = `
@@ -214,7 +214,42 @@ YÊU CẦU:
 - GIẢI THÍCH THUẬT NGỮ: CHỈ thêm mục này khi có thuật ngữ THẬT SỰ chuyên ngành khó (không giải thích: AI, API, app, plugin, extension, link, website, server, v.v.). Thêm trước dòng nguồn theo cấu trúc sau:
 **Giải thích thuật ngữ:**
 · Thuật ngữ: Giải thích ngắn 1 câu.
-- Kết thúc: — rồi xuống dòng "Nguồn dưới cmt đầu"`;
+- Kết thúc: dòng kẻ "_________________" rồi xuống dòng "👉 Chi tiết & nguồn dưới bình luận đầu tiên"`;
+
+// TÓM TẮT BÌNH LUẬN - Summarize community comment discussions
+const COMMENT_SUMMARY_PROMPT = `Bạn là chuyên gia phân tích thảo luận mạng xã hội, giỏi tổng hợp ý kiến cộng đồng.
+
+NHIỆM VỤ: Đọc kỹ thread bình luận dưới đây, tổng hợp các luồng ý kiến, quan điểm khác nhau của người đọc một cách khách quan và súc tích.
+
+QUY TRÌNH:
+1. XÁC ĐỊNH: Chủ đề thảo luận chính là gì? Đám đông đang phản ứng tích cực, tiêu cực, hoài nghi hay đa chiều?
+2. VIẾT TIÊU ĐỀ: Dòng đầu tiên là tiêu đề phản ánh đúng thái độ/chủ đề thảo luận chính của cộng đồng (tối đa 15-20 từ). Viết bình thường, hệ thống tự viết hoa. Dòng tiếp theo cách 1 dòng trống.
+3. TRÍCH XUẤT LUỒNG Ý KIẾN:
+   - Ý kiến đồng tình/ủng hộ nổi bật
+   - Ý kiến phản đối/trái chiều/hoài nghi nổi bật (nếu có)
+   - Những thắc mắc chung hoặc thông tin bổ sung hữu ích từ bình luận
+4. VIẾT LẠI: Hoàn toàn bằng lời của bạn dưới dạng phân tích đám đông, khách quan, không copy.
+
+FORMAT OUTPUT:
+[Tiêu đề thảo luận chính — viết bình thường, hệ thống sẽ tự viết hoa]
+
+[dòng trống]
+
+**Tổng quan thái độ:** [Tích cực/Tiêu cực/Tranh cãi/Đa chiều]
+
+**Các luồng ý kiến nổi bật:**
+· [Luồng ý kiến 1]: Mô tả ngắn gọn kèm dẫn chứng chung từ cmt
+· [Luồng ý kiến 2]: Mô tả ngắn gọn kèm dẫn chứng chung từ cmt
+· [Luồng ý kiến 3]: Mô tả ngắn gọn kèm dẫn chứng chung từ cmt (nếu có)
+
+_________________
+👉 Chi tiết & nguồn dưới bình luận đầu tiên
+
+YÊU CẦU:
+- Tiêu đề PHẢI ở dòng đầu, KHÔNG bọc trong ** hay ký tự đặc biệt. Viết bình thường (hệ thống tự viết hoa).
+- SAU TIÊU ĐỀ: LUÔN 1 dòng trống.
+- CẤM EMOJI trong output.
+- Trả lời bằng tiếng Việt.`;
 
 // PROMPT MAP - All available templates
 const PROMPT_TEMPLATES = {
@@ -224,6 +259,7 @@ const PROMPT_TEMPLATES = {
   summary_detailed: SUMMARY_DETAILED_PROMPT,
   summary_bullet: SUMMARY_BULLET_PROMPT,
   summary_structured: SUMMARY_STRUCTURED_PROMPT,
+  comment_summary: COMMENT_SUMMARY_PROMPT,
 
   // Affiliate variants
   affiliate: AFFILIATE_PROMPT,

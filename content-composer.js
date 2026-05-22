@@ -514,6 +514,8 @@ function buildUnifiedStatusText(rawText, options = {}) {
   cleaned = cleaned.replace(footerRegex, "");
   cleaned = cleaned.replace(/━━━━━━━━━━\s*/g, "");
   cleaned = cleaned.replace(/👉 (?:Link gốc & mã nguồn|Chi tiết & nguồn) dưới bình luận đầu tiên\s*$/i, "");
+  // Strip any broken/truncated footer remnants (e.g. from AI token limit cuts like "_________________\n👉 Chi tiết &")
+  cleaned = cleaned.replace(/(?:_{5,}|━━━━━━━━━━)\s*(?:👉|•)?\s*(?:Chi\s+tiết|Link\s+gốc|Nguồn)?.*$/gi, "");
   cleaned = cleaned.trim();
 
   let lines = cleaned.split('\n');
@@ -563,7 +565,7 @@ function buildUnifiedStatusText(rawText, options = {}) {
 
   let result = formatted.join('\n');
   const hasRepo = !!options.hasRepo;
-  result += "\n\n━━━━━━━━━━" + getFacebookFooter(hasRepo);
+  result += "\n" + getFacebookFooter(hasRepo);
   
   return result;
 }

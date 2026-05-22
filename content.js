@@ -261,6 +261,7 @@ function scanAffiliatePosts() {
   const candidates = [
     ...root.querySelectorAll('article[role="article"]'),
     ...root.querySelectorAll('[data-virtualized]'),
+    ...root.querySelectorAll('div[data-pagelet^="FeedUnit"]'),
   ];
 
   for (const article of candidates) {
@@ -272,7 +273,12 @@ function scanAffiliatePosts() {
     let anc = article.parentElement;
     for (let j = 0; j < 20; j++) {
       if (!anc || anc === document.body) break;
-      if (anc.getAttribute("role") === "article" || anc.hasAttribute("data-virtualized")) depth++;
+      if (
+        anc.getAttribute("role") === "article" ||
+        anc.hasAttribute("data-virtualized") ||
+        (anc.getAttribute("data-pagelet") && anc.getAttribute("data-pagelet").startsWith("FeedUnit"))
+      )
+        depth++;
       anc = anc.parentElement;
     }
     if (depth >= 1) continue;
@@ -303,22 +309,43 @@ function scanAffiliatePosts() {
 // === SCAN LOGIC ===
 function findNewSeeMoreElements() {
   const results = [];
-  const roots = (typeof visiblePosts !== "undefined" && visiblePosts.size > 0) ? Array.from(visiblePosts) : [
-    document.querySelector('div[role="main"]') ||
-    document.querySelector('div[id^="mount_0_0"]') ||
-    document.querySelector("main") ||
-    document.body
-  ];
+  let roots = [];
+  
+  if (typeof visiblePosts !== "undefined" && visiblePosts.size > 0) {
+    roots = Array.from(visiblePosts);
+    // Eagerly scan newly rendered posts before async IntersectionObserver triggers
+    const rootEl = document.querySelector('div[role="main"]') || document.querySelector('div[id^="mount_0_0"]') || document.body;
+    if (rootEl && SITE === "facebook") {
+      const candidates = rootEl.querySelectorAll('article[role="article"], [data-virtualized], div[data-pagelet^="FeedUnit"]');
+      for (const c of candidates) {
+        if (!c.dataset.fbsObserved) {
+          roots.push(c);
+        }
+      }
+    }
+  } else {
+    roots = [
+      document.querySelector('div[role="main"]') ||
+      document.querySelector('div[id^="mount_0_0"]') ||
+      document.querySelector("main") ||
+      document.body
+    ];
+  }
+
   for (const root of roots) {
+    if (!root) continue;
     const els = root.querySelectorAll(
       'div[role="button"], span[role="button"], span[dir="auto"], div[dir="auto"]',
     );
     for (const el of els) {
       if (el.dataset.fbsScanned) continue;
       if (el.children.length > 6) continue;
-      const t = (el.innerText || el.textContent || "").trim().toLowerCase();
+      // Normalize non-breaking spaces (\u00a0) to avoid match misses
+      const t = (el.innerText || el.textContent || "").replace(/\u00a0/g, " ").trim().toLowerCase();
       if (t.length > 30 || t.length < 4) continue;
-      if (SEE_MORE.some((kw) => t === kw || t === "..." + kw || t.startsWith(kw))) {
+      // Clean ellipses, dots, and collapse double spaces to cover patterns like "... Xem thêm" or "xem thêm"
+      const cleanT = t.replace(/\.+/g, "").replace(/\s+/g, " ").trim();
+      if (SEE_MORE.some((kw) => cleanT === kw || cleanT.startsWith(kw) || t === kw || t === "..." + kw || t.startsWith(kw))) {
         el.dataset.fbsScanned = "1";
         if (isInNonPostArea(el)) continue;
         if (isSponsored(el)) continue;
@@ -793,6 +820,13 @@ function copyResult() {
   // Apply accent-safe Unicode formatting if enabled
   text = applyUnicodeFormatting(text);
 
+  // Auto-uppercase the first line (title) to sync UI formatting with clipboard
+  const lines = text.split("\n");
+  if (lines.length > 0) {
+    lines[0] = lines[0].toUpperCase();
+  }
+  text = lines.join("\n");
+
   // Add Shopee products to copied text if available
   if (currentShopeeProducts && currentShopeeProducts.length > 0) {
     console.log('[FeedWriter] Adding Shopee product to copy:', currentShopeeProducts[0]);
@@ -838,6 +872,13 @@ async function handlePostStatus() {
     }
     text = text.trim();
     if (!text) return;
+
+    // Auto-uppercase the first line (title)
+    const lines = text.split("\n");
+    if (lines.length > 0) {
+      lines[0] = lines[0].toUpperCase();
+    }
+    text = lines.join("\n");
 
     // Lấy metadata từ DOM element (nếu có)
     const _element = lastSummarizeParams?._element || null;
@@ -1740,7 +1781,9 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
       ? "Đang viết bài Affiliate..."
       : type === "status_share"
         ? "Đang viết Status..."
-        : "Đang tóm tắt...";
+        : type === "comment_summary"
+          ? "Đang tóm tắt bình luận..."
+          : "Đang tóm tắt...";
 
   // Show skeleton loading instead of spinner
   const skeletonHtml = '<div class="fbs-panel-body fbs-loading">' +
@@ -1800,6 +1843,7 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
     let expectedLength = 450;
     if (type === "affiliate") expectedLength = 650;
     else if (type === "status_share") expectedLength = 500;
+    else if (type === "comment_summary") expectedLength = 300;
     else if (tone === "short") expectedLength = 200;
     else if (tone === "bullet") expectedLength = 350;
 
@@ -2208,10 +2252,11 @@ function scanFBAllPosts() {
   if (SITE !== "facebook") return;
   const root = document.querySelector('div[role="main"]') || document.querySelector('div[id^="mount_0_0"]') || document.body;
 
-  // Support both old layout (role="article") and new virtualized layout (data-virtualized)
+  // Support both old layout (role="article"), new virtualized layout (data-virtualized), and modern feed units (data-pagelet)
   const candidates = [
     ...root.querySelectorAll('article[role="article"]'),
     ...root.querySelectorAll('[data-virtualized]'),
+    ...root.querySelectorAll('div[data-pagelet^="FeedUnit"]'),
   ];
 
   for (const article of candidates) {
@@ -2228,7 +2273,12 @@ function scanFBAllPosts() {
     let anc = article.parentElement;
     for (let j = 0; j < 20; j++) {
       if (!anc || anc === document.body) break;
-      if (anc.getAttribute("role") === "article" || anc.hasAttribute("data-virtualized")) depth++;
+      if (
+        anc.getAttribute("role") === "article" ||
+        anc.hasAttribute("data-virtualized") ||
+        (anc.getAttribute("data-pagelet") && anc.getAttribute("data-pagelet").startsWith("FeedUnit"))
+      )
+        depth++;
       anc = anc.parentElement;
     }
     if (depth >= 1) continue; // nested = comment/reply
@@ -2296,7 +2346,7 @@ function scanCommentSections() {
       if (currentComments.length === 0) return;
       const combined = "THREAD BÌNH LUẬN (" + currentComments.length + " comments):\n\n" +
         currentComments.map((t, i) => (i + 1) + ". " + t).join("\n\n");
-      summarizeText(combined, "summary", article);
+      summarizeText(combined, "comment_summary", article);
     });
     // Insert before the first comment article
     const firstComment = commentArticles[0];
