@@ -205,6 +205,7 @@ async function restoreSettings(backupIndex = 0) {
 
 // === TELEMETRY ===
 let telemetryData = { sessions: 0, summaries: 0, errors: 0 };
+let telemetryLoaded = false;
 
 async function saveTelemetry() {
   if (!featureFlags.enableLogging) return;
@@ -214,8 +215,37 @@ async function saveTelemetry() {
 
 async function loadTelemetry() {
   if (!chrome?.storage?.local) return; // SW not ready
-  const data = await chrome.storage.local.get('telemetry');
-  telemetryData = { ...telemetryData, ...data.telemetry };
+  try {
+    const data = await chrome.storage.local.get('telemetry');
+    telemetryData = {
+      sessions: data.telemetry?.sessions || 0,
+      summaries: data.telemetry?.summaries || 0,
+      errors: data.telemetry?.errors || 0
+    };
+    telemetryLoaded = true;
+  } catch (e) {
+    logger.error('Failed to load telemetry:', e);
+  }
+}
+
+async function incrementTelemetry(field) {
+  if (!featureFlags.enableLogging) return;
+  if (!chrome?.storage?.local) return; // SW not ready
+  try {
+    if (!telemetryLoaded) {
+      await loadTelemetry();
+    }
+    if (telemetryData[field] !== undefined) {
+      telemetryData[field]++;
+    }
+    await saveTelemetry();
+  } catch (e) {
+    logger.error(`Failed to increment telemetry field ${field}:`, e);
+  }
+}
+
+async function initializeTelemetry() {
+  await incrementTelemetry('sessions');
 }
 
 function trackEvent(event, data = {}) {
@@ -223,17 +253,6 @@ function trackEvent(event, data = {}) {
   logger.info(`Event: ${event}`, data);
   // Could send to analytics service here
 }
-
-// Initialize telemetry safely
-(async () => {
-  try {
-    await loadTelemetry();
-    telemetryData.sessions++;
-    await saveTelemetry();
-  } catch (e) {
-    logger.error('Failed to initialize telemetry:', e);
-  }
-})();
 
 // === KEEP SERVICE WORKER ALIVE ===
 // Optimized keep-alive strategy with adaptive intervals
@@ -408,11 +427,12 @@ async function injectAndSend(tabId, message) {
 // === CONTEXT MENU ===
 if (chrome?.runtime?.onInstalled) {
 chrome.runtime.onInstalled.addListener(async () => {
-  // Run all migrations
+  // Run all migrations and telemetry init
   await migrateStorageIfNeeded().catch(e => logger.error('Storage migration failed (onInstalled):', e));
   await migrateSettingsIfNeeded().catch(e => logger.error('Settings migration failed (onInstalled):', e));
   await validateSettings().catch(e => logger.error('Settings validation failed (onInstalled):', e));
   await backupSettings().catch(e => logger.error('Settings backup failed (onInstalled):', e));
+  await initializeTelemetry().catch(e => logger.error('Telemetry init failed (onInstalled):', e));
 
   // Context Menu - Organized by feature
   // Parent: Content Tools
@@ -1790,8 +1810,7 @@ async function handleStream(
 
     if (result.summary) {
       // Track successful summary
-      telemetryData.summaries++;
-      saveTelemetry();
+      await incrementTelemetry('summaries');
       trackEvent('summary_completed', { provider: keyInfo.provider, type });
       // Agent mode: parse [SCORE:N] tag từ dòng đầu, strip khỏi text hiển thị
       let agentScore = undefined;
@@ -1980,6 +1999,7 @@ function formatSourceName(site, author) {
 if (chrome?.runtime?.onStartup) {
 chrome.runtime.onStartup.addListener(async () => {
   await migrateStorageIfNeeded().catch(e => logger.error('Storage migration failed (onStartup):', e));
+  await initializeTelemetry().catch(e => logger.error('Telemetry init failed (onStartup):', e));
   const today = new Date().toDateString();
   const data = await chrome.storage.local.get([
     "dailyCount",
