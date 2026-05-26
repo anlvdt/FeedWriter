@@ -28,9 +28,6 @@ FORMAT OUTPUT:
 **Giải thích thuật ngữ:**
 · Thuật ngữ: Giải thích ngắn 1 câu.
 
-_________________
-👉 Chi tiết & nguồn dưới bình luận đầu tiên
-
 YÊU CẦU:
 - Tiêu đề PHẢI ở dòng đầu, KHÔNG bọc trong ** hay ký tự đặc biệt. Viết bình thường (hệ thống tự viết hoa).
 - SAU TIÊU ĐỀ: LUÔN 1 dòng trống.
@@ -40,7 +37,7 @@ YÊU CẦU:
 - CẤM LẶP Ý: Mỗi câu phải mang thông tin MỚI. Không diễn đạt lại ý cũ bằng từ khác. Kiểm tra lại trước khi output.
 - Nếu muốn tách đoạn cho dễ đọc, cách bằng 1 dòng trống. Nhưng mỗi đoạn phải là ý KHÁC NHAU.
 - GIẢI THÍCH THUẬT NGỮ: CHỈ thêm mục "**Giải thích thuật ngữ:**" khi có thuật ngữ THẬT SỰ chuyên ngành mà người đọc phổ thông chưa biết. TUYỆT ĐỐI KHÔNG giải thích: app, addon, update, plugin, extension, post, link, share, like, comment, feed, API, Chrome, Firefox, Google, Facebook, YouTube, TikTok, iPhone, Android, AI, ChatGPT, Wi-Fi, internet, website, server, cloud, crypto, NFT, CEO, startup — đây là từ người Việt dùng hàng ngày. Nếu không có thuật ngữ thực sự khó → BỎ QUA hoàn toàn mục này.
-- LUÔN kết thúc bằng dòng kẻ "_________________" và câu "👉 Chi tiết & nguồn dưới bình luận đầu tiên".
+- KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống sẽ tự thêm footer chuẩn.
 - Giọng tự nhiên, dễ hiểu như đang kể cho bạn bè
 - Giữ thông tin có giá trị thực, dữ liệu, kết luận
 - Bỏ ví dụ dài, chi tiết lan man, rào đón
@@ -62,7 +59,7 @@ Yêu cầu:
 - GIẢI THÍCH THUẬT NGỮ: CHỈ thêm mục này khi có thuật ngữ THẬT SỰ chuyên ngành khó (không giải thích: AI, API, app, plugin, extension, link, website, server, v.v.). Thêm trước dòng nguồn theo cấu trúc sau:
 **Giải thích thuật ngữ:**
 · Thuật ngữ: Giải thích ngắn 1 câu.
-- Kết thúc: dòng kẻ "_________________" rồi xuống dòng "👉 Chi tiết & nguồn dưới bình luận đầu tiên"`;
+- KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống tự thêm`;
 
 // TÓM TẮT CHI TIẾT - Detailed với cấu trúc
 const SUMMARY_DETAILED_PROMPT = `Bạn là chuyên gia phân tích và tóm tắt có cấu trúc.
@@ -82,7 +79,7 @@ YÊU CẦU:
 - GIẢI THÍCH THUẬT NGỮ: CHỈ thêm mục này khi có thuật ngữ THẬT SỰ chuyên ngành khó (không giải thích: AI, API, app, plugin, extension, link, website, server, v.v.). Thêm trước dòng nguồn theo cấu trúc sau:
 **Giải thích thuật ngữ:**
 · Thuật ngữ: Giải thích ngắn 1 câu.
-- Kết thúc: dòng kẻ "_________________" rồi xuống dòng "👉 Chi tiết & nguồn dưới bình luận đầu tiên"`;
+- KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống tự thêm`;
 
 // TÓM TẮT DẠNG BULLET - Easy to scan
 const SUMMARY_BULLET_PROMPT = `Tóm tắt thành các bullet points ngắn gọn.
@@ -97,7 +94,7 @@ Quy tắc:
 - GIẢI THÍCH THUẬT NGỮ: CHỈ thêm mục này khi có thuật ngữ THẬT SỰ chuyên ngành khó (không giải thích: AI, API, app, plugin, extension, link, website, server, v.v.). Thêm trước dòng nguồn theo cấu trúc sau:
 **Giải thích thuật ngữ:**
 · Thuật ngữ: Giải thích ngắn 1 câu.
-- Kết thúc: dòng kẻ "_________________" rồi xuống dòng "👉 Chi tiết & nguồn dưới bình luận đầu tiên"`;
+- KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống tự thêm`;
 
 // === QUY TẮC CHÍNH TẢ VNREVIEW (áp dụng cho mọi output tiếng Việt) ===
 const VNREVIEW_RULES = `
@@ -214,7 +211,7 @@ YÊU CẦU:
 - GIẢI THÍCH THUẬT NGỮ: CHỈ thêm mục này khi có thuật ngữ THẬT SỰ chuyên ngành khó (không giải thích: AI, API, app, plugin, extension, link, website, server, v.v.). Thêm trước dòng nguồn theo cấu trúc sau:
 **Giải thích thuật ngữ:**
 · Thuật ngữ: Giải thích ngắn 1 câu.
-- Kết thúc: dòng kẻ "_________________" rồi xuống dòng "👉 Chi tiết & nguồn dưới bình luận đầu tiên"`;
+- KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống tự thêm`;
 
 // TÓM TẮT BÌNH LUẬN - Summarize community comment discussions
 const COMMENT_SUMMARY_PROMPT = `Bạn là chuyên gia phân tích thảo luận mạng xã hội, giỏi tổng hợp ý kiến cộng đồng.
@@ -241,9 +238,6 @@ FORMAT OUTPUT:
 · [Luồng ý kiến 1]: Mô tả ngắn gọn kèm dẫn chứng chung từ cmt
 · [Luồng ý kiến 2]: Mô tả ngắn gọn kèm dẫn chứng chung từ cmt
 · [Luồng ý kiến 3]: Mô tả ngắn gọn kèm dẫn chứng chung từ cmt (nếu có)
-
-_________________
-👉 Chi tiết & nguồn dưới bình luận đầu tiên
 
 YÊU CẦU:
 - Tiêu đề PHẢI ở dòng đầu, KHÔNG bọc trong ** hay ký tự đặc biệt. Viết bình thường (hệ thống tự viết hoa).

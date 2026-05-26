@@ -817,15 +817,19 @@ function copyResult() {
     }
   }
 
-  // Apply accent-safe Unicode formatting if enabled
-  text = applyUnicodeFormatting(text);
-
-  // Auto-uppercase the first line (title) to sync UI formatting with clipboard
-  const lines = text.split("\n");
-  if (lines.length > 0) {
-    lines[0] = lines[0].toUpperCase();
+  // Format for current platform using StatusFormatter (or legacy fallback)
+  if (typeof StatusFormatter !== "undefined") {
+    const platform = (typeof SITE !== "undefined") ? SITE : "facebook";
+    const hasRepo = !!(typeof globalCustomSourceLink !== 'undefined' && globalCustomSourceLink);
+    text = StatusFormatter.format(text, platform, { hasRepo });
+  } else {
+    text = applyUnicodeFormatting(text);
+    const lines = text.split("\n");
+    if (lines.length > 0) {
+      lines[0] = lines[0].toUpperCase();
+    }
+    text = lines.join("\n");
   }
-  text = lines.join("\n");
 
   // Add Shopee products to copied text if available
   if (currentShopeeProducts && currentShopeeProducts.length > 0) {
@@ -1208,8 +1212,20 @@ function displayError(errorData) {
 
 function fmt(t) {
   let text = t;
-  
-  // Format raw AI text into unified status format (if not already formatted)
+
+  // Use StatusFormatter if available (new unified engine)
+  if (typeof StatusFormatter !== "undefined") {
+    const hasRepo = !!(typeof globalCustomSourceLink !== 'undefined' && globalCustomSourceLink);
+    // Store plain-text formatted version for copy/paste/post
+    const plainText = StatusFormatter.format(text, "facebook", { hasRepo });
+    if (panelBody) {
+      panelBody.dataset.editedText = plainText;
+    }
+    // Return rich HTML for panel display
+    return StatusFormatter.toDisplayHTML(text, { hasRepo });
+  }
+
+  // Legacy fallback: original formatting logic
   const isAlreadyFormatted = text.includes("━━━━━━━━━━");
   if (!isAlreadyFormatted) {
     const hasRepo = !!(typeof globalCustomSourceLink !== 'undefined' && globalCustomSourceLink);
@@ -1219,21 +1235,13 @@ function fmt(t) {
     }
   }
 
-  // Escape HTML characters
   let html = esc(text);
-
-  // Convert markdown bold/italic tags to beautiful HTML tags
   html = html
     .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
     .replace(/\*(.*?)\*/g, "<em>$1</em>");
-
-  // Highlight checkmarks
   html = html.replace(/✓\s+/g, '<span style="color: #a855f7; font-weight: bold; margin-right: 8px;">✓</span> ');
-
-  // Highlight the separator beautifully
   html = html.replace(/━━━━━━━━━━/g, '<div style="margin: 20px 0; border-top: 1px dashed rgba(255, 255, 255, 0.15); display: flex; align-items: center; justify-content: center; color: rgba(255, 255, 255, 0.25); font-size: 11px; letter-spacing: 0.1em; pointer-events: none;">━━━━━━━━━━</div>');
 
-  // Convert glossary sections if present
   const lines = html.split("\n");
   let formattedLines = [];
   let inGlossary = false;

@@ -76,11 +76,22 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
     '<div class="fbs-sp-comment-text"></div>' +
     '<button class="fbs-sp-copy-comment"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy nguồn</button>' +
     "</div>" +
+    '<div class="fbs-crosspost-area"></div>' +
     '<div class="fbs-sp-actions">' +
     '<button class="fbs-sp-open-fb"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg> Đăng status</button>' +
     "</div>";
 
   panelBody.appendChild(preview);
+
+  // Inject cross-post platform selector
+  if (typeof CrossPoster !== "undefined") {
+    const crosspostArea = preview.querySelector(".fbs-crosspost-area");
+    if (crosspostArea) {
+      const selector = CrossPoster.createPlatformSelector();
+      crosspostArea.appendChild(selector);
+    }
+  }
+
   panelBody.scrollTop = panelBody.scrollHeight;
 
   const footer = panel.querySelector(".fbs-panel-footer");
@@ -303,16 +314,51 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
     });
   }
 
-  // Đăng status — chỉ tự động hóa: mở composer + paste text + paste ảnh.
-  // User tự click "Đăng" và tự comment nguồn (đã copy sẵn vào clipboard).
+  // Đăng status — mở composer + paste text + paste ảnh.
+  // Hỗ trợ cross-platform: Facebook, Threads, X, LinkedIn, Reddit.
   preview
     .querySelector(".fbs-sp-open-fb")
     .addEventListener("click", async () => {
       const btn = preview.querySelector(".fbs-sp-open-fb");
-      if (SITE !== "facebook") {
+
+      // Cross-platform: nếu đang ở platform khác và có adapter → dùng adapter
+      if (SITE !== "facebook" && typeof CrossPoster !== "undefined") {
+        const adapter = CrossPoster.getCurrentAdapter();
+        if (adapter) {
+          btn.disabled = true;
+          btn.innerHTML = '<div class="fbs-spinner" style="width:14px;height:14px;border-width:2px"></div> Đang đăng lên ' + adapter.label + '...';
+
+          // Build PostData từ context hiện tại
+          let selectedUrls = [];
+          const thumbCheckboxes = preview.querySelectorAll(".fbs-sp-thumb-cb");
+          if (thumbCheckboxes.length > 0) {
+            selectedUrls = Array.from(thumbCheckboxes)
+              .filter(cb => cb.checked)
+              .map(cb => cb.dataset.url)
+              .filter(Boolean);
+          } else if (imageList.length > 0) {
+            selectedUrls = imageList;
+          }
+
+          const postData = PostData.fromFeedWriter(text, sourceUrl, imageUrl, cleanAuthor, cleanSource, selectedUrls);
+          const result = await adapter.post(postData);
+
+          btn.disabled = false;
+          if (result.ok) {
+            btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Sẵn sàng trên ' + adapter.label + ' — bấm Đăng';
+          } else {
+            btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> Lỗi: ' + (result.reason || "unknown");
+          }
+          return;
+        }
+        // No adapter for this site — fallback to copy
+        await navigator.clipboard.writeText(text);
+        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Đã copy (chưa hỗ trợ ' + SITE + ')';
+        return;
+      } else if (SITE !== "facebook") {
         await navigator.clipboard.writeText(text);
         btn.innerHTML =
-          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Copied (FB only supported)';
+          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Đã copy text';
         return;
       }
 
@@ -412,7 +458,13 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
 
         // Bước 5: Paste text + ảnh
         setStatus("Dán nội dung...");
-        const textWithFooter = applyUnicodeFormatting(text);
+        let textWithFooter;
+        if (typeof StatusFormatter !== "undefined") {
+          const hasRepo = !!(typeof globalCustomSourceLink !== 'undefined' && globalCustomSourceLink);
+          textWithFooter = StatusFormatter.format(text, "facebook", { hasRepo });
+        } else {
+          textWithFooter = applyUnicodeFormatting(text);
+        }
         pasteToLexical(editor, textWithFooter, imgFiles.length > 0 ? imgFiles : null);
 
         // Chờ upload hoàn tất (để user thấy ảnh đã render trước khi bấm Đăng)
@@ -451,41 +503,43 @@ function getFacebookFooter(hasRepo) {
 }
 
 /**
- * Unicode sans-serif bold for standard English letters and digits (accent-safe)
+ * Unicode sans-serif bold for standard English letters and digits.
+ * Splits by whitespace and only bolds tokens that are entirely ASCII.
+ * Vietnamese words (with diacritics) are skipped entirely — no partial bolding.
  */
 function toUnicodeBold(str) {
-  let result = "";
-  for (let i = 0; i < str.length; i++) {
-    const c = str.charCodeAt(i);
-    if (c >= 65 && c <= 90) {
-      result += String.fromCodePoint(c + 120231);
-    } else if (c >= 97 && c <= 122) {
-      result += String.fromCodePoint(c + 120225);
-    } else if (c >= 48 && c <= 57) {
-      result += String.fromCodePoint(c + 120764);
-    } else {
-      result += str[i];
+  return str.split(/(\s+)/).map(token => {
+    if (/^\s+$/.test(token)) return token;
+    if (/[^\x00-\x7F]/.test(token)) return token;
+    let result = "";
+    for (let i = 0; i < token.length; i++) {
+      const c = token.charCodeAt(i);
+      if (c >= 65 && c <= 90)       result += String.fromCodePoint(c + 120211); // U+1D5D4 (𝗔)
+      else if (c >= 97 && c <= 122) result += String.fromCodePoint(c + 120205); // U+1D5EE (𝗮)
+      else if (c >= 48 && c <= 57)  result += String.fromCodePoint(c + 120764); // U+1D7EC (𝟬)
+      else result += token[i];
     }
-  }
-  return result;
+    return result;
+  }).join("");
 }
 
 /**
- * Unicode sans-serif italic for standard English letters (accent-safe)
+ * Unicode sans-serif italic for standard English letters.
+ * Same split-by-whitespace approach — skip tokens with non-ASCII characters.
  */
 function toUnicodeItalic(str) {
-  let result = "";
-  for (let i = 0; i < str.length; i++) {
-    const c = str.charCodeAt(i);
-    if (c >= 65 && c <= 90) {
-      result += String.fromCodePoint(c + 120287);
-    } else if (c >= 97 && c <= 122) {
-      result += String.fromCodePoint(c + 120281);
-    } else {
-      result += str[i];
+  return str.split(/(\s+)/).map(token => {
+    if (/^\s+$/.test(token)) return token;
+    if (/[^\x00-\x7F]/.test(token)) return token;
+    let result = "";
+    for (let i = 0; i < token.length; i++) {
+      const c = token.charCodeAt(i);
+      if (c >= 65 && c <= 90)       result += String.fromCodePoint(c + 120263); // U+1D608 (𝘈)
+      else if (c >= 97 && c <= 122) result += String.fromCodePoint(c + 120257); // U+1D622 (𝘢)
+      else result += token[i];
     }
-  }
-  return result;
+    return result;
+  }).join("");
 }
 
 /**
@@ -785,19 +839,21 @@ window.fbsAgentPost = async function (summaryText, imageUrl, rawSourceUrl, postE
   console.log("[Agent] Comment text prepared:", commentText);
   console.log("[Agent] Author:", postAuthor || "(unknown)", "| Source:", postSource || "(unknown)", "| URL:", cleanUrl || "(none)");
 
-  // Build final post text
-  // AI thường đã include "—\nNguồn dưới cmt đầu" theo prompt yêu cầu.
-  // Strip mọi instance có sẵn (nhiều format) rồi append đúng 1 lần.
-  // Regex: match all variants of "Nguồn dưới cmt đầu" or "Nguồn dưới bình luận đầu tiên"
-  postText = postText.replace(
-    /\s*(?:[—-]\s*\n\s*)?Nguồn\s+dưới\s+(?:cmt|bình\s+luận|binh\s+luan)\s+đầu(?:\s+tiên)?\s*$/gi,
-    ""
-  ).trim();
-  // Format for Facebook with emojis and visual hierarchy
-  const formattedText = formatForFacebook(postText);
-  // Append đúng 1 lần footer chuẩn với visual separator
-  const hasRepo = !!(typeof globalCustomSourceLink !== 'undefined' && globalCustomSourceLink);
-  postText = formattedText + getFacebookFooter(hasRepo);
+  // Build final post text — use StatusFormatter (handles stripping + formatting + footer)
+  {
+    const hasRepo = !!(typeof globalCustomSourceLink !== 'undefined' && globalCustomSourceLink);
+    if (typeof StatusFormatter !== "undefined") {
+      postText = StatusFormatter.format(postText, "facebook", { hasRepo });
+    } else {
+      // Legacy fallback
+      postText = postText.replace(
+        /\s*(?:[—-]\s*\n\s*)?Nguồn\s+dưới\s+(?:cmt|bình\s+luận|binh\s+luan)\s+đầu(?:\s+tiên)?\s*$/gi,
+        ""
+      ).trim();
+      const formattedText = formatForFacebook(postText);
+      postText = formattedText + getFacebookFooter(hasRepo);
+    }
+  }
 
   console.log("[Agent] fbsAgentPost called:", {
     textLength: postText.length,
