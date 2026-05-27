@@ -2,54 +2,32 @@
 // References: VietAI ViT5, Underthesea, Vietnamese summarization best practices
 
 // TÓM TẮT TIẾNG VIỆT CHUẨN - Hybrid extractive + abstractive approach
-const SUMMARY_PROMPT = `Bạn là chuyên gia viết status mạng xã hội tiếng Việt — chuyên biến bài viết dài thành status ngắn, có CẤU TRÚC RÕ RÀNG, dễ scan trên mobile.
+const SUMMARY_PROMPT = `Bạn là chuyên gia tóm tắt nội dung tiếng Việt — viết ngắn gọn, súc tích, nắm bắt đúng bản chất.
 
-NHIỆM VỤ: Đọc kỹ nội dung, viết TIÊU ĐỀ có hook mạnh + tóm tắt CÓ CẤU TRÚC headers + bullets.
+NHIỆM VỤ: Đọc kỹ nội dung, viết TÓM TẮT NGẮN GỌN gồm tiêu đề + vài bullet chính.
 
-QUY TRÌNH:
-1. XÁC ĐỊNH: Chủ đề chính? Kết luận/điểm then chốt nhất?
-2. VIẾT TIÊU ĐỀ: Dòng đầu tiên, tối đa 15-20 từ, hook mạnh. Dùng 1 trong: CURIOSITY GAP, CONTRARIAN, DATA HOOK, BENEFIT HOOK, QUESTION HOOK.
-3. CHIA SECTION: Nhóm thông tin thành 2-3 nhóm logic, mỗi nhóm có header riêng.
-4. VIẾT BULLETS: Mỗi ý quan trọng = 1 bullet, bắt đầu bằng ·, tối đa 2 câu.
+FORMAT OUTPUT:
+[Tiêu đề hook mạnh, tối đa 15 từ — viết bình thường, hệ thống tự viết hoa]
 
-FORMAT OUTPUT BẮT BUỘC:
-[Tiêu đề hook — viết bình thường, hệ thống tự viết hoa]
+[1-2 câu tóm tắt bản chất nội dung — đi thẳng vào vấn đề]
 
-[1 câu mô tả ngắn gọn bản chất/bối cảnh — KHÔNG QUÁ 2 CÂU]
+· Ý chính 1: mô tả ngắn
+· Ý chính 2: mô tả ngắn
+· Ý chính 3: mô tả ngắn
 
-**[Tên section 1]:**
-
-· [Ý chính]: mô tả ngắn
-· [Ý chính]: mô tả ngắn
-
-**[Tên section 2]:**
-
-· [Ý chính]: mô tả ngắn
-· [Ý chính]: mô tả ngắn
-
-**Giải thích thuật ngữ:**
-· Thuật ngữ: Giải thích ngắn 1 câu.
-
-QUY TẮC STRUCTURE BẮT BUỘC:
-- LUÔN có ít nhất 2 section headers bọc trong **...**:
-- Mỗi section header PHẢI có dấu : ở cuối, VD: **Điểm nổi bật:** hoặc **Cách hoạt động:**
-- LUÔN có ít nhất 3 bullet points (·) trong toàn bài
-- CẤM viết paragraph dài liền mạch. Mỗi ý = 1 bullet riêng.
-- NẾU bài gốc là HƯỚNG DẪN: dùng numbered list (1. 2. 3.) thay vì bullets
-- Bullet format: "· Keyword/Phrase: giải thích" — phần trước dấu : sẽ được in đậm tự động
-
-YÊU CẦU:
-- Tiêu đề PHẢI ở dòng đầu, KHÔNG bọc trong **, viết bình thường (hệ thống tự viết hoa).
+QUY TẮC:
+- KHÔNG chia nhiều đề mục/section headers. Tóm tắt = viết gọn lại, KHÔNG phải phân tích chi tiết.
+- Chỉ 1 danh sách bullets phẳng (3-5 bullets), mỗi bullet = 1 ý then chốt.
+- NẾU nội dung thật sự có 2 phần rõ rệt (VD: vấn đề + giải pháp), cho phép TỐI ĐA 1 header phụ.
+- Bullet format: "· Keyword: giải thích ngắn" — phần trước dấu : sẽ được in đậm tự động.
+- NẾU bài gốc là HƯỚNG DẪN: dùng numbered list (1. 2. 3.) thay vì bullets.
+- Tổng tối đa 120 từ (không tính tiêu đề).
+- Tiêu đề PHẢI ở dòng đầu, KHÔNG bọc trong **, viết bình thường.
 - SAU TIÊU ĐỀ: LUÔN 1 dòng trống.
-- Tổng tối đa 200 từ (không tính tiêu đề và thuật ngữ).
-- CẤM LẶP Ý: Mỗi bullet phải mang thông tin MỚI.
-- GIẢI THÍCH THUẬT NGỮ: CHỈ thêm khi có thuật ngữ THẬT SỰ chuyên ngành. KHÔNG giải thích: app, update, plugin, API, Chrome, Google, Facebook, AI, ChatGPT, server, cloud, startup, v.v. Không có thuật ngữ khó → BỎ QUA mục này.
-- KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống sẽ tự thêm footer chuẩn.
-- Giọng tự nhiên, dễ hiểu
-- CHỈ dùng thông tin CÓ TRONG bài gốc, KHÔNG bịa thêm số liệu
-- CẤM tiêu đề nhạt: "Tin mới", "Có một điều thú vị..."
-- CẤM câu dẫn dắt rỗng: "Mình vừa đọc...", "Gần đây..."
-- CẤM lạm dụng "của bạn", "của mình". Viết trực tiếp.
+- GIẢI THÍCH THUẬT NGỮ: CHỈ khi có thuật ngữ thật sự chuyên ngành (KHÔNG giải thích AI, API, app, server, cloud, v.v.). Không có thuật ngữ khó → BỎ QUA.
+- KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống tự thêm.
+- Giọng tự nhiên, dễ hiểu. CHỈ dùng thông tin CÓ TRONG bài gốc.
+- CẤM tiêu đề nhạt, câu dẫn dắt rỗng, lạm dụng "của bạn/của mình".
 - Trả lời bằng tiếng Việt`;
 
 // TÓM TẮT NGẮN - Quick overview
@@ -73,42 +51,30 @@ Yêu cầu:
 - Giọng tự nhiên
 - KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống tự thêm`;
 
-// TÓM TẮT CHI TIẾT - Detailed với cấu trúc
+// TÓM TẮT CHI TIẾT - Detailed với cấu trúc (dùng cho status_share type)
 const SUMMARY_DETAILED_PROMPT = `Bạn là chuyên gia viết status phân tích chuyên sâu có cấu trúc.
 
-NHIỆM VỤ: Viết tiêu đề hook mạnh + phân tích chi tiết theo SECTIONS rõ ràng.
+NHIỆM VỤ: Viết tiêu đề hook mạnh + phân tích chi tiết, chia thành 2-3 sections.
 
-FORMAT BẮT BUỘC:
+FORMAT:
 [Tiêu đề hook mạnh, tối đa 20 từ — viết bình thường]
 
-[1-2 câu bối cảnh/thesis]
+[1-2 câu bối cảnh]
 
-**[Section 1 — vấn đề/bối cảnh]:**
-
+**[Section 1]:**
 · Ý 1: mô tả
 · Ý 2: mô tả
 
-**[Section 2 — giải pháp/điểm nổi bật]:**
-
+**[Section 2]:**
 · Ý 1: mô tả
 · Ý 2: mô tả
-
-**[Section 3 — kết luận/tác động]:**
-
-· Ý 1: mô tả
-
-**Giải thích thuật ngữ:**
-· Thuật ngữ: Giải thích ngắn 1 câu.
 
 YÊU CẦU:
-- Tiêu đề KHÔNG bọc **, viết bình thường, hệ thống tự viết hoa.
-- LUÔN có ít nhất 2-3 section headers bọc **...**:
-- Mỗi section: 2-4 bullets bắt đầu bằng ·
-- Bullet format: "· Keyword: giải thích" — dấu : phân tách để hệ thống in đậm keyword
-- Tổng tối đa 250 từ
-- Viết lại hoàn toàn, KHÔNG copy
-- GIẢI THÍCH THUẬT NGỮ: CHỈ khi thuật ngữ thật sự chuyên ngành. Không giải thích: AI, API, app, server, v.v.
-- KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống tự thêm`;
+- 2-3 section headers bọc **...**:, mỗi section 2-4 bullets
+- Bullet format: "· Keyword: giải thích"
+- Tổng tối đa 250 từ. Viết lại hoàn toàn, KHÔNG copy.
+- GIẢI THÍCH THUẬT NGỮ: CHỈ khi thuật ngữ thật sự chuyên ngành.
+- KHÔNG thêm dòng kẻ hay câu nguồn — hệ thống tự thêm`;
 
 // TÓM TẮT DẠNG BULLET - Easy to scan
 const SUMMARY_BULLET_PROMPT = `Tóm tắt thành bullets có cấu trúc sections.
@@ -292,6 +258,9 @@ const PROMPT_TEMPLATES = {
   summary_bullet: SUMMARY_BULLET_PROMPT,
   summary_structured: SUMMARY_STRUCTURED_PROMPT,
   comment_summary: COMMENT_SUMMARY_PROMPT,
+
+  // Status share uses detailed prompt (multi-section is appropriate for writing status)
+  status_share: SUMMARY_DETAILED_PROMPT,
 
   // Affiliate variants
   affiliate: AFFILIATE_PROMPT,
