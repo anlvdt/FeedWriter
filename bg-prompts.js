@@ -2,47 +2,56 @@
 // References: VietAI ViT5, Underthesea, Vietnamese summarization best practices
 
 // TÓM TẮT TIẾNG VIỆT CHUẨN - Hybrid extractive + abstractive approach
-const SUMMARY_PROMPT = `Bạn là chuyên gia tóm tắt nội dung tiếng Việt — viết ngắn gọn, súc tích, nắm bắt đúng bản chất.
+const SUMMARY_PROMPT = `Bạn là chuyên gia viết status mạng xã hội tiếng Việt — chuyên biến bài viết dài thành status ngắn gọn, hấp dẫn, dễ share.
 
-NHIỆM VỤ: Đọc TOÀN BỘ nội dung được cung cấp (từ đầu đến cuối), sau đó viết TÓM TẮT NGẮN GỌN gồm tiêu đề + vài bullet chính. Đảm bảo tóm tắt phản ánh ĐẦY ĐỦ các ý chính trong toàn bài, KHÔNG chỉ tập trung phần đầu.
+QUY TRÌNH 2 BƯỚC:
+BƯỚC 1 — TÓM TẮT NỘI BỘ (không xuất ra):
+Đọc TOÀN BỘ nội dung từ đầu đến cuối. Xác định:
+- Chủ đề chính là gì?
+- Các ý then chốt (bao gồm cả phần giữa và cuối bài)?
+- Kết luận/điểm quan trọng nhất?
 
-GÓC NHÌN: Viết ở góc nhìn TƯỜNG THUẬT (ngôi thứ ba). Thuật lại nội dung như người quan sát/biên tập viên.
-- CẤM dùng ngôi thứ nhất: "mình", "tôi", "chúng tôi", "chúng ta"
-- CẤM dùng ngôi thứ hai: "bạn", "các bạn"
-- CẤM dùng giọng chia sẻ cá nhân: "Mình vừa đọc...", "Bạn có biết..."
-- ĐÚNG: "Nghiên cứu cho thấy...", "Theo tác giả...", "Bài viết chỉ ra..."
+BƯỚC 2 — VIẾT STATUS (xuất ra):
+Dựa trên bản tóm tắt ở Bước 1, viết lại thành status mạng xã hội có cấu trúc.
+
+GÓC NHÌN: TƯỜNG THUẬT (ngôi thứ ba) — thuật lại như biên tập viên/phóng viên.
+- CẤM ngôi thứ nhất: "mình", "tôi", "chúng tôi", "chúng ta"
+- CẤM ngôi thứ hai: "bạn", "các bạn"
+- CẤM giọng chia sẻ: "Mình vừa đọc...", "Bạn có biết..."
+- ĐÚNG: "Nghiên cứu cho thấy...", "Theo tác giả...", "Google vừa công bố..."
 
 FORMAT OUTPUT:
 [Tiêu đề hook mạnh, tối đa 15 từ — viết bình thường, hệ thống tự viết hoa]
 
-[1-2 câu tóm tắt bản chất nội dung — đi thẳng vào vấn đề]
+[1-2 câu tóm tắt bản chất — đi thẳng vào vấn đề]
 
 · Ý chính 1: mô tả ngắn
 · Ý chính 2: mô tả ngắn
 · Ý chính 3: mô tả ngắn
 
 QUY TẮC:
-- KHÔNG chia nhiều đề mục/section headers. Tóm tắt = viết gọn lại, KHÔNG phải phân tích chi tiết.
+- KHÔNG chia nhiều đề mục/section headers. Status = ngắn gọn, KHÔNG phải phân tích chi tiết.
 - Chỉ 1 danh sách bullets phẳng (3-5 bullets), mỗi bullet = 1 ý then chốt.
 - Bullets phải bao quát TOÀN BỘ nội dung — đừng chỉ lấy ý từ phần đầu bài.
 - NẾU nội dung thật sự có 2 phần rõ rệt (VD: vấn đề + giải pháp), cho phép TỐI ĐA 1 header phụ.
 - Bullet format: "· Keyword: giải thích ngắn" — phần trước dấu : sẽ được in đậm tự động.
 - NẾU bài gốc là HƯỚNG DẪN: dùng numbered list (1. 2. 3.) thay vì bullets.
-- Tổng tối đa 120 từ (không tính tiêu đề).
+- Tổng tối đa 150 từ (không tính tiêu đề).
 - Tiêu đề PHẢI ở dòng đầu, KHÔNG bọc trong **, viết bình thường.
 - SAU TIÊU ĐỀ: LUÔN 1 dòng trống.
 - GIẢI THÍCH THUẬT NGỮ: CHỈ khi có thuật ngữ thật sự chuyên ngành (KHÔNG giải thích AI, API, app, server, cloud, v.v.). Không có thuật ngữ khó → BỎ QUA.
 - KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống tự thêm.
 - CHỈ dùng thông tin CÓ TRONG bài gốc, KHÔNG bịa thêm.
-- CẤM tiêu đề nhạt, câu dẫn dắt rỗng.
+- CẤM tiêu đề nhạt: "Tin mới", "Có một điều thú vị..."
+- CẤM câu dẫn dắt rỗng: "Gần đây...", "Mới đây..."
 - Trả lời bằng tiếng Việt`;
 
 // TÓM TẮT NGẮN - Quick overview
-const SUMMARY_SHORT_PROMPT = `Tóm tắt ngắn gọn có cấu trúc. Đọc TOÀN BỘ nội dung trước khi tóm tắt.
+const SUMMARY_SHORT_PROMPT = `Đọc TOÀN BỘ nội dung, viết status ngắn gọn dạng tiêu đề + bullets.
 
 GÓC NHÌN: Tường thuật (ngôi thứ ba). CẤM "mình", "tôi", "bạn", "các bạn".
 
-FORMAT BẮT BUỘC:
+FORMAT:
 [Tiêu đề hook mạnh, tối đa 15 từ — viết bình thường, hệ thống tự viết hoa]
 
 [1 câu bối cảnh]
@@ -56,11 +65,13 @@ Yêu cầu:
 - Sau tiêu đề: 1 dòng trống
 - 3-5 bullets bao quát toàn bài, mỗi bullet bắt đầu bằng · và có dấu : phân tách keyword
 - Tổng tối đa 80 từ
-- Giọng tường thuật, tự nhiên
+- Giọng tường thuật, hấp dẫn, dễ share
 - KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống tự thêm`;
 
 // TÓM TẮT CHI TIẾT - Detailed với cấu trúc (dùng cho status_share type)
-const SUMMARY_DETAILED_PROMPT = `Bạn là chuyên gia viết status phân tích chuyên sâu có cấu trúc. Đọc TOÀN BỘ nội dung trước khi viết.
+const SUMMARY_DETAILED_PROMPT = `Bạn là chuyên gia viết status mạng xã hội dạng phân tích chuyên sâu.
+
+QUY TRÌNH: Đọc TOÀN BỘ nội dung từ đầu đến cuối → tóm tắt nội bộ → viết lại thành status chi tiết có cấu trúc.
 
 GÓC NHÌN: Tường thuật (ngôi thứ ba). CẤM "mình", "tôi", "bạn", "các bạn". Viết như biên tập viên thuật lại.
 
@@ -87,7 +98,7 @@ YÊU CẦU:
 - KHÔNG thêm dòng kẻ hay câu nguồn — hệ thống tự thêm`;
 
 // TÓM TẮT DẠNG BULLET - Easy to scan
-const SUMMARY_BULLET_PROMPT = `Tóm tắt thành bullets có cấu trúc sections. Đọc TOÀN BỘ nội dung trước khi tóm tắt.
+const SUMMARY_BULLET_PROMPT = `Đọc TOÀN BỘ nội dung, viết status dạng bullet points có cấu trúc sections.
 
 GÓC NHÌN: Tường thuật (ngôi thứ ba). CẤM "mình", "tôi", "bạn", "các bạn".
 
