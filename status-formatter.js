@@ -577,14 +577,14 @@ const StatusFormatter = {
       switch (block.type) {
         case "title":
           htmlParts.push(
-            '<div class="fbs-title-line" style="font-size:18px;font-weight:800;line-height:1.35;color:#f0e6ff;margin-bottom:16px;border-left:4px solid #a855f7;padding-left:12px;margin-left:-4px;">' +
+            '<div class="fbs-title-line">' +
             this._escHtml(block.text).toUpperCase() + '</div>'
           );
           break;
 
         case "header":
           htmlParts.push(
-            '<div style="font-weight:700;color:#d8b4fe;margin:16px 0 6px;font-size:14px;letter-spacing:0.02em;">' +
+            '<div class="fbs-section-header">' +
             this._escHtml(block.text) + '</div>'
           );
           break;
@@ -612,7 +612,7 @@ const StatusFormatter = {
 
         case "paragraph": {
           const rendered = this._renderInlineMarkdown(block.text);
-          htmlParts.push('<div class="fbs-para" style="margin-bottom:12px;">' + rendered + '</div>');
+          htmlParts.push('<div class="fbs-para">' + rendered + '</div>');
           break;
         }
 
@@ -621,17 +621,16 @@ const StatusFormatter = {
           break;
 
         case "blank":
-          htmlParts.push('<div style="height:8px;"></div>');
+          htmlParts.push('<div style="height:6px;"></div>');
           break;
       }
     }
 
-    // Footer
+    // Footer — subtle, doesn't repeat if HTML already has one
     const hasRepo = !!options.hasRepo;
     htmlParts.push(
-      '<div style="margin:20px 0;border-top:1px dashed rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.25);font-size:11px;letter-spacing:0.1em;padding-top:12px;">━━━━━━━━━━</div>' +
-      '<div style="text-align:center;font-size:12px;color:rgba(255,255,255,0.35);">👉 ' +
-      (hasRepo ? 'Link gốc & mã nguồn dưới bình luận đầu tiên' : 'Chi tiết & nguồn dưới bình luận đầu tiên') +
+      '<div style="margin:16px 0 4px;border-top:1px solid rgba(255,255,255,0.08);padding-top:10px;text-align:center;font-size:11.5px;color:rgba(255,255,255,0.3);">' +
+      '👉 ' + (hasRepo ? 'Link gốc & mã nguồn dưới bình luận đầu tiên' : 'Chi tiết & nguồn dưới bình luận đầu tiên') +
       '</div>'
     );
 
@@ -640,18 +639,18 @@ const StatusFormatter = {
 
   _renderInlineMarkdown(text) {
     let html = this._escHtml(text);
-    html = html.replace(/\*\*(.+?)\*\*/g, '<strong style="color:#e9d5ff;">$1</strong>');
-    html = html.replace(/\*(.+?)\*/g, '<em style="color:#c4b5fd;">$1</em>');
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
     return html;
   },
 
   _renderGlossaryHTML(items) {
     if (!items || items.length === 0) return "";
-    let html = '<div style="margin:12px 0;padding:10px 12px;background:rgba(168,85,247,0.08);border-radius:8px;border-left:3px solid rgba(168,85,247,0.3);">';
-    html += '<div style="font-weight:600;font-size:12px;color:#c4b5fd;margin-bottom:6px;letter-spacing:0.03em;">GIẢI THÍCH THUẬT NGỮ</div>';
+    let html = '<div class="fbs-glossary">';
+    html += '<div class="fbs-glossary-heading">Giải thích thuật ngữ</div>';
     for (const item of items) {
-      html += '<div style="font-size:13px;margin-bottom:4px;">';
-      html += '<strong style="color:#e9d5ff;">' + this._escHtml(item.term) + '</strong>';
+      html += '<div class="fbs-glossary-item">';
+      html += '<strong>' + this._escHtml(item.term) + '</strong>';
       if (item.def) html += ': ' + this._escHtml(item.def);
       html += '</div>';
     }
