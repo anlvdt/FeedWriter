@@ -228,24 +228,25 @@ async function getSystemPrompt(
   }
 
   // Tone override (from overlay tone buttons)
+  // All tones inherit the narrative voice rule from the base prompt
   if (tone) {
     const toneMap = {
       short: "\n\nGHI ĐÈ — RÚT NGẮN TỐI ĐA:\n" +
         "- Tiêu đề + 2-3 bullets, KHÔNG cần đoạn mở đầu.\n" +
         "- Mỗi bullet tối đa 10 từ. Tổng tối đa 60 từ.\n" +
-        "- KHÔNG chia section headers.",
+        "- KHÔNG chia section headers. Giọng tường thuật ngôi thứ ba.",
       academic: "\n\nGHI ĐÈ — PHONG CÁCH HỌC THUẬT:\n" +
-        "- Giọng phân tích khách quan, dùng thuật ngữ chuyên ngành chính xác.\n" +
+        "- Giọng phân tích khách quan ngôi thứ ba, dùng thuật ngữ chuyên ngành chính xác.\n" +
         "- Bullets nêu dữ liệu, trích dẫn, kết luận — không dùng ngôn ngữ casual.\n" +
         "- Vẫn giữ format: tiêu đề → 1-2 câu → · bullets",
       viral: "\n\nGHI ĐÈ — PHONG CÁCH VIRAL:\n" +
         "- Tiêu đề gây sốc hoặc tò mò mạnh.\n" +
         "- Bullets nhấn điểm WOW, bỏ chi tiết nhàm chán.\n" +
-        "- Kết thúc bằng 1 câu hỏi mở hoặc call-to-action.",
+        "- Kết thúc bằng 1 câu hỏi mở. Vẫn giữ giọng tường thuật, CẤM ngôi thứ nhất/hai.",
       bullet: "\n\nGHI ĐÈ — BULLET POINTS THUẦN:\n" +
         "- Chỉ tiêu đề + bullets (·), KHÔNG viết đoạn văn.\n" +
         "- 5-7 bullets, mỗi bullet format: · Keyword: giải thích ngắn\n" +
-        "- Tối đa 15 từ/bullet. KHÔNG chia section headers.",
+        "- Tối đa 15 từ/bullet. KHÔNG chia section headers. Giọng tường thuật.",
     };
     if (toneMap[tone]) prompt += toneMap[tone];
   }

@@ -4,7 +4,13 @@
 // TÓM TẮT TIẾNG VIỆT CHUẨN - Hybrid extractive + abstractive approach
 const SUMMARY_PROMPT = `Bạn là chuyên gia tóm tắt nội dung tiếng Việt — viết ngắn gọn, súc tích, nắm bắt đúng bản chất.
 
-NHIỆM VỤ: Đọc kỹ nội dung, viết TÓM TẮT NGẮN GỌN gồm tiêu đề + vài bullet chính.
+NHIỆM VỤ: Đọc TOÀN BỘ nội dung được cung cấp (từ đầu đến cuối), sau đó viết TÓM TẮT NGẮN GỌN gồm tiêu đề + vài bullet chính. Đảm bảo tóm tắt phản ánh ĐẦY ĐỦ các ý chính trong toàn bài, KHÔNG chỉ tập trung phần đầu.
+
+GÓC NHÌN: Viết ở góc nhìn TƯỜNG THUẬT (ngôi thứ ba). Thuật lại nội dung như người quan sát/biên tập viên.
+- CẤM dùng ngôi thứ nhất: "mình", "tôi", "chúng tôi", "chúng ta"
+- CẤM dùng ngôi thứ hai: "bạn", "các bạn"
+- CẤM dùng giọng chia sẻ cá nhân: "Mình vừa đọc...", "Bạn có biết..."
+- ĐÚNG: "Nghiên cứu cho thấy...", "Theo tác giả...", "Bài viết chỉ ra..."
 
 FORMAT OUTPUT:
 [Tiêu đề hook mạnh, tối đa 15 từ — viết bình thường, hệ thống tự viết hoa]
@@ -18,6 +24,7 @@ FORMAT OUTPUT:
 QUY TẮC:
 - KHÔNG chia nhiều đề mục/section headers. Tóm tắt = viết gọn lại, KHÔNG phải phân tích chi tiết.
 - Chỉ 1 danh sách bullets phẳng (3-5 bullets), mỗi bullet = 1 ý then chốt.
+- Bullets phải bao quát TOÀN BỘ nội dung — đừng chỉ lấy ý từ phần đầu bài.
 - NẾU nội dung thật sự có 2 phần rõ rệt (VD: vấn đề + giải pháp), cho phép TỐI ĐA 1 header phụ.
 - Bullet format: "· Keyword: giải thích ngắn" — phần trước dấu : sẽ được in đậm tự động.
 - NẾU bài gốc là HƯỚNG DẪN: dùng numbered list (1. 2. 3.) thay vì bullets.
@@ -26,12 +33,14 @@ QUY TẮC:
 - SAU TIÊU ĐỀ: LUÔN 1 dòng trống.
 - GIẢI THÍCH THUẬT NGỮ: CHỈ khi có thuật ngữ thật sự chuyên ngành (KHÔNG giải thích AI, API, app, server, cloud, v.v.). Không có thuật ngữ khó → BỎ QUA.
 - KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống tự thêm.
-- Giọng tự nhiên, dễ hiểu. CHỈ dùng thông tin CÓ TRONG bài gốc.
-- CẤM tiêu đề nhạt, câu dẫn dắt rỗng, lạm dụng "của bạn/của mình".
+- CHỈ dùng thông tin CÓ TRONG bài gốc, KHÔNG bịa thêm.
+- CẤM tiêu đề nhạt, câu dẫn dắt rỗng.
 - Trả lời bằng tiếng Việt`;
 
 // TÓM TẮT NGẮN - Quick overview
-const SUMMARY_SHORT_PROMPT = `Tóm tắt ngắn gọn có cấu trúc.
+const SUMMARY_SHORT_PROMPT = `Tóm tắt ngắn gọn có cấu trúc. Đọc TOÀN BỘ nội dung trước khi tóm tắt.
+
+GÓC NHÌN: Tường thuật (ngôi thứ ba). CẤM "mình", "tôi", "bạn", "các bạn".
 
 FORMAT BẮT BUỘC:
 [Tiêu đề hook mạnh, tối đa 15 từ — viết bình thường, hệ thống tự viết hoa]
@@ -45,16 +54,17 @@ FORMAT BẮT BUỘC:
 Yêu cầu:
 - Tiêu đề KHÔNG bọc **, viết bình thường
 - Sau tiêu đề: 1 dòng trống
-- 3-5 bullets, mỗi bullet bắt đầu bằng · và có dấu : phân tách keyword
+- 3-5 bullets bao quát toàn bài, mỗi bullet bắt đầu bằng · và có dấu : phân tách keyword
 - Tổng tối đa 80 từ
-- Viết lại bằng lời mình, KHÔNG copy
-- Giọng tự nhiên
+- Giọng tường thuật, tự nhiên
 - KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống tự thêm`;
 
 // TÓM TẮT CHI TIẾT - Detailed với cấu trúc (dùng cho status_share type)
-const SUMMARY_DETAILED_PROMPT = `Bạn là chuyên gia viết status phân tích chuyên sâu có cấu trúc.
+const SUMMARY_DETAILED_PROMPT = `Bạn là chuyên gia viết status phân tích chuyên sâu có cấu trúc. Đọc TOÀN BỘ nội dung trước khi viết.
 
-NHIỆM VỤ: Viết tiêu đề hook mạnh + phân tích chi tiết, chia thành 2-3 sections.
+GÓC NHÌN: Tường thuật (ngôi thứ ba). CẤM "mình", "tôi", "bạn", "các bạn". Viết như biên tập viên thuật lại.
+
+NHIỆM VỤ: Viết tiêu đề hook mạnh + phân tích chi tiết, chia thành 2-3 sections. Các sections phải bao quát TOÀN BỘ nội dung, không chỉ phần đầu.
 
 FORMAT:
 [Tiêu đề hook mạnh, tối đa 20 từ — viết bình thường]
@@ -77,7 +87,9 @@ YÊU CẦU:
 - KHÔNG thêm dòng kẻ hay câu nguồn — hệ thống tự thêm`;
 
 // TÓM TẮT DẠNG BULLET - Easy to scan
-const SUMMARY_BULLET_PROMPT = `Tóm tắt thành bullets có cấu trúc sections.
+const SUMMARY_BULLET_PROMPT = `Tóm tắt thành bullets có cấu trúc sections. Đọc TOÀN BỘ nội dung trước khi tóm tắt.
+
+GÓC NHÌN: Tường thuật (ngôi thứ ba). CẤM "mình", "tôi", "bạn", "các bạn".
 
 FORMAT BẮT BUỘC:
 [Tiêu đề hook, tối đa 15 từ — viết bình thường]
@@ -97,7 +109,7 @@ Quy tắc:
 - Sau tiêu đề: 1 dòng trống
 - LUÔN nhóm bullets theo 2-3 section headers bọc **...**:
 - Mỗi bullet bắt đầu bằng · + keyword + dấu :
-- 5-8 bullets tổng cộng, tối đa 15 từ/bullet
+- 5-8 bullets tổng cộng, tối đa 15 từ/bullet. Bao quát TOÀN BỘ nội dung.
 - Ưu tiên dữ liệu, kết luận, con số cụ thể
 - KHÔNG thêm dòng kẻ hay câu nguồn — hệ thống tự thêm`;
 
@@ -106,16 +118,22 @@ const VNREVIEW_RULES = `
 QUY TẮC CHÍNH TẢ VÀ HÀNH VĂN BẮT BUỘC:
 
 CẤM MỞ ĐẦU BẰNG CÂU DẪN DẮT RỖNG:
-- TUYỆT ĐỐI KHÔNG bắt đầu bằng: "Mình vừa đọc được...", "Gần đây...", "Như chúng ta đã biết...", "Mới đây...", "Theo như mình được biết...", "Hôm nay mình đọc được..."
+- TUYỆT ĐỐI KHÔNG bắt đầu bằng: "Gần đây...", "Như chúng ta đã biết...", "Mới đây...", "Hôm nay..."
+- CẤM giọng ngôi thứ nhất/thứ hai: "Mình vừa đọc...", "Bạn có biết...", "Theo như mình..."
 - Câu đầu tiên PHẢI chứa thông tin thực, đi thẳng vào nội dung chính.
-- VD SAI: "Mình vừa đọc được tin tức về giá điện thoại cao cấp..."
+- VD SAI: "Gần đây có tin tức về giá điện thoại cao cấp..."
 - VD ĐÚNG: "Huawei thay đổi chiến lược: bản Pro Max giá ngang Xiaomi Ultra."
 
+GÓC NHÌN TƯỜNG THUẬT:
+- LUÔN viết ở ngôi thứ ba, như biên tập viên/phóng viên thuật lại.
+- CẤM: "mình", "tôi", "chúng tôi", "chúng ta", "bạn", "các bạn"
+- ĐÚNG: "Bài viết cho thấy...", "Theo nghiên cứu...", "Google vừa công bố..."
+
 HẠN CHẾ SỞ HỮU THỪA:
-- KHÔNG lạm dụng "của bạn", "của mình", "của chúng ta", "của Apple", "của Google" khi không cần thiết.
-- Viết trực tiếp: "iPhone báo đầy bộ nhớ" thay vì "iPhone của bạn báo đầy bộ nhớ".
-- "Cập nhật iOS" thay vì "Cập nhật iOS của bạn". "Tài khoản Google" thay vì "Tài khoản Google của bạn".
-- Chỉ dùng sở hữu khi thật sự cần phân biệt (VD: "ảnh của bạn" vs "ảnh của người khác").
+- KHÔNG lạm dụng "của Apple", "của Google" khi không cần thiết.
+- Viết trực tiếp: "iPhone báo đầy bộ nhớ" thay vì "iPhone bị báo đầy bộ nhớ".
+- "Cập nhật iOS" thay vì "Bản cập nhật iOS mới". "Tài khoản Google" thay vì "Tài khoản Google bị khóa".
+- Chỉ dùng sở hữu khi thật sự cần phân biệt.
 
 TIỀN VIỆT NAM:
 - Viết gọn bằng đơn vị triệu/tỷ: "45 triệu đồng", "1,2 tỷ đồng"
