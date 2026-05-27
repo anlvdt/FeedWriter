@@ -87,9 +87,11 @@ const StatusFormatter = {
     let text = rawText.trim();
 
     // Strip existing footers/separators (prevent duplication)
+    // Must be aggressive — AI sometimes copies footer from examples or prior output
     text = text.replace(/\s*(?:[—-]\s*\n\s*)?Nguồn\s+dưới\s+(?:cmt|bình\s+luận|binh\s+luan)\s+đầu(?:\s+tiên)?\s*$/gi, "");
     text = text.replace(/━━━━━━━━━━\s*/g, "");
-    text = text.replace(/👉\s*(?:Link gốc & mã nguồn|Chi tiết & nguồn)\s+dưới bình luận đầu tiên\s*$/gi, "");
+    text = text.replace(/👉\s*(?:Link gốc|Chi tiết)[\s&]*(?:nguồn|mã nguồn)?.*dưới\s+(?:bình\s+luận|cmt)\s+đầu(?:\s+tiên)?\s*$/gim, "");
+    text = text.replace(/👉\s*(?:Chi tiết|Link gốc|Nguồn)\s*&?\s*$/gim, ""); // truncated footer like "👉 Chi tiết &"
     text = text.replace(/(?:_{5,}|━━━━━━━━━━)\s*(?:👉|•)?\s*(?:Chi\s+tiết|Link\s+gốc|Nguồn)?.*$/gi, "");
 
     // Normalize markdown artifacts
@@ -112,13 +114,20 @@ const StatusFormatter = {
         continue;
       }
       if (inGlossary) {
-        if (!trimmed) {
+        // End glossary on: empty line, footer-like content, or separator
+        const isFooterLike = /^👉|^━━|^_{5,}|Chi\s+tiết.*dưới|Link\s+gốc|Nguồn\s+dưới/i.test(trimmed);
+        if (!trimmed || isFooterLike) {
           if (glossaryItems.length > 0) {
             blocks.push({ type: "glossary", items: [...glossaryItems] });
             glossaryItems = [];
           }
           inGlossary = false;
-          blocks.push({ type: "blank" }); // preserve spacing after glossary
+          if (!trimmed) {
+            blocks.push({ type: "blank" }); // preserve spacing after glossary
+          }
+          // Don't continue — let footer-like lines fall through to be stripped/skipped
+          if (isFooterLike) { /* fall through to normal line processing below */ }
+          else continue;
         } else {
           const m = trimmed.match(/^[·•]\s*(.+?):\s*(.+)$/);
           if (m) {
@@ -126,8 +135,8 @@ const StatusFormatter = {
           } else {
             glossaryItems.push({ term: trimmed, def: "" });
           }
+          continue;
         }
-        continue;
       }
 
       // Empty line or standalone decorative separators (|, ||, —, etc.)
@@ -137,6 +146,10 @@ const StatusFormatter = {
         }
         continue;
       }
+
+      // Skip footer-like lines (renderer adds its own footer)
+      if (/^👉\s*(?:Chi tiết|Link gốc|Nguồn)/i.test(trimmed)) continue;
+      if (/^━━━/.test(trimmed)) continue;
 
       // Title (first non-empty line)
       if (!titleFound) {
@@ -157,6 +170,23 @@ const StatusFormatter = {
           .replace(/^#{1,3}\s+/, "");     // strip ## prefix
         blocks.push({ type: "header", text: headerText });
         continue;
+      }
+
+      // Heuristic header: short line (≤ 40 chars) not a bullet/number,
+      // followed by bullet/numbered lines → treat as section header.
+      // Catches AI output like "Điểm nổi bật" or "Lợi ích:" without **...**
+      if (trimmed.length <= 40 && !trimmed.match(/^[·•\-*✓▸▪→\d]/) && titleFound) {
+        // Look ahead: next non-empty line should be a bullet or number
+        let j = i + 1;
+        while (j < lines.length && !lines[j].trim()) j++;
+        if (j < lines.length) {
+          const nextTrimmed = lines[j].trim();
+          if (nextTrimmed.match(/^[·•\-*✓▸▪→]\s+/) || nextTrimmed.match(/^\d+[.)]\s+/)) {
+            const headerText = trimmed.replace(/[\s:]+$/, ""); // strip trailing colon/spaces
+            blocks.push({ type: "header", text: headerText });
+            continue;
+          }
+        }
       }
 
       // Numbered list: 1. or 1) or Bước 1:
