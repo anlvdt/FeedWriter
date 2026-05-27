@@ -285,12 +285,17 @@ const StatusFormatter = {
           // Skip unicode bold on titles — uppercase already provides emphasis,
           // and mixed Vietnamese + bold-ASCII looks broken.
           lines.push(t);
-          lines.push(""); // blank after title
+          lines.push(""); // double blank after title for breathing room
+          lines.push("");
           break;
         }
 
         case "header": {
-          if (profile.sectionSeparator && lines.length > 0 && lines[lines.length - 1] !== "") {
+          // Ensure 2 blank lines before each section header (visual section break)
+          const blanksNeeded = 2;
+          let trailingBlanks = 0;
+          for (let j = lines.length - 1; j >= 0 && lines[j] === ""; j--) trailingBlanks++;
+          for (let j = trailingBlanks; j < blanksNeeded && lines.length > 0; j++) {
             lines.push("");
           }
           let h = block.text;
@@ -345,7 +350,12 @@ const StatusFormatter = {
         }
 
         case "glossary": {
-          lines.push("");
+          // 2 blank lines before glossary (same as section headers)
+          let trailingBlanksG = 0;
+          for (let j = lines.length - 1; j >= 0 && lines[j] === ""; j--) trailingBlanksG++;
+          for (let j = trailingBlanksG; j < 2 && lines.length > 0; j++) {
+            lines.push("");
+          }
           const glossaryLabel = "Giải thích thuật ngữ:";
           if (profile.unicodeBold) {
             const bolded = this._toUnicodeBold(glossaryLabel);
@@ -379,9 +389,9 @@ const StatusFormatter = {
 
     let result = lines.join("\n");
 
-    // Footer
+    // Footer — extra blank line for visual separation from content
     if (profile.footer) {
-      result += "\n\n" + this._buildFooter(options);
+      result += "\n\n\n" + this._buildFooter(options);
     }
 
     // Truncate if needed
