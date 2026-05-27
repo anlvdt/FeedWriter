@@ -1836,12 +1836,13 @@
   font-size: 11px;
   padding: 3px 10px;
   border-radius: 20px;
-  border: 1px solid rgba(168,85,247,0.3);
+  border: 1px solid rgba(168,85,247,0.25);
   background: transparent;
-  color: #b0b3b8;
+  color: #888;
   cursor: pointer;
   transition: all 0.15s;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-weight: 500;
 }
 .fbs-tone-btn:hover {
   border-color: #a855f7;
@@ -1850,18 +1851,25 @@
 }
 .fbs-tone-btn.active {
   border-color: #a855f7;
-  background: rgba(168,85,247,0.18);
-  color: #e0c9ff;
+  background: #a855f7;
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 0 10px rgba(168,85,247,0.4);
 }
 .fbs-panel[data-fbs-theme="light"] .fbs-tone-btn {
   color: #65676b;
   border-color: rgba(108,92,231,0.25);
 }
-.fbs-panel[data-fbs-theme="light"] .fbs-tone-btn:hover,
-.fbs-panel[data-fbs-theme="light"] .fbs-tone-btn.active {
+.fbs-panel[data-fbs-theme="light"] .fbs-tone-btn:hover {
   border-color: #6c5ce7;
   color: #6c5ce7;
   background: rgba(108,92,231,0.08);
+}
+.fbs-panel[data-fbs-theme="light"] .fbs-tone-btn.active {
+  border-color: #6c5ce7;
+  background: #6c5ce7;
+  color: #fff;
+  box-shadow: 0 0 8px rgba(108,92,231,0.35);
 }
 
 /* ===== MODEL SELECTOR (Feature 8) ===== */

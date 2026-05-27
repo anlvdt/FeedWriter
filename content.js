@@ -758,7 +758,14 @@ function openOverlay(html, streaming, type = "summary") {
   const toneRow = panel.querySelector(".fbs-tone-row");
   const showTone = !isSummarizing && !streaming && html.includes("fbs-result") && type === "summary";
   toneRow.classList.toggle("fbs-tone-visible", showTone);
-  if (!showTone) panel.querySelectorAll(".fbs-tone-btn").forEach((b) => b.classList.remove("active"));
+  if (showTone && lastSummarizeParams && lastSummarizeParams.tone) {
+    // Re-apply active class to the tone that was used for this result
+    panel.querySelectorAll(".fbs-tone-btn").forEach((b) => {
+      b.classList.toggle("active", b.dataset.tone === lastSummarizeParams.tone);
+    });
+  } else if (!showTone) {
+    panel.querySelectorAll(".fbs-tone-btn").forEach((b) => b.classList.remove("active"));
+  }
   if (streaming && panelBody.scrollHeight - panelBody.scrollTop < 500)
     panelBody.scrollTop = panelBody.scrollHeight;
 }
