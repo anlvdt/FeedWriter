@@ -174,6 +174,20 @@ const StatusFormatter = {
         continue;
       }
 
+      // Standalone bullet marker (✓ or · etc. on its own line) — merge with next line
+      if (trimmed.match(/^[·•✓▸▪→]$/) || trimmed.match(/^[·•✓▸▪→]\s*$/)) {
+        // Look ahead for the next non-empty line
+        let j = i + 1;
+        while (j < lines.length && !lines[j].trim()) j++;
+        if (j < lines.length && lines[j].trim()) {
+          blocks.push({ type: "bullet", text: lines[j].trim() });
+          i = j; // skip to the merged line
+          continue;
+        }
+        // No next line — just skip the lonely marker
+        continue;
+      }
+
       // Inline bold: lines containing **text**
       blocks.push({ type: "paragraph", text: trimmed });
     }
