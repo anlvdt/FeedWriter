@@ -228,12 +228,31 @@ async function getSystemPrompt(
   }
 
   // Tone override (from overlay tone buttons)
+  // Must be compatible with structured format: always keep headers + bullets
   if (tone) {
     const toneMap = {
-      short: "\n\nRÚT NGẮN: Viết kết quả tối đa 2-3 câu, cực kỳ súc tích.",
-      academic: "\n\nPHONG CÁCH HỌC THUẬT: Viết chuyên nghiệp, dùng thuật ngữ chuyên ngành, cấu trúc mạch lạc, khách quan.",
-      viral: "\n\nPHONG CÁCH VIRAL: Mở đầu bằng câu gây sốc/tò mò, nhấn mạnh con số nổi bật, kết thúc bằng câu hỏi mở hoặc call-to-action.",
-      bullet: "\n\nDẠNG BULLET: Trình bày dưới dạng 4-6 bullet points ngắn gọn (dùng dấu • hoặc -), mỗi điểm 1 ý chính.",
+      short: "\n\nGHI ĐÈ — RÚT NGẮN TỐI ĐA:\n" +
+        "- Chỉ giữ 1 section header + 3-4 bullets, bỏ hết phần còn lại.\n" +
+        "- Mỗi bullet tối đa 10 từ. Không giải thích dài.\n" +
+        "- KHÔNG viết đoạn văn mở đầu — đi thẳng vào bullets sau tiêu đề.\n" +
+        "- Vẫn giữ format: tiêu đề → **Header:** → · bullet",
+      academic: "\n\nGHI ĐÈ — PHONG CÁCH HỌC THUẬT:\n" +
+        "- Dùng thuật ngữ chuyên ngành chính xác, giọng phân tích khách quan.\n" +
+        "- Headers dùng danh từ học thuật (VD: **Phương pháp:**, **Kết quả:**, **Hàm ý:**)\n" +
+        "- Bullets nêu dữ liệu, trích dẫn, kết luận — không dùng ngôn ngữ casual.\n" +
+        "- Vẫn giữ format: tiêu đề → **Header:** → · bullet",
+      viral: "\n\nGHI ĐÈ — PHONG CÁCH VIRAL:\n" +
+        "- Tiêu đề PHẢI gây sốc hoặc tò mò mạnh (dùng DATA HOOK hoặc CURIOSITY GAP).\n" +
+        "- Câu mở đầu ngắn, gây ấn tượng bằng con số hoặc nhận định bất ngờ.\n" +
+        "- Bullets nhấn điểm WOW, bỏ chi tiết nhàm chán.\n" +
+        "- Kết thúc bằng 1 câu hỏi mở hoặc call-to-action.\n" +
+        "- Vẫn giữ format: tiêu đề → **Header:** → · bullet",
+      bullet: "\n\nGHI ĐÈ — BULLET POINTS THUẦN:\n" +
+        "- Chỉ dùng bullets (·), KHÔNG viết đoạn văn nào.\n" +
+        "- Nhóm bullets theo 2-3 section headers bọc **...**:\n" +
+        "- Mỗi bullet format: · Keyword: giải thích ngắn\n" +
+        "- 6-8 bullets tổng, tối đa 15 từ/bullet.\n" +
+        "- Ưu tiên dữ liệu cụ thể, con số, kết luận.",
     };
     if (toneMap[tone]) prompt += toneMap[tone];
   }
