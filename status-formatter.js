@@ -69,7 +69,8 @@ const StatusFormatter = {
 
   format(rawText, platform = "facebook", options = {}) {
     const profile = this.profiles[platform] || this.profiles.facebook;
-    const parsed = this._parse(rawText);
+    let parsed = this._parse(rawText);
+    parsed = this._postProcess(parsed);
     const formatted = this._render(parsed, profile, options);
     return formatted;
   },
@@ -183,6 +184,84 @@ const StatusFormatter = {
     }
 
     return blocks;
+  },
+
+  // ── Post-processor: fix structure when AI outputs flat paragraphs ──
+
+  _postProcess(blocks) {
+    // Count block types
+    const types = {};
+    for (const b of blocks) {
+      types[b.type] = (types[b.type] || 0) + 1;
+    }
+
+    const hasHeaders = (types.header || 0) > 0;
+    const hasBullets = (types.bullet || 0) > 0;
+    const hasNumbers = (types.number || 0) > 0;
+    const paraCount = types.paragraph || 0;
+
+    // If already structured (has headers or bullets), pass through
+    if (hasHeaders || hasBullets || hasNumbers) return blocks;
+
+    // Only paragraphs (+ title + blank) — AI gave us wall of text
+    if (paraCount < 1) return blocks;
+
+    const result = [];
+    for (const block of blocks) {
+      if (block.type !== "paragraph") {
+        result.push(block);
+        continue;
+      }
+
+      // Split paragraph into sentences
+      const sentences = block.text
+        .split(/(?<=[.!?])\s+/)
+        .map(s => s.trim())
+        .filter(s => s.length > 8);
+
+      if (sentences.length < 2) {
+        result.push(block);
+        continue;
+      }
+
+      // Process each sentence
+      for (const sent of sentences) {
+        // Detect inline enumerations: "...N vai trò: A, B, C, D và E"
+        // Pattern: text before colon + comma-items + penultimate + và + last
+        const enumMatch = sent.match(
+          /^(.+?):\s*((?:[^,.\n]{1,40},\s*){2,}[^,.\n]{1,40}\s+(?:và|and)\s+[^.\n]{1,40})\.?\s*(.*)$/i
+        );
+        if (enumMatch) {
+          const intro = enumMatch[1].trim();
+          const listStr = enumMatch[2].trim();
+          const remainder = (enumMatch[3] || "").trim();
+
+          // Extract items: split on ", " and " và "
+          const items = listStr
+            .split(/,\s+(?:và|and)\s+|,\s+|\s+(?:và|and)\s+/i)
+            .map(s => s.trim())
+            .filter(s => s.length > 0 && s.length < 50);
+
+          if (items.length >= 3) {
+            result.push({ type: "paragraph", text: intro + ":" });
+            result.push({ type: "blank" });
+            for (const item of items) {
+              result.push({ type: "bullet", text: item.replace(/\.\s*$/, "") });
+            }
+            if (remainder.length > 10) {
+              result.push({ type: "blank" });
+              result.push({ type: "paragraph", text: remainder.replace(/^\.\s*/, "") });
+            }
+            continue;
+          }
+        }
+
+        // Regular sentence → bullet
+        result.push({ type: "bullet", text: sent.replace(/\.\s*$/, "") });
+      }
+    }
+
+    return result;
   },
 
   // ── Renderer: blocks → platform-specific text ──────────────────────
@@ -433,7 +512,7 @@ const StatusFormatter = {
   // ── HTML rendering for panel display ───────────────────────────────
 
   toDisplayHTML(rawText, options = {}) {
-    const blocks = this._parse(rawText);
+    const blocks = this._postProcess(this._parse(rawText));
     const htmlParts = [];
 
     for (const block of blocks) {
