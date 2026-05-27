@@ -130,8 +130,8 @@ const StatusFormatter = {
         continue;
       }
 
-      // Empty line
-      if (!trimmed) {
+      // Empty line or standalone decorative separators (|, ||, —, etc.)
+      if (!trimmed || /^[\s|—–\-_]+$/.test(trimmed)) {
         if (blocks.length > 0 && blocks[blocks.length - 1].type !== "blank") {
           blocks.push({ type: "blank" });
         }

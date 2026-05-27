@@ -832,7 +832,7 @@ function copyResult() {
   }
 
   // Add Shopee products to copied text if available
-  if (currentShopeeProducts && currentShopeeProducts.length > 0) {
+  if (currentShopeeProducts && currentShopeeProducts.length > 0 && typeof window.formatSingleProduct === 'function') {
     console.log('[FeedWriter] Adding Shopee product to copy:', currentShopeeProducts[0]);
     try {
       const productText = window.formatSingleProduct(currentShopeeProducts[0]);
@@ -1066,7 +1066,7 @@ function buildCommentText(cleanUrl, author, source) {
   if (!out) out = "📌 NGUỒN THAM KHẢO:\n· Link gốc: " + linkStr;
 
   // Add Shopee product if available
-  if (currentShopeeProducts && currentShopeeProducts.length > 0) {
+  if (currentShopeeProducts && currentShopeeProducts.length > 0 && typeof window.formatSingleProduct === 'function') {
     try {
       const productText = window.formatSingleProduct(currentShopeeProducts[0]);
       out += productText;
@@ -2674,6 +2674,13 @@ async function addShopeeProductsToSummary(text, summaryHtml) {
     // Skip if auto-find is disabled
     if (!settings.autoFindShopeeProducts) {
       console.log('[FeedWriter] Auto-find Shopee products is disabled');
+      currentShopeeProducts = [];
+      return summaryHtml;
+    }
+
+    // Guard: shopee-preload.js may not have loaded successfully
+    if (typeof window.getNextProductLink !== 'function') {
+      console.warn('[FeedWriter] getNextProductLink not available — shopee-preload.js may have failed to load');
       currentShopeeProducts = [];
       return summaryHtml;
     }
