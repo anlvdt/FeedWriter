@@ -378,23 +378,24 @@
 /* Bullet items */
 .fbs-result .fbs-bullet {
   display: flex;
-  gap: 8px;
+  align-items: baseline;
+  gap: 6px;
   margin-bottom: 8px;
   line-height: 1.7;
   padding-left: 0;
   text-indent: 0;
 }
 
-.fbs-result .fbs-bullet::before {
-  content: "";
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  background: #a855f7;
-  border-radius: 50%;
-  margin-top: 10px;
+.fbs-result .fbs-bullet .fbs-bullet-marker {
   flex-shrink: 0;
-  box-shadow: 0 0 8px rgba(168, 85, 247, 0.8);
+  color: #a855f7;
+  font-weight: 700;
+  text-shadow: 0 0 8px rgba(168, 85, 247, 0.5);
+}
+
+.fbs-result .fbs-bullet .fbs-bullet-text {
+  flex: 1;
+  min-width: 0;
 }
 
 /* Glossary section */

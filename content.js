@@ -1269,7 +1269,8 @@ function fmt(t) {
     }
 
     if (trimmed.includes("✓")) {
-      formattedLines.push(`<div class="fbs-bullet" style="margin-bottom: 8px;">${line}</div>`);
+      const cleanBullet = line.replace(/✓\s*/, '').trim();
+      formattedLines.push(`<div class="fbs-bullet"><span class="fbs-bullet-marker">▸</span><span class="fbs-bullet-text">${cleanBullet}</span></div>`);
     } else if (i === 0 && trimmed.length > 0) {
       formattedLines.push(`<div class="fbs-title-line" style="font-size: 18px; font-weight: 800; line-height: 1.35; color: #f0e6ff; margin-bottom: 16px; border-left: 4px solid #a855f7; padding-left: 12px; margin-left: -4px;">${line}</div>`);
     } else {

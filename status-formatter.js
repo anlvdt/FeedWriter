@@ -169,9 +169,13 @@ const StatusFormatter = {
 
       // Bullet: · • - * ✓ ▸ ▪ →
       if (trimmed.match(/^[·•\-*✓▸▪→]\s+/)) {
-        const bulletText = trimmed.replace(/^[·•\-*✓▸▪→]\s+/, "");
-        blocks.push({ type: "bullet", text: bulletText });
-        continue;
+        const bulletText = trimmed.replace(/^[·•\-*✓▸▪→]\s+/, "").trim();
+        // Skip empty bullets (marker + whitespace only)
+        if (bulletText) {
+          blocks.push({ type: "bullet", text: bulletText });
+          continue;
+        }
+        // Fall through to standalone marker handling below
       }
 
       // Standalone bullet marker (✓ or · etc. on its own line) — merge with next line
@@ -559,9 +563,9 @@ const StatusFormatter = {
           const circled = this._circledNumber(block.num);
           const rendered = this._renderInlineMarkdown(block.text);
           htmlParts.push(
-            '<div style="margin-bottom:8px;padding-left:4px;">' +
-            '<span style="color:#a855f7;font-weight:700;margin-right:8px;">' + circled + '</span>' +
-            rendered + '</div>'
+            '<div class="fbs-bullet">' +
+            '<span class="fbs-bullet-marker">' + circled + '</span>' +
+            '<span class="fbs-bullet-text">' + rendered + '</span></div>'
           );
           break;
         }
@@ -569,9 +573,9 @@ const StatusFormatter = {
         case "bullet": {
           const rendered = this._renderInlineMarkdown(block.text);
           htmlParts.push(
-            '<div class="fbs-bullet" style="margin-bottom:8px;padding-left:4px;">' +
-            '<span style="color:#a855f7;font-weight:700;margin-right:8px;">▸</span>' +
-            rendered + '</div>'
+            '<div class="fbs-bullet">' +
+            '<span class="fbs-bullet-marker">▸</span>' +
+            '<span class="fbs-bullet-text">' + rendered + '</span></div>'
           );
           break;
         }
