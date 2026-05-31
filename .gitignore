@@ -7,6 +7,9 @@ Thumbs.db
 *.swp
 *.swo
 
+# Local agent worktrees
+.claude/worktrees/
+
 # Dependencies
 node_modules/
 
