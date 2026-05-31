@@ -272,7 +272,7 @@ async function getSystemPrompt(
 }
 
 // === STREAMING HELPERS ===
-async function processStream(response, port, signal, parseLine) {
+async function processStream(response, port, signal, parseLine, onToken = null) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let fullText = "";
@@ -295,6 +295,7 @@ async function processStream(response, port, signal, parseLine) {
       try {
         const token = parseLine(JSON.parse(dataStr));
         if (token) {
+          if (onToken) onToken();
           fullText += token;
           try {
             port.postMessage({ action: "chunk", text: token, full: fullText });
@@ -303,7 +304,9 @@ async function processStream(response, port, signal, parseLine) {
       } catch (e) {}
     }
   }
-  return { summary: fullText };
+  return fullText
+    ? { summary: fullText }
+    : { error: "Provider không trả về nội dung." };
 }
 
 async function callGroqStream(

@@ -1331,7 +1331,7 @@ function evaluatePostSignals(postEl) {
 
   // === SPONSORED DETECTION ===
   const container = findFeedWrapper(postEl) ||
-    (postEl.getAttribute && postEl.getAttribute("role") === "article" ? postEl : findPostArticle(postEl));
+    (postEl.getAttribute && postEl.getAttribute("role") === "article" ? postEl : _findPostContainer(postEl));
 
   if (container && SITE === "facebook") {
     // 1. Ads about link (strongest signal, confidence 95)

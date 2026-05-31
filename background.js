@@ -1876,6 +1876,13 @@ async function handleStream(
     const callFn = streamFns[keyInfo.provider];
     if (!callFn) return { error: "Provider không hợp lệ: " + keyInfo.provider };
 
+    try {
+      port.postMessage({
+        action: "status",
+        message: `Đang kết nối ${keyInfo.provider}...`,
+      });
+    } catch (_) {}
+
     const result = await callFn(
       keyInfo.key,
       truncated,
@@ -1907,6 +1914,12 @@ async function handleStream(
         rateLimitedUntil: Date.now() + 5 * 60 * 1000,
       };
       await chrome.storage.local.set({ keyStatus: ks });
+      try {
+        port.postMessage({
+          action: "status",
+          message: `${keyInfo.provider} phản hồi chậm, đang thử provider khác...`,
+        });
+      } catch (_) {}
       continue;
     }
 
@@ -1980,8 +1993,14 @@ async function callStreamAPI(config) {
   } = config;
 
   const timeoutController = new AbortController();
+  const firstTokenTimeoutMs = 12000;
+  const totalTimeoutMs = 45000;
+  let receivedToken = false;
   const abortRequest = () => timeoutController.abort();
-  const timeoutId = setTimeout(abortRequest, 45000);
+  const timeoutId = setTimeout(abortRequest, totalTimeoutMs);
+  const firstTokenTimeoutId = setTimeout(() => {
+    if (!receivedToken) abortRequest();
+  }, firstTokenTimeoutMs);
   signal.addEventListener("abort", abortRequest, { once: true });
 
   try {
@@ -2005,14 +2024,23 @@ async function callStreamAPI(config) {
         error: `${provider} API lỗi: ` + (err.error?.message || resp.statusText),
       };
     }
-    return processStream(resp, port, timeoutController.signal, extractFn);
+    return processStream(resp, port, timeoutController.signal, extractFn, () => {
+      receivedToken = true;
+      clearTimeout(firstTokenTimeoutId);
+    });
   } catch (error) {
     if (error.name === "AbortError" && !signal.aborted) {
-      return { error: `${provider} phản hồi quá chậm. Đã dừng sau 45 giây.` };
+      const timeoutSeconds = receivedToken
+        ? totalTimeoutMs / 1000
+        : firstTokenTimeoutMs / 1000;
+      return {
+        error: `${provider} phản hồi quá chậm. Đã dừng sau ${timeoutSeconds} giây.`,
+      };
     }
     throw error;
   } finally {
     clearTimeout(timeoutId);
+    clearTimeout(firstTokenTimeoutId);
     signal.removeEventListener("abort", abortRequest);
   }
 }

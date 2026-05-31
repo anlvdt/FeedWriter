@@ -37,6 +37,10 @@ function cleanup() {
     clearInterval(scanTimer);
     scanTimer = null;
   }
+  if (telemetryWriteTimer) {
+    clearTimeout(telemetryWriteTimer);
+    telemetryWriteTimer = null;
+  }
 }
 
 // Cleanup only when the page is actually leaving. A new extension port is not
@@ -172,14 +176,23 @@ chrome.storage.local.get(["fbsTelemetry"], (d) => {
 
 let telemetryWriteTimer = null;
 function saveTelemetry() {
-  try {
-    clearTimeout(telemetryWriteTimer);
-    telemetryWriteTimer = setTimeout(() => {
-      chrome.storage.local.set({ fbsTelemetry: telemetry });
-    }, 1200);
-  } catch (err) {
-    console.warn("[FeedWriter] saveTelemetry failed:", err?.message || err);
-  }
+  clearTimeout(telemetryWriteTimer);
+  telemetryWriteTimer = setTimeout(() => {
+    telemetryWriteTimer = null;
+    if (!isContextValid()) return;
+    try {
+      const write = chrome.storage.local.set({ fbsTelemetry: telemetry });
+      if (write?.catch) {
+        write.catch((err) => {
+          if (isContextValid()) {
+            console.warn("[FeedWriter] saveTelemetry failed:", err?.message || err);
+          }
+        });
+      }
+    } catch (err) {
+      console.warn("[FeedWriter] saveTelemetry failed:", err?.message || err);
+    }
+  }, 1200);
 }
 
 // Display modes: hide, collapse, mark
@@ -2018,6 +2031,9 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
       if (!streamRafId) {
         streamRafId = requestAnimationFrame(renderStream);
       }
+    } else if (msg.action === "status") {
+      const statusEl = panelBody.querySelector(".fbs-loading div:last-child");
+      if (statusEl) statusEl.textContent = msg.message;
     } else if (msg.action === "done") {
       clearTimeout(summaryTimeoutId);
       if (streamRafId) {
