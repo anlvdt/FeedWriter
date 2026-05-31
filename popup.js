@@ -263,7 +263,6 @@ const customInstructionsEl = document.getElementById("customInstructions");
 const customSummaryPromptEl = document.getElementById("customSummaryPrompt");
 const customAffPromptEl = document.getElementById("customAffPrompt");
 const sourceTemplateEl = document.getElementById("sourceTemplate");
-const useHeuristicEvalEl = document.getElementById("useHeuristicEval");
 const hideAffiliatePostsEl = document.getElementById("hideAffiliatePosts");
 const adDisplayModeEl = document.getElementById("adDisplayMode");
 const affiliateDisplayModeEl = document.getElementById("affiliateDisplayMode");
@@ -305,7 +304,6 @@ chrome.storage.sync.get(
     "customSummaryPrompt",
     "customAffPrompt",
     "sourceTemplate",
-    "useHeuristicEval",
     "hideAffiliatePosts",
     "adDisplayMode",
     "affiliateDisplayMode",
@@ -326,7 +324,6 @@ chrome.storage.sync.get(
       customSummaryPromptEl.value = d.customSummaryPrompt;
     if (d.customAffPrompt) customAffPromptEl.value = d.customAffPrompt;
     if (d.sourceTemplate) sourceTemplateEl.value = d.sourceTemplate;
-    if (d.useHeuristicEval) useHeuristicEvalEl.checked = true;
     if (d.hideAffiliatePosts) hideAffiliatePostsEl.checked = true;
     if (d.adDisplayMode) adDisplayModeEl.value = d.adDisplayMode;
     if (d.affiliateDisplayMode) affiliateDisplayModeEl.value = d.affiliateDisplayMode;
@@ -367,7 +364,6 @@ saveBtn.addEventListener("click", () => {
       customSummaryPrompt: customSummaryPromptEl.value.trim(),
       customAffPrompt: customAffPromptEl.value.trim(),
       sourceTemplate: sourceTemplateEl.value.trim(),
-      useHeuristicEval: useHeuristicEvalEl.checked,
       hideAffiliatePosts: hideAffiliatePostsEl.checked,
       adDisplayMode: adDisplayModeEl.value,
       affiliateDisplayMode: affiliateDisplayModeEl.value,
@@ -904,7 +900,10 @@ async function loadAgentStats() {
     const postsToday = (stats && stats.postsTodayDate === today) ? (stats.postsToday || 0) : 0;
     const postsTotal = stats ? (stats.postsTotal || 0) : (data.agentPostedUrls ? data.agentPostedUrls.length : 0);
     const skippedToday = (stats && stats.postsTodayDate === today) ? (stats.skippedToday || 0) : 0;
-    const flagged = (telemetry.postsFlaggedAds || 0) + (telemetry.postsFlaggedAffiliate || 0);
+    const flagged =
+      (telemetry.postsFlaggedAds || 0) +
+      (telemetry.postsFlaggedAffiliate || 0) +
+      (telemetry.postsFlaggedCommentGate || 0);
 
     document.getElementById("statPostsToday").textContent = hasAgentStats ? postsToday : (telemetry.postsScanned || 0);
     document.getElementById("statPostsTotal").textContent = hasAgentStats ? postsTotal : flagged;

@@ -2,7 +2,7 @@
 
 // --- COMPOSER & AUTO-POST ---
 
-function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImages) {
+function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImages, discoveredLinks = []) {
   const preview = document.createElement("div");
   preview.className = "fbs-status-preview";
 
@@ -23,6 +23,8 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
     n.split(/\s+/).length <= 10;
   const cleanAuthor = isValidName(author) ? author : "";
   const cleanSource = isValidName(source) ? source : "";
+  const initialRelatedLinks = Array.isArray(discoveredLinks) ? discoveredLinks : [];
+  const initialRelatedText = initialRelatedLinks.map((item) => item.url).filter(Boolean).join("\n");
 
   // Ảnh preview: nếu có nhiều ảnh → gallery lưới; nếu 1 ảnh → single preview
   let imgHtml = "";
@@ -59,7 +61,14 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
     "</div>" +
     '<div class="fbs-sp-link-input" style="margin-top:6px">' +
     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;opacity:0.5"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>' +
-    '<input type="text" class="fbs-sp-github-field" placeholder="Link Github / Download (Tùy chọn)">' +
+    '<textarea class="fbs-sp-github-field" rows="3" placeholder="Link Github / Download / tham khảo (mỗi dòng một link)">' +
+    esc(initialRelatedText) +
+    "</textarea>" +
+    "</div>" +
+    '<div class="fbs-sp-link-status ' + (initialRelatedLinks.length ? "has-link" : "no-link") + '">' +
+    (initialRelatedLinks.length
+      ? "Đã tự dò " + initialRelatedLinks.length + " link liên quan. Kiểm tra lại trước khi đăng."
+      : "Chưa tìm thấy link Github/download liên quan. Có thể bổ sung thủ công.") +
     "</div>" +
     (cleanAuthor
       ? '<div class="fbs-sp-detected-source"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> ' +
@@ -102,33 +111,58 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
   const commentSection = preview.querySelector(".fbs-sp-comment");
   const commentText = preview.querySelector(".fbs-sp-comment-text");
 
+  function parseRelatedLinks(rawText) {
+    const seen = new Set();
+    return (rawText || "")
+      .split(/\s+/)
+      .map((url) => url.trim())
+      .filter((url) => /^https?:\/\//i.test(url))
+      .filter((url) => {
+        if (seen.has(url)) return false;
+        seen.add(url);
+        return true;
+      })
+      .map((url) => {
+        const lower = url.toLowerCase();
+        const type = lower.includes("github.com") || lower.includes("gitlab.com")
+          ? "github"
+          : /download|release|\.zip($|\?)|\.rar($|\?)|\.7z($|\?)|\.dmg($|\?)|\.exe($|\?)|\.apk($|\?)/i.test(url)
+            ? "download"
+            : "reference";
+        return { url, type };
+      });
+  }
+
   // Generate comment content từ link — ghi nguồn kèm tên tác giả nếu có
   // LUÔN hiển thị section comment (kể cả khi chưa có URL) để user biết
   // cần paste link. Nếu thiếu link mà có author/source → vẫn show "Nguồn: X"
   function updateComment(url, githubUrl) {
     commentSection.style.display = "block";
+    const oldRelatedLinks = typeof globalRelatedSourceLinks !== "undefined"
+      ? globalRelatedSourceLinks
+      : [];
+    if (typeof globalRelatedSourceLinks !== "undefined") {
+      globalRelatedSourceLinks = parseRelatedLinks(githubUrl);
+    }
     if (window.buildCommentText) {
-      // Temporarily override globalCustomSourceLink if user typed something manually
-      const oldGithubLink = typeof globalCustomSourceLink !== 'undefined' ? globalCustomSourceLink : '';
-      if (typeof globalCustomSourceLink !== 'undefined') globalCustomSourceLink = githubUrl || '';
-
       const commentContent = window.buildCommentText(url, cleanAuthor, cleanSource);
       // Use innerHTML with <br> to preserve line breaks
       commentText.innerHTML = commentContent.replace(/\n/g, '<br>');
-
-      // Restore
-      if (typeof globalCustomSourceLink !== 'undefined') globalCustomSourceLink = oldGithubLink;
     } else {
       let fallbackContent = `📌 NGUỒN THAM KHẢO:\n· Link gốc: ${url || "(chưa có link bài gốc)"}`;
-      if (githubUrl) {
-        fallbackContent += `\n· Repo/Mã nguồn: ${githubUrl}`;
+      for (const item of parseRelatedLinks(githubUrl)) {
+        const label = item.type === "github" ? "Repo/Mã nguồn" : item.type === "download" ? "Download" : "Tham khảo";
+        fallbackContent += `\n· ${label}: ${item.url}`;
       }
       commentText.innerHTML = fallbackContent.replace(/\n/g, '<br>');
+    }
+    if (typeof globalRelatedSourceLinks !== "undefined") {
+      globalRelatedSourceLinks = oldRelatedLinks;
     }
   }
 
   // LUÔN render section comment ngay khi mở composer — kể cả khi chưa có link
-  updateComment(sourceUrl || "", "");
+  updateComment(sourceUrl || "", initialRelatedText);
 
   // Normalize Facebook URL
   function normalizeFbUrl(raw) {
@@ -387,14 +421,15 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
         const finalGithubUrl = githubField.value.trim();
         
         if (window.buildCommentText) {
-          const oldGithubLink = typeof globalCustomSourceLink !== 'undefined' ? globalCustomSourceLink : '';
-          if (typeof globalCustomSourceLink !== 'undefined') globalCustomSourceLink = finalGithubUrl || '';
+          const oldRelatedLinks = typeof globalRelatedSourceLinks !== "undefined" ? globalRelatedSourceLinks : [];
+          if (typeof globalRelatedSourceLinks !== "undefined") globalRelatedSourceLinks = parseRelatedLinks(finalGithubUrl);
           sourceLine = window.buildCommentText(finalUrl, cleanAuthor, cleanSource);
-          if (typeof globalCustomSourceLink !== 'undefined') globalCustomSourceLink = oldGithubLink;
+          if (typeof globalRelatedSourceLinks !== "undefined") globalRelatedSourceLinks = oldRelatedLinks;
         } else {
           let fallbackContent = `📌 NGUỒN THAM KHẢO:\n· Link gốc: ${finalUrl || "(chưa có link bài gốc)"}`;
-          if (finalGithubUrl) {
-            fallbackContent += `\n· Repo/Mã nguồn: ${finalGithubUrl}`;
+          for (const item of parseRelatedLinks(finalGithubUrl)) {
+            const label = item.type === "github" ? "Repo/Mã nguồn" : item.type === "download" ? "Download" : "Tham khảo";
+            fallbackContent += `\n· ${label}: ${item.url}`;
           }
           sourceLine = fallbackContent;
         }
@@ -429,15 +464,32 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
           setFail("Không thấy ô 'Bạn đang nghĩ gì?' — cuộn lên đầu feed rồi thử lại");
           return;
         }
+
+        // Snapshot existing dialogs so we can find the NEW one after click
+        const existingDialogs = new Set(document.querySelectorAll('div[role="dialog"]'));
         composerBtn.click();
 
-        // Bước 3: Chờ editor xuất hiện
+        // Bước 3: Chờ CREATE POST dialog (dialog MỚI, không phải dialog cũ)
         setStatus("Chờ dialog mở...");
         let editor = null;
         for (let i = 0; i < 25 && !editor; i++) {
-          editor = document.querySelector(
-            'div[role="dialog"] div[role="textbox"][contenteditable="true"]'
-          );
+          const allDialogs = document.querySelectorAll('div[role="dialog"]');
+          for (const dlg of allDialogs) {
+            if (existingDialogs.has(dlg)) continue;
+            const tb = dlg.querySelector('div[role="textbox"][contenteditable="true"]');
+            if (tb) { editor = tb; break; }
+          }
+          // Fallback: check aria-label on textbox inside any dialog
+          if (!editor) {
+            const allBoxes = document.querySelectorAll('div[role="dialog"] div[role="textbox"][contenteditable="true"]');
+            for (const box of allBoxes) {
+              const label = (box.getAttribute("aria-label") || "").toLowerCase();
+              if (label.includes("bạn đang nghĩ") || label.includes("what's on your mind") || label.includes("write something")) {
+                editor = box;
+                break;
+              }
+            }
+          }
           if (!editor) await new Promise(r => setTimeout(r, 200));
         }
         if (!editor) {
@@ -460,7 +512,9 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
         setStatus("Dán nội dung...");
         let textWithFooter;
         if (typeof StatusFormatter !== "undefined") {
-          const hasRepo = !!(typeof globalCustomSourceLink !== 'undefined' && globalCustomSourceLink);
+          const hasRepo =
+            !!(typeof globalCustomSourceLink !== 'undefined' && globalCustomSourceLink) ||
+            parseRelatedLinks(finalGithubUrl).some((item) => item.type === "github");
           textWithFooter = StatusFormatter.format(text, "facebook", { hasRepo });
         } else {
           textWithFooter = applyUnicodeFormatting(text);
@@ -884,14 +938,29 @@ window.fbsAgentPost = async function (summaryText, imageUrl, rawSourceUrl, postE
     }
   }
   if (!composerBtn) return { ok: false, reason: "no_composer_btn" };
+
+  const existingDialogs = new Set(document.querySelectorAll('div[role="dialog"]'));
   composerBtn.click();
 
-  // Step 2: Chờ dialog mở, tìm editor (poll trong 5s)
+  // Step 2: Chờ CREATE POST dialog MỚI (không phải dialog xem post cũ)
   let editor = null;
   for (let i = 0; i < 25; i++) {
-    editor = document.querySelector(
-      'div[role="dialog"] div[role="textbox"][contenteditable="true"]',
-    );
+    const allDialogs = document.querySelectorAll('div[role="dialog"]');
+    for (const dlg of allDialogs) {
+      if (existingDialogs.has(dlg)) continue;
+      const tb = dlg.querySelector('div[role="textbox"][contenteditable="true"]');
+      if (tb) { editor = tb; break; }
+    }
+    if (!editor) {
+      const allBoxes = document.querySelectorAll('div[role="dialog"] div[role="textbox"][contenteditable="true"]');
+      for (const box of allBoxes) {
+        const label = (box.getAttribute("aria-label") || "").toLowerCase();
+        if (label.includes("bạn đang nghĩ") || label.includes("what's on your mind") || label.includes("write something")) {
+          editor = box;
+          break;
+        }
+      }
+    }
     if (editor) break;
     await new Promise((r) => setTimeout(r, 200));
   }
@@ -1134,4 +1203,3 @@ window.fbsAgentPost = async function (summaryText, imageUrl, rawSourceUrl, postE
 
   return { ok: true };
 };
-

@@ -5,6 +5,16 @@
 // MUST be static, top-level, and without try-catch in MV3 Service Workers
 importScripts("env.js", "utils.js", "bg-prompts.js", "bg-api.js");
 
+// MV3 lifecycle — claim clients immediately so messages aren't dropped
+self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
+
+// Catch stray promise rejections so Chrome doesn't surface "No SW" errors
+self.addEventListener("unhandledrejection", (event) => {
+  console.warn("[FeedWriter] Unhandled rejection:", event.reason);
+  event.preventDefault();
+});
+
 // Fallback logger and feature flags if utils.js failed to load
 if (typeof logger === 'undefined') {
   logger = {
@@ -47,7 +57,6 @@ const DEFAULT_SETTINGS = {
   customAffPrompt: '',
   sourceTemplate: '• Nguồn bài viết: {platform} {author} {source}\n  {link}',
   customSourceLink: '',
-  useHeuristicEval: false,
   hideAffiliatePosts: false,
   adDisplayMode: 'collapse',
   affiliateDisplayMode: 'collapse',
@@ -369,27 +378,19 @@ const memoryCache = {
   }
 };
 
-// Run memory cleanup every 5 minutes
-setInterval(() => {
-  memoryCache.cleanup();
-  logger.debug('Memory cache cleaned up, size:', memoryCache.data.size);
-}, 5 * 60 * 1000);
+// Memory cleanup runs via keep-alive alarm, not setInterval (setInterval dies with SW)
 
 // === ALARM LISTENER ===
 if (chrome?.alarms?.onAlarm) {
   chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === 'keep-alive') {
       logger.debug('Keep-alive alarm fired');
-
-      // Perform periodic maintenance
       memoryCache.cleanup();
+      ensureKeepAliveAlarm();
 
-      // Adjust interval based on activity
       const timeSinceActivity = Date.now() - keepAliveState.lastActivity;
       if (timeSinceActivity > 10 * 60 * 1000) {
-        // No activity for 10 minutes, mark as inactive
         keepAliveState.isActive = false;
-        ensureKeepAliveAlarm(); // Switch to longer interval
       }
     }
   });
@@ -416,11 +417,136 @@ async function injectAndSend(tabId, message) {
     });
     await chrome.scripting.executeScript({
       target: { tabId },
-      files: ["utils.js", "content-dom.js", "content-composer.js", "content.js"],
+      files: [
+        "errors.js",
+        "utils.js",
+        "shopee-preload.js",
+        "dom-helpers.js",
+        "post-data.js",
+        "status-formatter.js",
+        "content-dom.js",
+        "poster-facebook.js",
+        "poster-threads.js",
+        "poster-x.js",
+        "poster-linkedin.js",
+        "poster-reddit.js",
+        "cross-poster.js",
+        "content-composer.js",
+        "content.js"
+      ],
     });
     chrome.tabs.sendMessage(tabId, message);
   } catch (e) {
     console.error("Injection failed", e);
+  }
+}
+
+// === RELATED SOURCE DISCOVERY ===
+// Enrich a small set of outbound URLs with metadata from their landing pages.
+// Requests are intentionally bounded and reject local/private hosts.
+function isSafePublicHttpsUrl(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+    if (url.protocol !== "https:") return false;
+    const host = url.hostname.toLowerCase();
+    if (
+      host === "localhost" ||
+      host.endsWith(".local") ||
+      host === "::1" ||
+      /^127\./.test(host) ||
+      /^10\./.test(host) ||
+      /^192\.168\./.test(host) ||
+      /^169\.254\./.test(host) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+    ) return false;
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function decodeHtmlEntities(text) {
+  return (text || "")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">");
+}
+
+function absoluteUrl(rawUrl, baseUrl) {
+  try {
+    const url = new URL(decodeHtmlEntities(rawUrl), baseUrl);
+    return isSafePublicHttpsUrl(url.href) ? url.href : "";
+  } catch (_) {
+    return "";
+  }
+}
+
+function extractRelatedMetadata(html, finalUrl) {
+  const links = [];
+  const add = (url, evidence, label = "") => {
+    const absolute = absoluteUrl(url, finalUrl);
+    if (absolute) links.push({ url: absolute, evidence, label });
+  };
+
+  const metaPatterns = [
+    [/<link[^>]+rel=["'][^"']*canonical[^"']*["'][^>]+href=["']([^"']+)["']/gi, "canonical"],
+    [/<link[^>]+href=["']([^"']+)["'][^>]+rel=["'][^"']*canonical[^"']*["']/gi, "canonical"],
+    [/<meta[^>]+property=["']og:url["'][^>]+content=["']([^"']+)["']/gi, "og:url"],
+    [/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:url["']/gi, "og:url"],
+  ];
+  for (const [pattern, evidence] of metaPatterns) {
+    for (const match of html.matchAll(pattern)) add(match[1], evidence);
+  }
+
+  const anchorPattern = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  for (const match of html.matchAll(anchorPattern)) {
+    const label = match[2].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    const haystack = (match[1] + " " + label).toLowerCase();
+    if (/github\.com|gitlab\.com|download|tải xuống|source code|mã nguồn|release|docs?|documentation|demo|paper|arxiv\.org/.test(haystack)) {
+      add(match[1], "page-link", label.substring(0, 120));
+    }
+    if (links.length >= 24) break;
+  }
+
+  const jsonLdUrlPattern = /"(?:url|sameAs|citation|isBasedOn|contentUrl|downloadUrl)"\s*:\s*"([^"]+)"/gi;
+  for (const match of html.matchAll(jsonLdUrlPattern)) add(match[1], "json-ld");
+  return links;
+}
+
+async function enrichRelatedSourceUrl(rawUrl) {
+  if (!isSafePublicHttpsUrl(rawUrl)) return [];
+  try {
+    let currentUrl = rawUrl;
+    let response = null;
+    for (let redirectCount = 0; redirectCount <= 3; redirectCount++) {
+      if (!isSafePublicHttpsUrl(currentUrl)) return [];
+      response = await fetchWithTimeout(currentUrl, {
+        method: "GET",
+        credentials: "omit",
+        redirect: "manual",
+        referrerPolicy: "no-referrer",
+        headers: { Accept: "text/html,application/xhtml+xml" },
+      }, 8000);
+      if (![301, 302, 303, 307, 308].includes(response.status)) break;
+      const nextUrl = absoluteUrl(response.headers.get("location") || "", currentUrl);
+      if (!nextUrl) return [];
+      currentUrl = nextUrl;
+    }
+    if (!response) return [];
+    if (!response.ok || !isSafePublicHttpsUrl(response.url)) return [];
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("text/html") && !contentType.includes("application/xhtml+xml")) return [];
+    const contentLength = parseInt(response.headers.get("content-length") || "0", 10);
+    if (contentLength > 1024 * 1024) return [];
+    const html = (await response.text()).slice(0, 1024 * 1024);
+    return [
+      { url: response.url, evidence: "redirect-target" },
+      ...extractRelatedMetadata(html, response.url),
+    ];
+  } catch (_) {
+    return [];
   }
 }
 
@@ -547,16 +673,18 @@ async function processUnshorten(url, tabId) {
   }
 }
 
-chrome.commands.onCommand.addListener((command) => {
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (tabs[0]) {
-      const msg = { action: "shortcut-" + command };
-      chrome.tabs
-        .sendMessage(tabs[0].id, msg)
-        .catch(() => injectAndSend(tabs[0].id, msg));
-    }
+if (chrome?.commands?.onCommand && chrome?.tabs?.query) {
+  chrome.commands.onCommand.addListener((command) => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]) {
+        const msg = { action: "shortcut-" + command };
+        chrome.tabs
+          .sendMessage(tabs[0].id, msg)
+          .catch(() => injectAndSend(tabs[0].id, msg));
+      }
+    });
   });
-});
+}
 
 if (chrome?.contextMenus?.onClicked) {
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
@@ -633,7 +761,6 @@ chrome.runtime.onConnect.addListener((port) => {
         msg.author,
         msg.postTitle,
         msg.postSource,
-        msg.agentMode,
         msg.tone || null,
         msg.preferredProvider || null,
       );
@@ -646,7 +773,6 @@ chrome.runtime.onConnect.addListener((port) => {
           quality: result.quality,
           issues: result.issues,
           imageUrl: msg.imageUrl || "",
-          agentScore: result.agentScore,
         });
     } catch (e) {
       if (e.name !== "AbortError") {
@@ -669,7 +795,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return false;
   }
 
-  const sensitiveActions = new Set(["summarize", "fetch-image", "agent_eval", "agent_eval_summary"]);
+  const sensitiveActions = new Set(["summarize", "fetch-image"]);
   if (sensitiveActions.has(request.action) && !sender.id) {
     console.warn("[FeedWriter] Rejected sensitive message without extension sender id");
     sendResponse({ error: "Untrusted sender" });
@@ -678,6 +804,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.action === "ping") {
     sendResponse({ ok: true });
+    return true;
+  }
+
+  if (request.action === "enrich-related-source-links") {
+    (async () => {
+      const urls = Array.isArray(request.urls) ? request.urls : [];
+      const unique = [...new Set(urls.filter(isSafePublicHttpsUrl))].slice(0, 4);
+      const enriched = await Promise.all(unique.map(enrichRelatedSourceUrl));
+      sendResponse({ links: enriched.flat().slice(0, 60) });
+    })().catch((error) => sendResponse({ links: [], error: error.message }));
     return true;
   }
 
@@ -832,19 +968,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  // === AGENT POSTED — show browser notification ===
-  if (request.action === "agent-posted") {
-    const preview = (request.preview || "").substring(0, 80);
-    chrome.notifications.create("agent-posted-" + Date.now(), {
-      type: "basic",
-      iconUrl: "icons/icon48.png",
-      title: "FeedWriter Agent đã đăng bài ✓",
-      message: preview + (preview.length >= 80 ? "…" : ""),
-      priority: 1,
-    });
-    sendResponse({ ok: true });
-    return true;
-  }
   // === GET KEY STATUS for popup ===
   if (request.action === "get-key-status") {
     chrome.storage.local.get(["keyStatus"], (data) => {
@@ -924,16 +1047,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     translateWord(request.word)
       .then((r) => sendResponse(r))
       .catch((e) => sendResponse({ error: e.message }));
-    return true;
-  }
-  // === AUTO-PILOT AGENT EVALUATION ===
-  if (request.action === "agent_eval") {
-    evaluatePostForAgent(request.payload, sender.tab.id);
-    return true;
-  }
-  // === AUTO-PILOT EVALUATE GENERATED SUMMARY ===
-  if (request.action === "agent_eval_summary") {
-    evaluateSummaryForAgent(request.payload, sender.tab.id);
     return true;
   }
   // === FETCH IMAGE AS BASE64 (CORS Bypass) ===
@@ -1701,7 +1814,6 @@ async function handleStream(
   author = "",
   postTitle = "",
   postSource = "",
-  agentMode = false,
   tone = null,
   preferredProvider = null,
 ) {
@@ -1730,16 +1842,6 @@ async function handleStream(
     tone,
   );
 
-  // Agent mode: check if user prefers heuristic-only eval (skip AI scoring)
-  const agentSettings = await chrome.storage.sync.get(['useHeuristicEval']);
-  const useHeuristicOnly = agentSettings.useHeuristicEval === true;
-
-  // Agent mode: yêu cầu AI tự chấm điểm trong cùng lần gọi — tránh round-trip eval riêng
-  // Nếu useHeuristicEval = true → bỏ qua, dùng heuristic sau khi có summary
-  if (agentMode && !useHeuristicOnly) {
-    systemPrompt +=
-      "\n\nAGENT MODE: Trước khi viết tóm tắt, chấm điểm bài theo tiêu chí sau:\n- 8-9: Tin AI hot (Claude/ChatGPT/Gemini/Anthropic/OpenAI/DeepSeek ra tính năng mới, đăng ký AI miễn phí/giá rẻ), sự cố bảo mật nghiêm trọng (data breach, ransomware, lỗ hổng lớn)\n- 7: Sản phẩm tech nổi bật, startup gọi vốn lớn, lập trình/tool dev quan trọng\n- 4-6: Tech liên quan nhưng không nổi bật\n- 1-3: Status cá nhân, drama, quảng cáo bán hàng, ẩm thực, thể thao, giải trí không liên quan tech\nĐặt tag [SCORE:N] ở DÒNG ĐẦU TIÊN (N là 1-9), xuống dòng rồi viết tóm tắt (tiêu đề viết bình thường, hệ thống tự viết hoa). Ví dụ:\n[SCORE:8]\nClaude 4 Opus ra mắt: vượt GPT-4o về lập trình\n\nNội dung tóm tắt...";
-  }
   const streamFns = {
     groq: callGroqStream,
     gemini: callGeminiStream,
@@ -1812,28 +1914,6 @@ async function handleStream(
       // Track successful summary
       await incrementTelemetry('summaries');
       trackEvent('summary_completed', { provider: keyInfo.provider, type });
-      // Agent mode: parse [SCORE:N] tag từ dòng đầu, strip khỏi text hiển thị
-      let agentScore = undefined;
-      if (agentMode) {
-        if (useHeuristicOnly) {
-          // Heuristic-only mode: chấm điểm bằng keywords, không cần AI eval
-          agentScore = heuristicScore(text);
-          logger.info('[Agent] Heuristic-only mode, score:', agentScore);
-        } else {
-          const scoreMatch = result.summary.match(/^\[SCORE:(\d+)\]\s*\n?/);
-          if (scoreMatch) {
-            agentScore = parseInt(scoreMatch[1], 10);
-            result.summary = result.summary
-              .replace(/^\[SCORE:\d+\]\s*\n?/, "")
-              .trim();
-          } else {
-            // Fallback: AI không trả score inline → dùng heuristic thay vì gọi AI lần 2
-            agentScore = heuristicScore(text);
-            logger.info('[Agent] AI did not return inline score, using heuristic:', agentScore);
-          }
-        }
-        result.agentScore = agentScore;
-      }
       const postResult = postProcessOutput(result.summary, text, type);
       result.summary = postResult.text;
       result.quality = postResult.quality;
@@ -1899,27 +1979,42 @@ async function callStreamAPI(config) {
     provider = "unknown",
   } = config;
 
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...headers,
-    },
-    signal,
-    body: JSON.stringify(body),
-  });
+  const timeoutController = new AbortController();
+  const abortRequest = () => timeoutController.abort();
+  const timeoutId = setTimeout(abortRequest, 45000);
+  signal.addEventListener("abort", abortRequest, { once: true });
 
-  if (resp.status === 429) {
-    const err = await resp.json().catch(() => ({}));
-    return { rateLimited: true, rateLimitError: err.error?.message || "" };
+  try {
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...headers,
+      },
+      signal: timeoutController.signal,
+      body: JSON.stringify(body),
+    });
+
+    if (resp.status === 429) {
+      const err = await resp.json().catch(() => ({}));
+      return { rateLimited: true, rateLimitError: err.error?.message || "" };
+    }
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      return {
+        error: `${provider} API lỗi: ` + (err.error?.message || resp.statusText),
+      };
+    }
+    return processStream(resp, port, timeoutController.signal, extractFn);
+  } catch (error) {
+    if (error.name === "AbortError" && !signal.aborted) {
+      return { error: `${provider} phản hồi quá chậm. Đã dừng sau 45 giây.` };
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+    signal.removeEventListener("abort", abortRequest);
   }
-  if (!resp.ok) {
-    const err = await resp.json().catch(() => ({}));
-    return {
-      error: `${provider} API lỗi: ` + (err.error?.message || resp.statusText),
-    };
-  }
-  return processStream(resp, port, signal, extractFn);
 }
 
 // Non-streaming API calls for AI review
@@ -2015,13 +2110,4 @@ chrome.runtime.onStartup.addListener(async () => {
 });
 } // end if (chrome?.runtime?.onStartup)
 
-if (chrome?.alarms?.onAlarm) {
-chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name === "keep-alive") {
-    logger.debug("Keep-alive ping");
-    ensureKeepAliveAlarm();
-    return;
-  }
-});
-} // end if (chrome?.alarms?.onAlarm)
-
+// keep-alive alarm handled by the listener near line 386

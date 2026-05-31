@@ -46,38 +46,19 @@ async function getDailyProductLinks(affiliateId) {
 
   // If links exist and are from today, return them
   if (stored.shopeeLinksDate === today && stored.shopeeLinks && stored.shopeeLinks.length === PRELOADED_PRODUCTS.length) {
-    // Check if links are shortened (not full shopee.vn URLs)
-    const firstLink = stored.shopeeLinks[0]?.link || '';
-    if (firstLink.includes('shopee.vn/search')) {
-      console.log('[Shopee] Cached links are not shortened, regenerating...');
-      // Clear old cache and regenerate
-    } else {
-      console.log('[Shopee] Using cached links from today:', today);
-      return stored.shopeeLinks;
-    }
+    console.log('[Shopee] Using cached links from today:', today);
+    return stored.shopeeLinks;
   }
 
   // Generate new links for today
   console.log('[Shopee] Generating new links for:', today);
 
-  // Generate links with URL shortening
-  const links = [];
-  for (const product of PRELOADED_PRODUCTS) {
-    const shopeeURL = generateShopeeSearchURL(product.keyword, affiliateId);
-
-    // Shorten URL
-    let shortURL = shopeeURL;
-    try {
-      shortURL = await shortenURL(shopeeURL);
-    } catch (error) {
-      console.warn('[Shopee] Failed to shorten URL for:', product.title, error);
-    }
-
-    links.push({
-      title: product.title,
-      link: shortURL,
-    });
-  }
+  // Keep preparation local and instant. URL shortening is optional and must
+  // never delay summary rendering.
+  const links = PRELOADED_PRODUCTS.map((product) => ({
+    title: product.title,
+    link: generateShopeeSearchURL(product.keyword, affiliateId),
+  }));
 
   // Save to storage
   await new Promise(resolve => {

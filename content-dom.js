@@ -1273,12 +1273,57 @@ function _detectAffiliateText(container) {
   return null;
 }
 
+function _getPrimaryPostText(container) {
+  if (!container) return "";
+  try {
+    const clone = container.cloneNode(true);
+    clone.querySelectorAll('form, [role="article"] [role="article"]').forEach((node) => node.remove());
+    return clone.innerText || clone.textContent || "";
+  } catch (_) {
+    return container.innerText || container.textContent || "";
+  }
+}
+
+function _detectCommentGateText(container) {
+  const text = _getPrimaryPostText(container)
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  if (!text) return null;
+
+  // High-confidence engagement gates: the reader must comment before receiving
+  // a link, file, prompt, template, document, source code, or inbox message.
+  const directPatterns = [
+    /\b(?:comment|bình luận|cmt|để lại bình luận|để lại cmt)\b.{0,70}\b(?:để|là|nhận|lấy|gửi|share|chia sẻ|inbox|ib|dm)\b.{0,80}\b(?:link|file|tài liệu|document|docs?|ebook|template|prompt|mã nguồn|source code|download|hướng dẫn|tool|công cụ|quà)\b/i,
+    /\b(?:comment|bình luận|cmt)\b.{0,40}\b(?:link|file|tài liệu|document|docs?|ebook|template|prompt|mã nguồn|source code|download)\b.{0,60}\b(?:inbox|ib|dm|gửi|share|chia sẻ|nhận|lấy)\b/i,
+    /\b(?:để lại|comment|bình luận|cmt)\b.{0,30}\b(?:email|gmail|mail)\b.{0,60}\b(?:gửi|nhận|share|chia sẻ|file|tài liệu|link)\b/i,
+    /\b(?:comment|bình luận|cmt)\b.{0,30}\b(?:một dấu chấm|dấu chấm|số 1|từ khóa|keyword|quan tâm|interested|xin link|link)\b/i,
+    /\b(?:ai|bạn nào|mọi người|everyone|anyone)\b.{0,50}\b(?:comment|bình luận|cmt)\b.{0,60}\b(?:mình|tôi|bot|admin)\b.{0,30}\b(?:gửi|share|chia sẻ|inbox|ib|dm)\b/i,
+    /\b(?:drop|leave|comment)\b.{0,35}\b(?:comment|email|keyword|interested|link)\b.{0,60}\b(?:send|share|dm|inbox|get|receive)\b/i,
+  ];
+  for (const pattern of directPatterns) {
+    if (pattern.test(text)) return { reason: "comment_gate", pattern: pattern.source };
+  }
+
+  // Common compact forms used in Vietnamese engagement bait posts.
+  const compactPatterns = [
+    /(?:cmt|comment|bình luận)\s*[.:+-]?\s*(?:quan tâm|xin link|link|inbox|ib|nhận tài liệu|nhận file|nhận prompt)/i,
+    /(?:muốn|cần|lấy|nhận)\s+(?:link|file|tài liệu|prompt|template|mã nguồn).{0,45}(?:cmt|comment|bình luận|để lại)/i,
+    /(?:gửi|share|chia sẻ)\s+(?:link|file|tài liệu|prompt|template|mã nguồn).{0,45}(?:cmt|comment|bình luận|inbox|ib|dm)/i,
+  ];
+  for (const pattern of compactPatterns) {
+    if (pattern.test(text)) return { reason: "comment_gate", pattern: pattern.source };
+  }
+  return null;
+}
+
 function evaluatePostSignals(postEl) {
-  if (!postEl) return { isSponsored: false, isAffiliate: false, reasons: [], confidence: 0 };
+  if (!postEl) return { isSponsored: false, isAffiliate: false, isCommentGate: false, reasons: [], confidence: 0 };
 
   const result = {
     isSponsored: false,
     isAffiliate: false,
+    isCommentGate: false,
     reasons: [],
     confidence: 0,
     details: {},
@@ -1358,6 +1403,14 @@ function evaluatePostSignals(postEl) {
 
   // === AFFILIATE DETECTION ===
   if (container) {
+    const commentGate = _detectCommentGateText(container);
+    if (commentGate) {
+      result.isCommentGate = true;
+      result.reasons.push(commentGate.reason);
+      result.confidence = Math.max(result.confidence, 92);
+      result.details.commentGate = commentGate;
+    }
+
     // 1. Image click-out with affiliate/shortener link (confidence 70-85)
     const imageClickout = _detectImageClickout(container);
     if (imageClickout) {
@@ -1398,6 +1451,131 @@ function evaluatePostSignals(postEl) {
   return result;
 }
 
+// === RELATED SOURCE DISCOVERY ===
+// Gather direct evidence from the post first, then enrich a few strong outbound
+// candidates through the background worker. The composer remains editable.
+function _cleanRelatedUrl(rawUrl) {
+  if (!rawUrl) return "";
+  try {
+    let value = _resolveFbRedirect(rawUrl);
+    const url = new URL(value, location.href);
+    if (!["http:", "https:"].includes(url.protocol)) return "";
+    for (const key of [...url.searchParams.keys()]) {
+      if (
+        key.startsWith("utm_") ||
+        key.startsWith("__") ||
+        ["fbclid", "gclid", "ref", "ref_src", "source", "si"].includes(key)
+      ) url.searchParams.delete(key);
+    }
+    url.hash = "";
+    return url.toString().replace(/\?$/, "");
+  } catch (_) {
+    return "";
+  }
+}
+
+function _classifyRelatedUrl(rawUrl, label = "", evidence = "post-link") {
+  const url = _cleanRelatedUrl(rawUrl);
+  if (!url) return null;
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch (_) {
+    return null;
+  }
+  const host = parsed.hostname.toLowerCase();
+  const haystack = (url + " " + label).toLowerCase();
+  const socialHosts = [
+    "facebook.com", "web.facebook.com", "m.facebook.com", "threads.net",
+    "x.com", "twitter.com", "linkedin.com", "reddit.com",
+  ];
+  if (socialHosts.some((domain) => host === domain || host.endsWith("." + domain))) return null;
+  const shoppingHosts = [
+    "shopee.vn", "shope.ee", "lazada.vn", "tiki.vn", "sendo.vn",
+    "accesstrade.vn", "invol.co",
+  ];
+  if (shoppingHosts.some((domain) => host === domain || host.endsWith("." + domain))) return null;
+
+  let type = "reference";
+  let score = evidence === "post-link" ? 50 : 35;
+  if (/nguồn|source|website|homepage|chi tiết|tham khảo|reference|xem thêm|read more/.test(haystack)) score += 12;
+  if (host === "github.com" || host.endsWith(".github.com") || host === "gitlab.com") {
+    type = "github";
+    score += 45;
+  } else if (
+    /\.(zip|rar|7z|dmg|pkg|exe|msi|apk|deb|rpm|tar|gz|pdf)$/i.test(parsed.pathname) ||
+    /download|tải xuống|release|releases|asset|installer/.test(haystack)
+  ) {
+    type = "download";
+    score += 35;
+  } else if (/docs?|documentation|guide|tutorial|paper|arxiv\.org|demo|website|homepage/.test(haystack)) {
+    type = "reference";
+    score += 18;
+  }
+  if (evidence === "canonical" || evidence === "og:url") score += 12;
+  if (evidence === "json-ld") score += 8;
+  return { url, type, label: (label || "").trim().substring(0, 120), evidence, score };
+}
+
+function _collectPostOutboundLinks(element, summaryText = "") {
+  const postContainer = _findPostContainer(element);
+  const sharedInner = SITE === "facebook" ? _findSharedPostArticle(postContainer) : null;
+  const containers = sharedInner ? [sharedInner, postContainer] : [postContainer];
+  const links = [];
+  for (const container of containers) {
+    if (!container) continue;
+    for (const anchor of container.querySelectorAll("a[href]")) {
+      const label = (anchor.innerText || anchor.textContent || anchor.getAttribute("aria-label") || "").trim();
+      const classified = _classifyRelatedUrl(anchor.href, label, "post-link");
+      if (classified) links.push(classified);
+    }
+  }
+  const text = [summaryText, postContainer?.innerText || ""].join("\n");
+  for (const match of text.matchAll(/https?:\/\/[^\s<>"')\]}]+/gi)) {
+    const classified = _classifyRelatedUrl(match[0], "", "post-text");
+    if (classified) links.push(classified);
+  }
+  return links;
+}
+
+function _dedupeRelatedLinks(links) {
+  const byUrl = new Map();
+  for (const link of links) {
+    if (!link || !link.url) continue;
+    const previous = byUrl.get(link.url);
+    if (!previous || link.score > previous.score) byUrl.set(link.url, link);
+  }
+  return [...byUrl.values()]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 12);
+}
+
+async function discoverRelatedSourceLinks(element, summaryText = "") {
+  const sourceUrl = extractPostPermalink(element) || "";
+  const directLinks = _collectPostOutboundLinks(element, summaryText);
+  const pageCandidates = directLinks
+    .filter((link) => link.type === "reference")
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 4)
+    .map((link) => link.url);
+  let enrichedLinks = [];
+  if (pageCandidates.length > 0) {
+    try {
+      const response = await Promise.race([
+        chrome.runtime.sendMessage({
+          action: "enrich-related-source-links",
+          urls: pageCandidates,
+        }),
+        new Promise((resolve) => setTimeout(() => resolve({ links: [] }), 9000)),
+      ]);
+      enrichedLinks = (response?.links || [])
+        .map((link) => _classifyRelatedUrl(link.url, link.label, link.evidence))
+        .filter(Boolean);
+    } catch (_) {}
+  }
+  return { sourceUrl, relatedLinks: _dedupeRelatedLinks([...directLinks, ...enrichedLinks]) };
+}
+
 // Display modes for blocked content
 const DISPLAY_MODES = {
   HIDE: "hide",       // Completely hidden
@@ -1410,5 +1588,5 @@ window.fbsExtractAuthor = extractPostAuthor;
 window.fbsExtractImage = extractPostImage;
 window.fbsExtractImages = extractPostImages;
 window.fbsEvaluatePostSignals = evaluatePostSignals;
+window.fbsDiscoverRelatedSourceLinks = discoverRelatedSourceLinks;
 window.fbsDisplayModes = DISPLAY_MODES;
-

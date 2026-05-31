@@ -8,6 +8,8 @@ let MIN_LEN = 400;
 let isBlocked = false;
 let globalSourceTemplate = "• Nguồn bài viết: {platform} {author} {source}\n  {link}";
 let globalCustomSourceLink = "";
+let globalRelatedSourceLinks = [];
+let pendingSourceDiscovery = null;
 let scanTimer = null;
 const injected = new WeakSet();
 const summaryCache = new LRUCache(50);
@@ -37,10 +39,9 @@ function cleanup() {
   }
 }
 
-// Cleanup on extension reload or page unload
-if (chrome.runtime?.onConnect) {
-  chrome.runtime.onConnect.addListener(() => cleanup());
-}
+// Cleanup only when the page is actually leaving. A new extension port is not
+// a lifecycle signal: Facebook and our own helpers may open ports while the
+// existing DOM scanners still need to keep running.
 window.addEventListener("beforeunload", cleanup, { once: true });
 
 let hideAffiliatePosts = false;
@@ -151,6 +152,7 @@ let telemetry = {
   postsScanned: 0,
   postsFlaggedAds: 0,
   postsFlaggedAffiliate: 0,
+  postsFlaggedCommentGate: 0,
   topReasons: {},
   falsePositiveProxy: 0,
   lastResetDate: new Date().toDateString(),
@@ -202,6 +204,7 @@ function _getReasonText(reason) {
     redirect_wrapper: "FB redirect",
     affiliate_text: "Nội dung Aff",
     affiliate_cta: "CTA Affiliate",
+    comment_gate: "Yêu cầu comment để nhận nội dung",
   };
   return reasonMap[reason] || reason;
 }
@@ -224,7 +227,8 @@ function hideFlaggedPost(postContainer, evalResult, type) {
     postContainer.style.outlineOffset = "4px";
     const badge = document.createElement("div");
     badge.className = "fbs-mark-badge";
-    badge.textContent = `⚠️ ${type === "sponsored" ? "QC" : "Aff"} (${confidence}%)`;
+    const shortType = type === "sponsored" ? "QC" : type === "comment_gate" ? "Comment gate" : "Aff";
+    badge.textContent = `⚠️ ${shortType} (${confidence}%)`;
     badge.style.cssText = "position:absolute;top:8px;right:8px;padding:2px 8px;font-size:10px;background:rgba(255,107,107,0.9);color:#fff;border-radius:4px;z-index:100;";
     postContainer.style.position = "relative";
     postContainer.appendChild(badge);
@@ -234,8 +238,13 @@ function hideFlaggedPost(postContainer, evalResult, type) {
   // Collapse mode (default)
   const indicator = document.createElement("div");
   indicator.className = "fbs-affiliate-indicator";
+  const hiddenLabel = type === "sponsored"
+    ? "Quảng cáo"
+    : type === "comment_gate"
+      ? "Bài yêu cầu comment"
+      : "Affiliate";
   indicator.innerHTML =
-    `<span style="color:#ff6b6b;font-size:11px;font-weight:600;">🚫 ${type === "sponsored" ? "Quảng cáo" : "Affiliate"} đã ẩn</span>` +
+    `<span style="color:#ff6b6b;font-size:11px;font-weight:600;">🚫 ${hiddenLabel} đã ẩn</span>` +
     `<span style="color:#888;font-size:10px;margin-left:8px;">(${reasonText} · ${confidence}%)</span>` +
     '<button class="fbs-affiliate-show" style="margin-left:8px;padding:2px 8px;font-size:10px;border-radius:4px;background:rgba(255,107,107,0.15);color:#ff6b6b;border:1px solid rgba(255,107,107,0.3);cursor:pointer;">Hiện</button>';
 
@@ -254,7 +263,7 @@ function hideFlaggedPost(postContainer, evalResult, type) {
 }
 
 function scanAffiliatePosts() {
-  if (!hideAffiliatePosts || SITE !== "facebook") return;
+  if (SITE !== "facebook") return;
   if (typeof window.fbsEvaluatePostSignals !== "function") return;
 
   const root = document.querySelector('div[role="main"]') || document.querySelector('div[id^="mount_0_0"]') || document.body;
@@ -266,7 +275,8 @@ function scanAffiliatePosts() {
 
   for (const article of candidates) {
     if (affiliatePostsHidden.has(article)) continue;
-    if (article.dataset.fbsEvaluated === "1") continue;
+    const evalFingerprint = hashText((article.innerText || article.textContent || "").trim());
+    if (article.dataset.fbsEvalFingerprint === evalFingerprint) continue;
 
     // Skip nested articles (comments)
     let depth = 0;
@@ -283,18 +293,24 @@ function scanAffiliatePosts() {
     }
     if (depth >= 1) continue;
 
-    article.dataset.fbsEvaluated = "1";
+    article.dataset.fbsEvalFingerprint = evalFingerprint;
     telemetry.postsScanned++;
 
     const evalResult = window.fbsEvaluatePostSignals(article);
 
-    if (evalResult.isSponsored) {
+    if (evalResult.isCommentGate) {
+      telemetry.postsFlaggedCommentGate++;
+      for (const r of evalResult.reasons) {
+        telemetry.topReasons[r] = (telemetry.topReasons[r] || 0) + 1;
+      }
+      hideFlaggedPost(article, evalResult, "comment_gate");
+    } else if (hideAffiliatePosts && evalResult.isSponsored) {
       telemetry.postsFlaggedAds++;
       for (const r of evalResult.reasons) {
         telemetry.topReasons[r] = (telemetry.topReasons[r] || 0) + 1;
       }
       hideFlaggedPost(article, evalResult, "sponsored");
-    } else if (evalResult.isAffiliate && evalResult.confidence >= 70) {
+    } else if (hideAffiliatePosts && evalResult.isAffiliate && evalResult.confidence >= 70) {
       telemetry.postsFlaggedAffiliate++;
       for (const r of evalResult.reasons) {
         telemetry.topReasons[r] = (telemetry.topReasons[r] || 0) + 1;
@@ -338,7 +354,12 @@ function findNewSeeMoreElements() {
       'div[role="button"], span[role="button"], span[dir="auto"], div[dir="auto"]',
     );
     for (const el of els) {
-      if (el.dataset.fbsScanned) continue;
+      if (el.dataset.fbsScanned) {
+        const textContainer = findTextContainer(el);
+        const target = textContainer && findInjectTarget(textContainer);
+        if (target && target.querySelector(".fbs-wrap, .fbs-btn, .fbs-btn-inline")) continue;
+        delete el.dataset.fbsScanned;
+      }
       if (el.children.length > 6) continue;
       // Normalize non-breaking spaces (\u00a0) to avoid match misses
       const t = (el.innerText || el.textContent || "").replace(/\u00a0/g, " ").trim().toLowerCase();
@@ -524,7 +545,6 @@ function ensureOverlay() {
     '</div>' +
     '<div class="fbs-footer-right" style="display:flex;gap:10px;">' +
       '<button class="fbs-copy-btn" title="Copy (Ctrl+C)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy</button>' +
-      '<button class="fbs-btn fbs-aff-btn" title="Chế thành bài Affiliate" style="padding:8px 16px; font-size:13px; border-radius:8px; background:linear-gradient(135deg, #fdcb6e, #e17055); box-shadow:none;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v8"/><path d="M8 12h8"/></svg> Affiliate</button>' +
       '<button class="fbs-post-status-btn" style="display:none; padding:8px 18px; font-size:13px; font-weight:600; border-radius:8px; border:none; background:linear-gradient(135deg, #00b894, #00cec9); color:#fff; cursor:pointer;" title="Mở FB Composer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Đăng Status</button>' +
     '</div>' +
     '</div>' +
@@ -893,7 +913,7 @@ async function handlePostStatus() {
 
     // Lấy metadata từ DOM element (nếu có)
     const _element = lastSummarizeParams?._element || null;
-    const rawUrl = _element ? extractPostPermalink(_element) : location.href;
+    let rawUrl = _element ? extractPostPermalink(_element) : location.href;
     const author = _element ? extractPostAuthor(_element) : "";
     const source = _element ? extractPostSource(_element) : "";
     const imageUrl = _element ? extractPostImage(_element) : "";
@@ -901,6 +921,26 @@ async function handlePostStatus() {
     const allImages = _element && typeof window.fbsExtractImages === "function"
       ? window.fbsExtractImages(_element)
       : (imageUrl ? [imageUrl] : []);
+    let relatedLinks = [];
+    if (_element && typeof window.fbsDiscoverRelatedSourceLinks === "function") {
+      try {
+        const discovered =
+          pendingSourceDiscovery?.element === _element
+            ? await pendingSourceDiscovery.promise
+            : await window.fbsDiscoverRelatedSourceLinks(_element, text);
+        if (discovered?.sourceUrl) rawUrl = discovered.sourceUrl;
+        relatedLinks = discovered?.relatedLinks || [];
+      } catch (_) {}
+    }
+    if (
+      _element &&
+      typeof window.fbsExtractPermalinkAsync === "function" &&
+      (!rawUrl || /^https:\/\/(?:www\.)?facebook\.com\/groups\/[^/]+\/?$/i.test(rawUrl))
+    ) {
+      try {
+        rawUrl = (await window.fbsExtractPermalinkAsync(_element)) || rawUrl;
+      } catch (_) {}
+    }
 
     // Không append nguồn vào text — nguồn sẽ ghi ở comment đầu tiên
 
@@ -941,7 +981,7 @@ async function handlePostStatus() {
     // Dịch panel sang phải, ẩn backdrop
     panel.classList.add("fbs-panel-left");
     if (backdrop) backdrop.classList.remove("fbs-visible");
-    openFacebookComposer(text, cleanUrl, imageUrl, author, source, allImages);
+    openFacebookComposer(text, cleanUrl, imageUrl, author, source, allImages, relatedLinks);
   } catch (_) {
     // Fallback
     const resultEl = panelBody?.querySelector(".fbs-result");
@@ -983,7 +1023,7 @@ document.addEventListener("keydown", (e) => {
 });
 
 // ============================================================
-// AGENT POST API — Bypasses UI, called directly by auto-pilot
+// POST API — shared by the manual composer flow
 // ============================================================
 function cleanSourceUrl(rawUrl) {
   if (!rawUrl) return "";
@@ -1068,6 +1108,23 @@ function buildCommentText(cleanUrl, author, source) {
 
   out = out.replace("{link}", linkStr);
 
+  const relatedLinks = Array.isArray(globalRelatedSourceLinks)
+    ? globalRelatedSourceLinks
+    : [];
+  const seenRelated = new Set();
+  for (const item of relatedLinks) {
+    const url = typeof item === "string" ? item : item?.url;
+    if (!url || seenRelated.has(url) || url === cleanUrl || url === globalCustomSourceLink) continue;
+    seenRelated.add(url);
+    const type = typeof item === "string" ? "reference" : item.type;
+    const label = type === "github"
+      ? "Repo/Mã nguồn"
+      : type === "download"
+        ? "Download"
+        : "Tham khảo";
+    out += "\n· " + label + ": " + url;
+  }
+
   // Cleanup extra spaces but preserve intentional line breaks
   out = out.split('\n').map(line => line.replace(/\s+/g, ' ').trim()).filter(line => line).join('\n');
   if (!out) out = "📌 NGUỒN THAM KHẢO:\n· Link gốc: " + linkStr;
@@ -1090,7 +1147,7 @@ function buildCommentText(cleanUrl, author, source) {
 
 
 
-// Expose DOM extractors for auto-pilot
+// Expose DOM extractors for composer helpers
 // Plural: returns ALL images from the post (main + shared inner, deduped & sorted)
 // Must be called AFTER extractPostImage() for the same element since extractPostImage
 // populates the internal _lastExtractedImages cache.
@@ -1555,9 +1612,22 @@ function extractPostTitle(element) {
 
 // === STREAMING SUMMARIZE ===
 async function wakeServiceWorker() {
+  for (let i = 0; i < 3; i++) {
+    try {
+      const resp = await chrome.runtime.sendMessage({ action: "ping" });
+      if (resp?.ok) return true;
+    } catch (_) {}
+    await new Promise(r => setTimeout(r, 300 * (i + 1)));
+  }
+  // Last resort: connect() can wake a SW that sendMessage can't
   try {
-    await chrome.runtime.sendMessage({ action: "ping" });
+    const probe = chrome.runtime.connect({ name: "ping" });
+    probe.disconnect();
+    await new Promise(r => setTimeout(r, 200));
+    const resp = await chrome.runtime.sendMessage({ action: "ping" });
+    if (resp?.ok) return true;
   } catch (_) {}
+  return false;
 }
 
 // === BATCH OPERATIONS ===
@@ -1814,16 +1884,39 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
   openOverlay(skeletonHtml, false, type);
 
   // Wake SW before connecting port (MV3 SW dies after ~30s idle)
-  await wakeServiceWorker();
-  if (!isContextValid()) {
+  const swAlive = await wakeServiceWorker();
+  if (!swAlive || !isContextValid()) {
     openOverlay(
-      '<div class="fbs-error">Extension đã cập nhật. Vui lòng F5.</div>',
+      displayError({
+        message: "Service Worker không phản hồi",
+        detail: "Background script chưa sẵn sàng. Có thể do Chrome tạm dừng extension.",
+        action: "Nhấn F5 để tải lại trang, hoặc tắt/bật extension trong chrome://extensions",
+        severity: "warning",
+        retryable: true,
+      }),
       false,
       type,
     );
+    isSummarizing = false;
     return;
   }
-  currentPort = chrome.runtime.connect({ name: "summarize-stream" });
+  try {
+    currentPort = chrome.runtime.connect({ name: "summarize-stream" });
+  } catch (e) {
+    openOverlay(
+      displayError({
+        message: "Không kết nối được Service Worker",
+        detail: e.message || "No SW",
+        action: "Nhấn F5 để tải lại trang",
+        severity: "warning",
+        retryable: true,
+      }),
+      false,
+      type,
+    );
+    isSummarizing = false;
+    return;
+  }
   // Extract post metadata for enriched history
   const _el = lastSummarizeParams._element;
   const _sourceUrl = extractPostPermalink(_el);
@@ -1845,12 +1938,30 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
     author: _author,
     postTitle: _title,
     postSource: _source,
-    agentMode: !!window._fbsAgentMode,
   });
 
   let first = true;
   let streamBuffer = "";
   let streamRafId = null;
+  const summaryTimeoutId = setTimeout(() => {
+    if (!isSummarizing) return;
+    isSummarizing = false;
+    openOverlay(
+      displayError({
+        message: "Tóm tắt mất quá nhiều thời gian",
+        detail: "Provider AI không hoàn tất phản hồi trong 90 giây.",
+        action: "Thử lại hoặc chọn provider khác.",
+        severity: "warning",
+        retryable: true,
+      }),
+      false,
+      type,
+    );
+    try {
+      currentPort?.disconnect();
+    } catch (_) {}
+    currentPort = null;
+  }, 90000);
 
   function renderStream() {
     streamRafId = null;
@@ -1908,12 +2019,23 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
         streamRafId = requestAnimationFrame(renderStream);
       }
     } else if (msg.action === "done") {
+      clearTimeout(summaryTimeoutId);
       if (streamRafId) {
         cancelAnimationFrame(streamRafId);
         streamRafId = null;
       }
       isSummarizing = false;
       summaryCache.set(cacheKey, msg.full);
+      const discoveryElement = lastSummarizeParams?._element;
+      if (discoveryElement && typeof window.fbsDiscoverRelatedSourceLinks === "function") {
+        pendingSourceDiscovery = {
+          element: discoveryElement,
+          promise: window.fbsDiscoverRelatedSourceLinks(discoveryElement, msg.full).catch(() => ({
+            sourceUrl: "",
+            relatedLinks: [],
+          })),
+        };
+      }
       // Show quality warnings from post-processing guardrails
       let qualityHtml = "";
       if (msg.issues && msg.issues.length > 0) {
@@ -1948,19 +2070,12 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
         }
       }, 650);
 
-      // Agent mode: score đã được tính trong cùng lần gọi AI → gửi decision ngay, không cần eval riêng
-      if (window._fbsAgentMode && typeof msg.agentScore === "number") {
-        window.dispatchEvent(
-          new CustomEvent("fbs_agent_decision", {
-            detail: { score: msg.agentScore },
-          }),
-        );
-      }
       try {
         currentPort.disconnect();
       } catch (_) {}
       currentPort = null;
     } else if (msg.action === "error") {
+      clearTimeout(summaryTimeoutId);
       isSummarizing = false;
 
       // Use structured error display
@@ -1975,6 +2090,7 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
   });
 
   currentPort.onDisconnect.addListener(() => {
+    clearTimeout(summaryTimeoutId);
     if (isSummarizing) {
       isSummarizing = false;
       if (panelBody && !panelBody.innerHTML.includes("fbs-result")) {
@@ -2038,7 +2154,10 @@ chrome.runtime.onMessage.addListener((msg) => {
 
 // === INJECT BUTTON ===
 function inject(target, seeMoreClickable, textContainer, seeMoreOriginal) {
-  if (injected.has(target)) return;
+  if (injected.has(target)) {
+    if (target.querySelector(".fbs-wrap, .fbs-btn, .fbs-btn-inline")) return;
+    injected.delete(target);
+  }
   injected.add(target);
 
   const isInline = !!(seeMoreOriginal && seeMoreOriginal.parentElement);
@@ -2157,6 +2276,12 @@ function processSeeMore(sm) {
   if ((textContainer.innerText || "").trim().length < MIN_LEN / 2) return;
   const target = findInjectTarget(textContainer);
   if (
+    injected.has(target) &&
+    !target.querySelector(".fbs-wrap, .fbs-btn, .fbs-btn-inline")
+  ) {
+    injected.delete(target);
+  }
+  if (
     injected.has(target) ||
     target.querySelector(".fbs-wrap") ||
     target.querySelector(".fbs-btn-inline")
@@ -2175,7 +2300,6 @@ function createFloatingToolbar() {
     '<button class="fbs-floating-btn fbs-btn-highlight" data-action="summary"><img src="' +
     ICON_BASE64 +
     '" width="13" height="13" style="vertical-align:-2px"> Tóm tắt</button>' +
-    '<button class="fbs-floating-btn" data-action="affiliate"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg> Affiliate</button>' +
     (SITE === "facebook" ? '<button class="fbs-floating-btn" data-action="batch" title="Chọn nhiều bài để tóm tắt (Alt+B)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Batch</button>' : '');
   document.body.appendChild(floatingToolbar);
 
@@ -2281,7 +2405,10 @@ function scanFBAllPosts() {
       postObserver.observe(article);
     }
 
-    if (fbAllPostInjected.has(article)) continue;
+    if (fbAllPostInjected.has(article)) {
+      if (article.querySelector(".fbs-allpost-btn")) continue;
+      fbAllPostInjected.delete(article);
+    }
     // Skip if already has a regular fbs button
     if (article.querySelector(".fbs-wrap, .fbs-btn, .fbs-btn-inline, .fbs-allpost-btn")) continue;
     // Skip if this is nested inside another post container (comment articles)
@@ -2338,11 +2465,13 @@ function scanCommentSections() {
       ancestor = ancestor.parentElement;
     }
     if (depth >= 1) continue; // nested = not a top-level post
-    if (commentBtnInjected.has(article)) continue;
+    if (commentBtnInjected.has(article)) {
+      if (article.querySelector(".fbs-comment-summary-btn")) continue;
+      commentBtnInjected.delete(article);
+    }
     // Check for comment articles inside this post
     const commentArticles = article.querySelectorAll('article[role="article"]');
     if (commentArticles.length < 2) continue; // need at least 2 visible comments
-    commentBtnInjected.add(article);
     // Collect comment text
     const commentTexts = [];
     for (const ca of commentArticles) {
@@ -2350,6 +2479,7 @@ function scanCommentSections() {
       if (t.length > 10) commentTexts.push(t);
     }
     if (commentTexts.length < 2) continue;
+    commentBtnInjected.add(article);
     const btn = document.createElement("button");
     btn.className = "fbs-comment-summary-btn";
     btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg> Tóm tắt ' + commentTexts.length + ' bình luận';
@@ -2538,9 +2668,6 @@ function _hideWrapper(wrapper) {
 
 
 
-// Alias for auto-pilot compatibility
-const hideSponsoredPosts = hideFeedClutter;
-
 // === REDDIT ===
 function scanRedditPosts() {
   const posts = document.querySelectorAll(
@@ -2591,7 +2718,7 @@ function scan() {
 
 let scanDebounceTimer = null;
 let scanScheduled = false;
-const SCAN_DEBOUNCE_MS = 2000;
+const SCAN_DEBOUNCE_MS = 600;
 
 function scheduleScan() {
   if (scanScheduled) return;
@@ -2606,37 +2733,49 @@ function scheduleScan() {
 scan();
 scheduleScan();
 
-// Fast-path clutter observer: fires hideFeedClutter() immediately (no debounce)
-// whenever either:
-//   (a) a .__fb-light-mode portal is added — sponsored label just became available
-//   (b) a data-virtualized feed post is added — check if its portal already exists
-// React renders post + portal in the same synchronous batch, so by the time
-// MutationObserver fires, both are in the DOM. We just need to act fast.
-let clutterPending = false;
-const clutterObserver = new MutationObserver((mutations) => {
-  if (SITE !== "facebook" || clutterPending) return;
+// Safety-net: periodic scan catches posts missed by MutationObserver
+scanTimer = setInterval(scan, 5000);
+
+// Chrome throttles background tabs and Facebook may rebuild virtualized feed
+// nodes while a tab is idle. Re-scan as soon as the user returns.
+const resumeScan = () => {
+  if (document.visibilityState === "visible") scan();
+};
+document.addEventListener("visibilitychange", resumeScan);
+window.addEventListener("focus", resumeScan);
+window.addEventListener("pageshow", resumeScan);
+listeners.push({ element: document, event: "visibilitychange", handler: resumeScan });
+listeners.push({ element: window, event: "focus", handler: resumeScan });
+listeners.push({ element: window, event: "pageshow", handler: resumeScan });
+
+let fastScanPending = false;
+const scanObserver = new MutationObserver((mutations) => {
+  let hasNewPost = false;
   for (const m of mutations) {
     for (const node of m.addedNodes) {
       if (node.nodeType !== 1) continue;
-      const isPortal = node.classList.contains("__fb-light-mode");
-      const isPost = node.hasAttribute?.("data-virtualized");
-      const hasPortal = !isPortal && node.querySelector?.(".__fb-light-mode");
-      if (isPortal || isPost || hasPortal) {
-        // Batch multiple rapid additions into a single hideFeedClutter call
-        clutterPending = true;
-        requestAnimationFrame(() => {
-          clutterPending = false;
-          hideFeedClutter();
-        });
-        return;
+      const isPost = node.getAttribute?.("role") === "article" ||
+                     node.hasAttribute?.("data-virtualized") ||
+                     (node.getAttribute?.("data-pagelet") || "").startsWith("FeedUnit");
+      const isPortal = node.classList?.contains("__fb-light-mode");
+      if (isPost || isPortal) { hasNewPost = true; break; }
+      if (node.querySelector?.('article[role="article"], [data-virtualized], .__fb-light-mode')) {
+        hasNewPost = true; break;
       }
     }
+    if (hasNewPost) break;
+  }
+
+  if (hasNewPost && !fastScanPending) {
+    fastScanPending = true;
+    requestAnimationFrame(() => {
+      fastScanPending = false;
+      scan();
+    });
+  } else {
+    scheduleScan();
   }
 });
-clutterObserver.observe(document.body, { childList: true, subtree: true });
-observers.push(clutterObserver);
-
-const scanObserver = new MutationObserver(() => scheduleScan());
 scanObserver.observe(document.body, {
   childList: true,
   subtree: true,
@@ -2714,74 +2853,13 @@ async function addShopeeProductsToSummary(text, summaryHtml) {
 }
 
 /**
- * Enhance summarizeText to include Shopee products
+ * Prepare an optional Shopee suggestion without touching the streaming panel.
  */
 const originalSummarizeText = summarizeText;
 summarizeText = async function(text, type, element, tone) {
-  console.log('[FeedWriter] summarizeText wrapper called - type:', type, 'panelBody exists:', !!panelBody);
-
-  // Call original function
-  const result = await originalSummarizeText.call(this, text, type, element, tone);
-
-  console.log('[FeedWriter] Original summarizeText completed');
-
-  // Add Shopee products if type is summary
-  if (type === 'summary' && panelBody) {
-    console.log('[FeedWriter] Type is summary and panelBody exists');
-
-    // Wait for HTML to be rendered (streaming might still be in progress)
-    // Use MutationObserver to detect when fbs-result appears
-    const waitForResult = new Promise((resolve) => {
-      // Check immediately first
-      if (panelBody.innerHTML.includes('fbs-result')) {
-        console.log('[FeedWriter] fbs-result already exists');
-        resolve();
-        return;
-      }
-
-      console.log('[FeedWriter] Waiting for fbs-result to appear...');
-
-      // Set up observer
-      const observer = new MutationObserver((mutations) => {
-        if (panelBody.innerHTML.includes('fbs-result')) {
-          console.log('[FeedWriter] fbs-result detected by observer');
-          observer.disconnect();
-          resolve();
-        }
-      });
-
-      observer.observe(panelBody, {
-        childList: true,
-        subtree: true,
-        characterData: true
-      });
-
-      // Timeout after 30 seconds (increased from 10s)
-      setTimeout(() => {
-        console.log('[FeedWriter] Timeout waiting for fbs-result');
-        observer.disconnect();
-        resolve();
-      }, 30000);
-    });
-
-    await waitForResult;
-
-    const currentHtml = panelBody.innerHTML;
-    console.log('[FeedWriter] Current HTML includes fbs-result:', currentHtml.includes('fbs-result'));
-
-    if (currentHtml.includes('fbs-result')) {
-      console.log('[FeedWriter] Calling addShopeeProductsToSummary...');
-      console.log('[FeedWriter] Text length:', text.length);
-      console.log('[FeedWriter] Text preview:', text.substring(0, 200));
-      const enhancedHtml = await addShopeeProductsToSummary(text, currentHtml);
-      panelBody.innerHTML = enhancedHtml;
-      console.log('[FeedWriter] Enhanced HTML applied to panel');
-    }
-  } else {
-    console.log('[FeedWriter] Not summary or no panelBody - clearing products');
-    // Clear products if not summary
-    currentShopeeProducts = [];
+  currentShopeeProducts = [];
+  if (type === 'summary') {
+    addShopeeProductsToSummary(text, '').catch(() => {});
   }
-
-  return result;
+  return originalSummarizeText.call(this, text, type, element, tone);
 };

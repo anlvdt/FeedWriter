@@ -237,7 +237,6 @@ const StatusFormatter = {
   // ── Post-processor: fix structure when AI outputs flat paragraphs ──
 
   _postProcess(blocks) {
-    // Count block types
     const types = {};
     for (const b of blocks) {
       types[b.type] = (types[b.type] || 0) + 1;
@@ -247,69 +246,26 @@ const StatusFormatter = {
     const hasBullets = (types.bullet || 0) > 0;
     const hasNumbers = (types.number || 0) > 0;
     const paraCount = types.paragraph || 0;
+    const bulletCount = types.bullet || 0;
 
-    // If already structured (has headers or bullets), pass through
-    if (hasHeaders || hasBullets || hasNumbers) return blocks;
-
-    // Only paragraphs (+ title + blank) — AI gave us wall of text
-    if (paraCount < 1) return blocks;
-
-    const result = [];
-    for (const block of blocks) {
-      if (block.type !== "paragraph") {
-        result.push(block);
-        continue;
-      }
-
-      // Split paragraph into sentences
-      const sentences = block.text
-        .split(/(?<=[.!?])\s+/)
-        .map(s => s.trim())
-        .filter(s => s.length > 8);
-
-      if (sentences.length < 2) {
-        result.push(block);
-        continue;
-      }
-
-      // Process each sentence
-      for (const sent of sentences) {
-        // Detect inline enumerations: "...N vai trò: A, B, C, D và E"
-        // Pattern: text before colon + comma-items + penultimate + và + last
-        const enumMatch = sent.match(
-          /^(.+?):\s*((?:[^,.\n]{1,40},\s*){2,}[^,.\n]{1,40}\s+(?:và|and)\s+[^.\n]{1,40})\.?\s*(.*)$/i
-        );
-        if (enumMatch) {
-          const intro = enumMatch[1].trim();
-          const listStr = enumMatch[2].trim();
-          const remainder = (enumMatch[3] || "").trim();
-
-          // Extract items: split on ", " and " và "
-          const items = listStr
-            .split(/,\s+(?:và|and)\s+|,\s+|\s+(?:và|and)\s+/i)
-            .map(s => s.trim())
-            .filter(s => s.length > 0 && s.length < 50);
-
-          if (items.length >= 3) {
-            result.push({ type: "paragraph", text: intro + ":" });
-            result.push({ type: "blank" });
-            for (const item of items) {
-              result.push({ type: "bullet", text: item.replace(/\.\s*$/, "") });
-            }
-            if (remainder.length > 10) {
-              result.push({ type: "blank" });
-              result.push({ type: "paragraph", text: remainder.replace(/^\.\s*/, "") });
-            }
-            continue;
-          }
-        }
-
-        // Regular sentence → bullet
-        result.push({ type: "bullet", text: sent.replace(/\.\s*$/, "") });
+    // All-bullet narrative detection: when every content block is a bullet
+    // and bullets are long sentences, merge them into paragraphs.
+    // True lists have short items (< 80 chars avg). Narrative "bullets" are longer.
+    if (hasBullets && !hasHeaders && !hasNumbers && paraCount === 0 && bulletCount >= 3) {
+      const bullets = blocks.filter(b => b.type === "bullet");
+      const avgLen = bullets.reduce((s, b) => s + b.text.length, 0) / bullets.length;
+      if (avgLen > 60) {
+        return blocks.map(b => b.type === "bullet" ? { type: "paragraph", text: b.text } : b);
       }
     }
 
-    return result;
+    if (hasHeaders || hasBullets || hasNumbers) return blocks;
+
+    // Multiple short paragraphs = intentional narrative format, keep as-is
+    if (paraCount >= 2) return blocks;
+
+    // Single long paragraph (wall of text) — break into bullets (Deactivated to respect AI's original formatting)
+    return blocks;
   },
 
   // ── Renderer: blocks → platform-specific text ──────────────────────
@@ -333,14 +289,12 @@ const StatusFormatter = {
           // Skip unicode bold on titles — uppercase already provides emphasis,
           // and mixed Vietnamese + bold-ASCII looks broken.
           lines.push(t);
-          lines.push(""); // double blank after title for breathing room
           lines.push("");
           break;
         }
 
         case "header": {
-          // Ensure 2 blank lines before each section header (visual section break)
-          const blanksNeeded = 2;
+          const blanksNeeded = 1;
           let trailingBlanks = 0;
           for (let j = lines.length - 1; j >= 0 && lines[j] === ""; j--) trailingBlanks++;
           for (let j = trailingBlanks; j < blanksNeeded && lines.length > 0; j++) {
@@ -393,15 +347,18 @@ const StatusFormatter = {
           } else {
             t = t.replace(/\*(.+?)\*/g, "$1");
           }
+          // Separate consecutive paragraphs with a blank line
+          if (i > 0 && blocks[i - 1].type === "paragraph") {
+            lines.push("");
+          }
           lines.push(t);
           break;
         }
 
         case "glossary": {
-          // 2 blank lines before glossary (same as section headers)
           let trailingBlanksG = 0;
           for (let j = lines.length - 1; j >= 0 && lines[j] === ""; j--) trailingBlanksG++;
-          for (let j = trailingBlanksG; j < 2 && lines.length > 0; j++) {
+          for (let j = trailingBlanksG; j < 1 && lines.length > 0; j++) {
             lines.push("");
           }
           const glossaryLabel = "Giải thích thuật ngữ:";
@@ -439,7 +396,7 @@ const StatusFormatter = {
 
     // Footer — extra blank line for visual separation from content
     if (profile.footer) {
-      result += "\n\n\n" + this._buildFooter(options);
+      result += "\n\n" + this._buildFooter(options);
     }
 
     // Truncate if needed
@@ -573,7 +530,8 @@ const StatusFormatter = {
     const blocks = this._postProcess(this._parse(rawText));
     const htmlParts = [];
 
-    for (const block of blocks) {
+    for (let i = 0; i < blocks.length; i++) {
+      const block = blocks[i];
       switch (block.type) {
         case "title":
           htmlParts.push(
@@ -591,7 +549,10 @@ const StatusFormatter = {
 
         case "number": {
           const circled = this._circledNumber(block.num);
-          const rendered = this._renderInlineMarkdown(block.text);
+          let rendered = this._renderInlineMarkdown(block.text);
+          if (!rendered.includes('<strong>') && rendered.includes(':')) {
+            rendered = rendered.replace(/^([^:]+):/, '<strong>$1</strong>:');
+          }
           htmlParts.push(
             '<div class="fbs-bullet">' +
             '<span class="fbs-bullet-marker">' + circled + '</span>' +
@@ -601,7 +562,10 @@ const StatusFormatter = {
         }
 
         case "bullet": {
-          const rendered = this._renderInlineMarkdown(block.text);
+          let rendered = this._renderInlineMarkdown(block.text);
+          if (!rendered.includes('<strong>') && rendered.includes(':')) {
+            rendered = rendered.replace(/^([^:]+):/, '<strong>$1</strong>:');
+          }
           htmlParts.push(
             '<div class="fbs-bullet">' +
             '<span class="fbs-bullet-marker">▸</span>' +
@@ -620,21 +584,27 @@ const StatusFormatter = {
           htmlParts.push(this._renderGlossaryHTML(block.items));
           break;
 
-        case "blank":
+        case "blank": {
+          const prev = i > 0 ? blocks[i - 1].type : null;
+          const next = i < blocks.length - 1 ? blocks[i + 1].type : null;
+          const listTypes = ["bullet", "number"];
+          if (listTypes.includes(prev) && listTypes.includes(next)) break;
+          if (prev === "title") break;
           htmlParts.push('<div style="height:6px;"></div>');
           break;
+        }
       }
     }
 
     // Footer — subtle, doesn't repeat if HTML already has one
     const hasRepo = !!options.hasRepo;
     htmlParts.push(
-      '<div style="margin:16px 0 4px;border-top:1px solid rgba(255,255,255,0.08);padding-top:10px;text-align:center;font-size:11.5px;color:rgba(255,255,255,0.3);">' +
+      '<div style="margin:10px 0 4px;border-top:1px solid rgba(255,255,255,0.08);padding-top:8px;text-align:center;font-size:11.5px;color:rgba(255,255,255,0.3);">' +
       '👉 ' + (hasRepo ? 'Link gốc & mã nguồn dưới bình luận đầu tiên' : 'Chi tiết & nguồn dưới bình luận đầu tiên') +
       '</div>'
     );
 
-    return htmlParts.join("\n");
+    return htmlParts.join("");
   },
 
   _renderInlineMarkdown(text) {

@@ -12,7 +12,6 @@
     "cookies",
     "scripting",
     "alarms",
-    "notifications",
     "clipboardRead"
   ],
   "host_permissions": [
@@ -21,6 +20,7 @@
     "https://api.cerebras.ai/*",
     "https://api.sambanova.ai/*",
     "https://openrouter.ai/*",
+    "https://*/*",
     "*://*.shope.ee/*",
     "*://*.shopee.vn/*",
     "https://tiki.vn/*",
@@ -44,7 +44,7 @@
         "https://www.linkedin.com/*",
         "https://www.reddit.com/*"
       ],
-      "js": ["errors.js", "utils.js", "shopee-preload.js", "dom-helpers.js", "post-data.js", "status-formatter.js", "content-dom.js", "poster-facebook.js", "poster-threads.js", "poster-x.js", "poster-linkedin.js", "poster-reddit.js", "cross-poster.js", "content-composer.js", "content.js", "auto-pilot.js"],
+      "js": ["errors.js", "utils.js", "shopee-preload.js", "dom-helpers.js", "post-data.js", "status-formatter.js", "content-dom.js", "poster-facebook.js", "poster-threads.js", "poster-x.js", "poster-linkedin.js", "poster-reddit.js", "cross-poster.js", "content-composer.js", "content.js"],
       "css": ["content.css"],
       "run_at": "document_end"
     },

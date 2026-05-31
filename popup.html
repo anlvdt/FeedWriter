@@ -95,8 +95,9 @@
       </div>
 
       <div class="accordion advanced-accordion">
-        <div class="accordion-header" role="button" aria-expanded="false" tabindex="0">Auto-pilot & Đăng bài</div>
+        <div class="accordion-header" role="button" aria-expanded="false" tabindex="0">Hỗ trợ đăng bài</div>
         <div class="accordion-content">
+          <div class="field-hint" style="margin-bottom:12px">Workflow đề xuất: lọc feed → dùng Batch để chọn bài đáng đọc → preview, chỉnh sửa và đăng thủ công.</div>
           <div class="field">
             <label class="checkbox-label">
               <input type="checkbox" id="hideAffiliatePosts">
@@ -130,16 +131,6 @@
             <textarea id="sourceTemplate" rows="3" placeholder="• Nguồn bài viết: {platform} {author} {source}&#10;• Link tham khảo: {link}&#10;• Github: [paste link]&#10;• Download: [paste link]" style="background: #fff; color: #1a1a2e; border: 1px solid var(--border);"></textarea>
             <div class="field-hint">{author} = tên tác giả, {platform} = FB/X/..., {source} = nhóm/page, {link} = URL gốc</div>
           </div>
-          <div class="field">
-            <label class="checkbox-label">
-              <input type="checkbox" id="useHeuristicEval">
-              <span>
-                Dùng heuristic thay AI eval (Agent mode)
-                <span class="fbs-hint-icon" data-tooltip="Bỏ qua bước AI chấm điểm, dùng keyword matching để quyết định đăng/bỏ. Tiết kiệm 1 API call/bài.">?</span>
-              </span>
-            </label>
-            <div class="field-hint">Bỏ qua bước AI chấm điểm, dùng keyword matching để quyết định đăng/bỏ. Tiết kiệm 1 API call/bài.</div>
-          </div>
         </div>
       </div>
 
@@ -156,13 +147,13 @@
             <div class="field-hint">Cách hiển thị bài viết được phát hiện là quảng cáo.</div>
           </div>
           <div class="field">
-            <label for="affiliateDisplayMode">Hiển thị bài affiliate</label>
+            <label for="affiliateDisplayMode">Hiển thị bài affiliate / yêu cầu comment</label>
             <select id="affiliateDisplayMode">
               <option value="hide">Ẩn hoàn toàn</option>
               <option value="collapse" selected>Thu gọn (có lý do)</option>
               <option value="mark">Chỉ đánh dấu</option>
             </select>
-            <div class="field-hint">Cách hiển thị bài viết chứa link affiliate (Shopee, Lazada, TikTok Shop...).</div>
+            <div class="field-hint">Cách hiển thị bài affiliate và bài yêu cầu comment để nhận link, file hoặc tài liệu. Bài yêu cầu comment luôn được phát hiện.</div>
           </div>
           <div class="field">
             <label for="customInstructions">
