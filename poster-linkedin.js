@@ -61,11 +61,11 @@ const PosterLinkedin = {
         const dataTransfer = new DataTransfer();
         for (let i = 0; i < Math.min(postData.images.length, this.maxImages); i++) {
           try {
-            const response = await fetch(postData.images[i].url);
-            const arrayBuffer = await response.arrayBuffer();
-            const file = new File([arrayBuffer], postData.images[i].name, {
-              type: postData.images[i].type || "image/jpeg"
-            });
+            const image = postData.images[i];
+            const file = typeof fetchImageBlob === "function"
+              ? await fetchImageBlob(image.url, image.name)
+              : null;
+            if (!file) throw new Error("Image download returned no file");
             dataTransfer.items.add(file);
           } catch (err) {
             console.warn("[CrossPost:LinkedIn] Image fetch failed:", err.message);

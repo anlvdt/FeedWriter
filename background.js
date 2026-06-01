@@ -3,7 +3,7 @@
 // Author: Le An (anlvdt)
 
 // MUST be static, top-level, and without try-catch in MV3 Service Workers
-importScripts("env.js", "utils.js", "bg-prompts.js", "bg-api.js");
+importScripts("utils.js", "bg-prompts.js", "bg-api.js");
 
 // MV3 lifecycle — claim clients immediately so messages aren't dropped
 self.addEventListener("install", () => self.skipWaiting());
@@ -38,7 +38,9 @@ if (typeof featureFlags === 'undefined') {
 }
 
 // Initialize StorageBatcher for history (must be after importScripts)
-const historyBatcher = typeof StorageBatcher !== 'undefined' ? new StorageBatcher(500) : { set: () => chrome.storage.local.set.bind(chrome.storage.local) };
+const historyBatcher = typeof StorageBatcher !== 'undefined'
+  ? new StorageBatcher(500)
+  : { set: (key, value) => chrome.storage.local.set({ [key]: value }) };
 
 // Storage schema version
 const STORAGE_VERSION = 2;
@@ -57,6 +59,8 @@ const DEFAULT_SETTINGS = {
   customAffPrompt: '',
   sourceTemplate: '• Nguồn bài viết: {platform} {author} {source}\n  {link}',
   customSourceLink: '',
+  enableUnicodeBold: true,
+  advancedModeEnabled: false,
   hideAffiliatePosts: false,
   adDisplayMode: 'collapse',
   affiliateDisplayMode: 'collapse',
@@ -96,7 +100,7 @@ async function migrateStorageIfNeeded() {
 async function migrateSettingsIfNeeded() {
   if (!chrome?.storage?.sync) return; // SW not ready
 
-  const data = await chrome.storage.sync.get(Object.keys(DEFAULT_SETTINGS));
+  const data = await chrome.storage.sync.get([...Object.keys(DEFAULT_SETTINGS), 'outputLang']);
   const currentVersion = data.version || 0;
 
   if (currentVersion < SETTINGS_VERSION) {
@@ -448,15 +452,21 @@ function isSafePublicHttpsUrl(rawUrl) {
   try {
     const url = new URL(rawUrl);
     if (url.protocol !== "https:") return false;
-    const host = url.hostname.toLowerCase();
+    const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
     if (
       host === "localhost" ||
       host.endsWith(".local") ||
+      host === "0.0.0.0" ||
       host === "::1" ||
+      host === "::" ||
+      /^::ffff:(?:127\.|10\.|192\.168\.|169\.254\.|172\.(?:1[6-9]|2\d|3[01])\.)/i.test(host) ||
+      /^f[cd][0-9a-f:]*$/i.test(host) ||
+      /^fe[89ab][0-9a-f:]*$/i.test(host) ||
       /^127\./.test(host) ||
       /^10\./.test(host) ||
       /^192\.168\./.test(host) ||
       /^169\.254\./.test(host) ||
+      /^100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(host) ||
       /^172\.(1[6-9]|2\d|3[01])\./.test(host)
     ) return false;
     return true;
@@ -637,7 +647,7 @@ async function clearShopeeCookies() {
     const cookies = await chrome.cookies.getAll({ domain: d });
     for (const c of cookies) {
       await chrome.cookies.remove({
-        url: "https://" + c.domain + c.path,
+        url: "https://" + c.domain.replace(/^\./, "") + c.path,
         name: c.name,
       });
     }
@@ -646,6 +656,10 @@ async function clearShopeeCookies() {
 
 async function processUnshorten(url, tabId) {
   try {
+    const parsedUrl = new URL(url);
+    if (parsedUrl.protocol !== "https:" || !["shope.ee", "www.shope.ee"].includes(parsedUrl.hostname)) {
+      throw new Error("Chỉ hỗ trợ link https://shope.ee");
+    }
     const resp = await fetchWithTimeout(
       url,
       { method: "GET", redirect: "follow" },
@@ -841,45 +855,32 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  // === FETCH TIKI API (bypass CORS) ===
-  if (request.action === "fetch-tiki-products") {
-    (async () => {
-      try {
-        const keyword = request.keyword || 'điện thoại';
-        const params = new URLSearchParams({
-          q: keyword,
-          limit: 5,
-          include: 'sale_attrs',
-          aggregations: 2,
-        });
-
-        const response = await fetch(`https://tiki.vn/api/v2/products?${params}`, {
-          method: 'GET',
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'application/json',
-          },
-        });
-
-        if (!response.ok) {
-          throw new Error(`Tiki API error: ${response.status}`);
-        }
-
-        const data = await response.json();
-        sendResponse({ success: true, data: data.data || [] });
-      } catch (error) {
-        console.error('[FeedWriter] Error fetching Tiki products:', error);
-        sendResponse({ success: false, error: error.message });
-      }
-    })();
-    return true;
-  }
-
   // === SHORTEN URL (bypass CORS) ===
   if (request.action === "shorten-url") {
     (async () => {
       try {
         const longUrl = request.url;
+        let parsedLongUrl;
+        try {
+          parsedLongUrl = new URL(longUrl);
+        } catch (_) {
+          throw new Error("Invalid URL");
+        }
+        if (!isSafePublicHttpsUrl(parsedLongUrl.href)) {
+          throw new Error("Only public HTTPS URLs are allowed");
+        }
+
+        const fetchShortUrl = async (url) => {
+          const response = await fetchWithTimeout(url, { method: "GET" }, 5000);
+          if (!response.ok) return "";
+          const shortUrl = (await response.text()).trim();
+          try {
+            const parsedShortUrl = new URL(shortUrl);
+            return ["http:", "https:"].includes(parsedShortUrl.protocol) ? shortUrl : "";
+          } catch (_) {
+            return "";
+          }
+        };
 
         // 1. Try is.gd (Preferred)
         try {
@@ -887,16 +888,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             format: 'simple',
             url: longUrl,
           });
-          const response = await fetch(`https://is.gd/create.php?${params}`, {
-            method: 'GET',
-          });
-          if (response.ok) {
-            const shortUrl = await response.text();
-            if (shortUrl && shortUrl.trim().startsWith('http')) {
-              console.log('[FeedWriter] is.gd success:', shortUrl.trim());
-              sendResponse({ success: true, shortUrl: shortUrl.trim() });
-              return;
-            }
+          const shortUrl = await fetchShortUrl(`https://is.gd/create.php?${params}`);
+          if (shortUrl) {
+            console.log('[FeedWriter] is.gd success:', shortUrl);
+            sendResponse({ success: true, shortUrl });
+            return;
           }
         } catch (error) {
           console.warn('[FeedWriter] is.gd failed:', error);
@@ -908,16 +904,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             format: 'simple',
             url: longUrl,
           });
-          const response = await fetch(`https://v.gd/create.php?${params}`, {
-            method: 'GET',
-          });
-          if (response.ok) {
-            const shortUrl = await response.text();
-            if (shortUrl && shortUrl.trim().startsWith('http')) {
-              console.log('[FeedWriter] v.gd success:', shortUrl.trim());
-              sendResponse({ success: true, shortUrl: shortUrl.trim() });
-              return;
-            }
+          const shortUrl = await fetchShortUrl(`https://v.gd/create.php?${params}`);
+          if (shortUrl) {
+            console.log('[FeedWriter] v.gd success:', shortUrl);
+            sendResponse({ success: true, shortUrl });
+            return;
           }
         } catch (error) {
           console.warn('[FeedWriter] v.gd failed:', error);
@@ -925,16 +916,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
         // 3. Try da.gd
         try {
-          const response = await fetch(`https://da.gd/s?url=${encodeURIComponent(longUrl)}`, {
-            method: 'GET',
-          });
-          if (response.ok) {
-            const shortUrl = await response.text();
-            if (shortUrl && shortUrl.trim().startsWith('http')) {
-              console.log('[FeedWriter] da.gd success:', shortUrl.trim());
-              sendResponse({ success: true, shortUrl: shortUrl.trim() });
-              return;
-            }
+          const shortUrl = await fetchShortUrl(`https://da.gd/s?url=${encodeURIComponent(longUrl)}`);
+          if (shortUrl) {
+            console.log('[FeedWriter] da.gd success:', shortUrl);
+            sendResponse({ success: true, shortUrl });
+            return;
           }
         } catch (error) {
           console.warn('[FeedWriter] da.gd failed:', error);
@@ -942,16 +928,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
         // 4. Fallback to TinyURL
         try {
-          const response = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}`, {
-            method: 'GET',
-          });
-          if (response.ok) {
-            const shortUrl = await response.text();
-            if (shortUrl && shortUrl.trim().startsWith('http')) {
-              console.log('[FeedWriter] TinyURL success:', shortUrl.trim());
-              sendResponse({ success: true, shortUrl: shortUrl.trim() });
-              return;
-            }
+          const shortUrl = await fetchShortUrl(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}`);
+          if (shortUrl) {
+            console.log('[FeedWriter] TinyURL success:', shortUrl);
+            sendResponse({ success: true, shortUrl });
+            return;
           }
         } catch (error) {
           console.warn('[FeedWriter] TinyURL failed:', error);
@@ -1061,8 +1042,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse({ error: "Invalid URL format" });
       return true;
     }
-    if (parsedUrl.protocol !== "https:") {
-      sendResponse({ error: "Only HTTPS URLs allowed" });
+    if (!isSafePublicHttpsUrl(parsedUrl.href)) {
+      sendResponse({ error: "Only public HTTPS URLs allowed" });
       return true;
     }
     fetchWithTimeout(url, {
@@ -2122,6 +2103,8 @@ function formatSourceName(site, author) {
 if (chrome?.runtime?.onStartup) {
 chrome.runtime.onStartup.addListener(async () => {
   await migrateStorageIfNeeded().catch(e => logger.error('Storage migration failed (onStartup):', e));
+  await migrateSettingsIfNeeded().catch(e => logger.error('Settings migration failed (onStartup):', e));
+  await validateSettings().catch(e => logger.error('Settings validation failed (onStartup):', e));
   await initializeTelemetry().catch(e => logger.error('Telemetry init failed (onStartup):', e));
   const today = new Date().toDateString();
   const data = await chrome.storage.local.get([

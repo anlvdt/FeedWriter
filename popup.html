@@ -34,14 +34,6 @@
       <div class="accordion" id="accordion-basic">
         <div class="accordion-header active" role="button" aria-expanded="true" tabindex="0">Tùy chỉnh Tóm tắt</div>
         <div class="accordion-content" style="display: block;">
-          <div class="field advanced-field">
-            <label for="outputLang">Ngôn ngữ tóm tắt</label>
-            <select id="outputLang">
-              <option value="auto">Tự động (Việt nếu bài tiếng Anh)</option>
-              <option value="vi">Luôn tiếng Việt</option>
-              <option value="en">Luôn tiếng Anh</option>
-            </select>
-          </div>
           <div class="field">
             <label for="summaryLength">Độ dài kết quả</label>
             <select id="summaryLength">
@@ -113,23 +105,23 @@
                 <span class="fbs-hint-icon" data-tooltip="ID affiliate của bạn từ Shopee Affiliate Program. Để trống nếu chưa có.">?</span>
               </label>
               <input type="text" id="shopeeAffiliateId" placeholder="VD: 12345678">
-              <div class="fbs-shopee-settings-hint">Tự động tìm sản phẩm hot liên quan và tạo affiliate link khi tóm tắt bài viết. Đăng ký tại: <a href="https://affiliate.shopee.vn" target="_blank" style="color: #ffa502;">affiliate.shopee.vn</a></div>
+              <div class="fbs-shopee-settings-hint">Tạo affiliate link từ danh sách gợi ý Shopee phổ biến khi tóm tắt bài viết. Đăng ký tại: <a href="https://affiliate.shopee.vn" target="_blank" style="color: #ffa502;">affiliate.shopee.vn</a></div>
             </div>
             <div class="field">
               <label class="checkbox-label">
                 <input type="checkbox" id="autoFindShopeeProducts">
-                <span>Tự động tìm sản phẩm Shopee liên quan</span>
+                <span>Thêm gợi ý Shopee khi copy</span>
               </label>
-              <div class="field-hint">Tự động tìm và hiển thị 5 sản phẩm hot nhất liên quan đến nội dung bài viết.</div>
+              <div class="field-hint">Tự động thêm 1 gợi ý Shopee luân phiên vào nội dung copy, kèm affiliate link đã rút gọn khi dịch vụ khả dụng.</div>
             </div>
           </div>
           <div class="field">
             <label for="sourceTemplate">
               Thông tin nguồn & tham khảo
-              <span class="fbs-hint-icon" data-tooltip="Thêm link Github, download, website gốc... Dùng {author}, {platform}, {source}, {link} để tùy chỉnh format.">?</span>
+              <span class="fbs-hint-icon" data-tooltip="Tùy chỉnh dòng nguồn. Dùng {author}, {platform}, {source}, {link}, {repo}. Link Github/download/tham khảo cho từng bài có thể bổ sung ở màn hình đăng status.">?</span>
             </label>
-            <textarea id="sourceTemplate" rows="3" placeholder="• Nguồn bài viết: {platform} {author} {source}&#10;• Link tham khảo: {link}&#10;• Github: [paste link]&#10;• Download: [paste link]" style="background: #fff; color: #1a1a2e; border: 1px solid var(--border);"></textarea>
-            <div class="field-hint">{author} = tên tác giả, {platform} = FB/X/..., {source} = nhóm/page, {link} = URL gốc</div>
+            <textarea id="sourceTemplate" rows="3" placeholder="• Nguồn bài viết: {platform} {author} {source}&#10;• Link gốc: {link}&#10;• Repo mặc định: {repo}" style="background: #fff; color: #1a1a2e; border: 1px solid var(--border);"></textarea>
+            <div class="field-hint">{author} = tác giả, {platform} = nền tảng, {source} = nhóm/page, {link} = URL gốc, {repo} = repo mặc định nếu đã cấu hình</div>
           </div>
         </div>
       </div>

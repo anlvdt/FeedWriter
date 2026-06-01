@@ -1012,19 +1012,23 @@ async function loadTemplates() {
     return;
   }
 
-  templateList.innerHTML = templates.map(template => `
-    <div class="template-item" data-id="${template.id}">
+  templateList.innerHTML = templates.map(template => {
+    const id = escapeHtml(template.id || "");
+    const type = normalizeTemplateType(template.type);
+    return `
+    <div class="template-item" data-id="${id}">
       <div class="template-header">
         <div class="template-name">${escapeHtml(template.name)}</div>
-        <div class="template-type ${template.type}">${template.type}</div>
+        <div class="template-type ${type}">${type}</div>
       </div>
       <div class="template-prompt">${escapeHtml(template.prompt)}</div>
       <div class="template-actions">
-        <button class="btn btn-secondary template-use-btn" data-id="${template.id}">Sử dụng</button>
-        <button class="btn btn-danger template-delete-btn" data-id="${template.id}">Xóa</button>
+        <button class="btn btn-secondary template-use-btn" data-id="${id}">Sử dụng</button>
+        <button class="btn btn-danger template-delete-btn" data-id="${id}">Xóa</button>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 
   // Add event listeners
   document.querySelectorAll('.template-use-btn').forEach(btn => {
@@ -1085,8 +1089,12 @@ function showTemplateStatus(message, type) {
 // Escape HTML helper
 function escapeHtml(text) {
   const div = document.createElement('div');
-  div.textContent = text;
+  div.textContent = String(text || "");
   return div.innerHTML;
+}
+
+function normalizeTemplateType(type) {
+  return ["summary", "affiliate", "status"].includes(type) ? type : "summary";
 }
 
 // === SETTINGS MANAGEMENT ===

@@ -6,7 +6,8 @@
 
 let MIN_LEN = 400;
 let isBlocked = false;
-let globalSourceTemplate = "• Nguồn bài viết: {platform} {author} {source}\n  {link}";
+const DEFAULT_SOURCE_TEMPLATE = "• Nguồn bài viết: {platform} {author} {source}\n  {link}";
+let globalSourceTemplate = DEFAULT_SOURCE_TEMPLATE;
 let globalCustomSourceLink = "";
 let globalRelatedSourceLinks = [];
 let pendingSourceDiscovery = null;
@@ -53,25 +54,35 @@ window.enableUnicodeBold = true;
 
 chrome.storage.sync.get(["minLength", "blockedDomains", "sourceTemplate", "customSourceLink", "hideAffiliatePosts", "enableUnicodeBold"], (d) => {
   if (d.minLength) MIN_LEN = d.minLength;
-  if (d.sourceTemplate) globalSourceTemplate = d.sourceTemplate;
-  if (d.customSourceLink) globalCustomSourceLink = d.customSourceLink;
-  if (d.hideAffiliatePosts) hideAffiliatePosts = d.hideAffiliatePosts;
+  globalSourceTemplate = d.sourceTemplate || DEFAULT_SOURCE_TEMPLATE;
+  globalCustomSourceLink = d.customSourceLink || "";
+  hideAffiliatePosts = !!d.hideAffiliatePosts;
   if (d.enableUnicodeBold !== undefined) window.enableUnicodeBold = d.enableUnicodeBold;
-  if (d.blockedDomains) {
-    const href = location.href;
-    const blocked = d.blockedDomains.split("\n").map(s => s.trim()).filter(Boolean);
-    if (blocked.some(pattern => href.includes(pattern))) isBlocked = true;
-  }
+  updateBlockedState(d.blockedDomains);
 
   // Auto-detect language from Facebook and set as default if not already set
   detectAndSetLanguage();
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "sync" && changes.enableUnicodeBold) {
-    window.enableUnicodeBold = changes.enableUnicodeBold.newValue;
-  }
+  if (area !== "sync") return;
+  if (changes.minLength) MIN_LEN = changes.minLength.newValue || 400;
+  if (changes.sourceTemplate) globalSourceTemplate = changes.sourceTemplate.newValue || DEFAULT_SOURCE_TEMPLATE;
+  if (changes.customSourceLink) globalCustomSourceLink = changes.customSourceLink.newValue || "";
+  if (changes.hideAffiliatePosts) hideAffiliatePosts = !!changes.hideAffiliatePosts.newValue;
+  if (changes.enableUnicodeBold) window.enableUnicodeBold = changes.enableUnicodeBold.newValue !== false;
+  if (changes.adDisplayMode) adDisplayMode = changes.adDisplayMode.newValue || "collapse";
+  if (changes.affiliateDisplayMode) affiliateDisplayMode = changes.affiliateDisplayMode.newValue || "collapse";
+  if (changes.blockedDomains) updateBlockedState(changes.blockedDomains.newValue);
 });
+
+function updateBlockedState(rawPatterns = "") {
+  const patterns = String(rawPatterns || "")
+    .split("\n")
+    .map((pattern) => pattern.trim())
+    .filter(Boolean);
+  isBlocked = patterns.some((pattern) => location.href.includes(pattern));
+}
 
 // Detect language from Facebook page and set as default
 function detectAndSetLanguage() {
@@ -1087,7 +1098,7 @@ function buildCommentText(cleanUrl, author, source) {
   const plat = SITE === "facebook" ? "Facebook" :
                SITE === "threads" ? "Threads" :
                SITE === "reddit" ? "Reddit" :
-               SITE === "twitter" ? "X" :
+               SITE === "x" ? "X" :
                SITE === "linkedin" ? "LinkedIn" : "Web";
 
   let isCustom = !!globalSourceTemplate && 
@@ -1097,9 +1108,9 @@ function buildCommentText(cleanUrl, author, source) {
   let out;
   if (isCustom) {
     out = globalSourceTemplate;
-    out = out.replace("{platform}", plat);
-    out = out.replace("{author}", a);
-    out = out.replace("{source}", s && s !== a ? `(${s})` : "");
+    out = out.replaceAll("{platform}", plat);
+    out = out.replaceAll("{author}", a);
+    out = out.replaceAll("{source}", s && s !== a ? `(${s})` : "");
   } else {
     if (a) {
       out = `📌 NGUỒN THAM KHẢO:\n· Tác giả: ${a}${s && s !== a ? ` (${s})` : ""} · ${plat}\n· Link gốc: {link}`;
@@ -1111,23 +1122,32 @@ function buildCommentText(cleanUrl, author, source) {
   let linkStr = cleanUrl || "(chưa có link bài gốc)";
   if (globalCustomSourceLink) {
     if (out.includes("{repo}")) {
-      out = out.replace("{repo}", globalCustomSourceLink);
+      out = out.replaceAll("{repo}", globalCustomSourceLink);
     } else {
       out += "\n· Repo/Mã nguồn: " + globalCustomSourceLink;
     }
   } else {
-    out = out.replace("{repo}", "");
+    out = out.replaceAll("{repo}", "");
   }
 
-  out = out.replace("{link}", linkStr);
+  out = out.replaceAll("{link}", linkStr);
 
   const relatedLinks = Array.isArray(globalRelatedSourceLinks)
     ? globalRelatedSourceLinks
     : [];
+  const normalizedSourceUrl = typeof window.fbsCleanRelatedUrl === "function"
+    ? window.fbsCleanRelatedUrl(cleanUrl)
+    : cleanUrl;
+  const normalizedCustomUrl = typeof window.fbsCleanRelatedUrl === "function"
+    ? window.fbsCleanRelatedUrl(globalCustomSourceLink)
+    : globalCustomSourceLink;
   const seenRelated = new Set();
   for (const item of relatedLinks) {
-    const url = typeof item === "string" ? item : item?.url;
-    if (!url || seenRelated.has(url) || url === cleanUrl || url === globalCustomSourceLink) continue;
+    const rawUrl = typeof item === "string" ? item : item?.url;
+    const url = typeof window.fbsCleanRelatedUrl === "function"
+      ? window.fbsCleanRelatedUrl(rawUrl)
+      : rawUrl;
+    if (!url || seenRelated.has(url) || url === normalizedSourceUrl || url === normalizedCustomUrl) continue;
     seenRelated.add(url);
     const type = typeof item === "string" ? "reference" : item.type;
     const label = type === "github"
@@ -1423,25 +1443,6 @@ function createInlineBtn(stats) {
 }
 
 // === POST METADATA EXTRACTION ===
-
-// Shared helper: walk up to the nearest post-level container.
-// Stops at role="article" (old FB) OR data-virtualized (new FB virtualised scroll).
-// Never goes above role="feed", role="main", or document.body.
-function _findPostContainer(element) {
-  if (!element) return null;
-  let el = element;
-  for (let i = 0; i < 30; i++) {
-    const p = el.parentElement;
-    if (!p || p === document.body) break;
-    el = p;
-    const role = el.getAttribute("role");
-    if (role === "article") return el;
-    if (el.hasAttribute("data-virtualized")) return el;
-    if (role === "feed" || role === "main") break;
-  }
-  // Fallback: return the element itself (avoids whole-page queries)
-  return element;
-}
 
 // Helper: tìm nested/shared post article bên trong post container.
 // Khi ai đó share bài của người khác, Facebook render nested article.
@@ -1844,7 +1845,14 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
   let settings;
   try {
     settings = await new Promise((r) =>
-      chrome.storage.sync.get(["summaryLength", "promptStyle"], r),
+      chrome.storage.sync.get([
+        "summaryLength",
+        "promptStyle",
+        "outputLanguage",
+        "customInstructions",
+        "customSummaryPrompt",
+        "customAffPrompt",
+      ], r),
     );
   } catch (_) {
     openOverlay(
@@ -1862,6 +1870,14 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
     (settings.summaryLength || "medium") +
     "_" +
     (settings.promptStyle || "default") +
+    "_" +
+    (settings.outputLanguage || "auto") +
+    "_" +
+    hashText(settings.customInstructions || "") +
+    "_" +
+    hashText(type.startsWith("affiliate")
+      ? settings.customAffPrompt || ""
+      : settings.customSummaryPrompt || "") +
     (tone ? "_" + tone : "");
 
   if (summaryCache.has(cacheKey)) {

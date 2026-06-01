@@ -43,21 +43,7 @@ async function getAvailableKey(preferredProvider = null) {
       openrouter: [],
     };
 
-  // 2. Fallback to ENV file (Hardcoded keys)
-  if (typeof ENV_API_KEYS !== "undefined") {
-    for (const p in ENV_API_KEYS) {
-      if (ENV_API_KEYS[p] && ENV_API_KEYS[p].length > 0) {
-        if (!apiKeys[p]) apiKeys[p] = [];
-        const newKeys = ENV_API_KEYS[p].filter((k) => !apiKeys[p].includes(k));
-        if (newKeys.length > 0) {
-          apiKeys[p].push(...newKeys);
-          hasAnyKey = true;
-        }
-      }
-    }
-  }
-
-  // 3. Fallback to legacy single key
+  // 2. Fallback to legacy single key
   if (!hasAnyKey && data.apiKey) {
     const provider = data.provider || "groq";
     if (!apiKeys[provider]) apiKeys[provider] = [];
@@ -157,13 +143,13 @@ async function getSystemPrompt(
   const data = await chrome.storage.sync.get([
     "customSummaryPrompt",
     "customAffPrompt",
-    "outputLang",
+    "outputLanguage",
     "promptStyle",
     "summaryLength",
     "customInstructions",
   ]);
 
-  const lang = data.outputLang || "auto";
+  const lang = data.outputLanguage || "auto";
   const promptStyle = data.promptStyle || "default";
   const summaryLength = data.summaryLength || "medium";
   const customInstructions = data.customInstructions || "";
@@ -257,12 +243,17 @@ async function getSystemPrompt(
   }
 
   // Add language instruction
-  if (lang === "vi") {
-    prompt +=
-      "\n- Luôn trả lời bằng tiếng Việt, dịch nếu bài viết bằng ngôn ngữ khác.";
-  } else if (lang === "en") {
-    prompt +=
-      "\n- Always respond in English, translate if the post is in another language.";
+  const languageInstructions = {
+    vi: "\n- Luôn trả lời bằng tiếng Việt, dịch nếu bài viết bằng ngôn ngữ khác.",
+    en: "\n- Always respond in English, translate if the post is in another language.",
+    zh: "\n- 始终使用中文回答。如果原文不是中文，请翻译后再总结。",
+    ja: "\n- 常に日本語で回答してください。原文が日本語以外の場合は翻訳して要約してください。",
+    ko: "\n- 항상 한국어로 답변하세요. 원문이 한국어가 아니면 번역하여 요약하세요.",
+    th: "\n- ตอบเป็นภาษาไทยเสมอ หากต้นฉบับไม่ใช่ภาษาไทย ให้แปลและสรุปเป็นภาษาไทย",
+    id: "\n- Selalu jawab dalam Bahasa Indonesia. Terjemahkan terlebih dahulu jika sumber menggunakan bahasa lain.",
+  };
+  if (languageInstructions[lang]) {
+    prompt += languageInstructions[lang];
   } else {
     prompt +=
       "\n- Nếu bài viết bằng tiếng Anh hoặc ngôn ngữ khác tiếng Việt, dịch tóm tắt sang tiếng Việt. Nếu bằng tiếng Việt, giữ nguyên.";

@@ -96,9 +96,16 @@ async function uploadFilesToInput(fileInput, fileDataList) {
   const dataTransfer = new DataTransfer();
   for (const fileData of fileDataList) {
     try {
-      const response = await fetch(fileData.url);
-      const arrayBuffer = await response.arrayBuffer();
-      const file = new File([arrayBuffer], fileData.name, { type: fileData.type || "image/jpeg" });
+      let file;
+      if (typeof fetchImageBlob === "function") {
+        file = await fetchImageBlob(fileData.url, fileData.name);
+      } else {
+        const response = await fetch(fileData.url);
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        const arrayBuffer = await response.arrayBuffer();
+        file = new File([arrayBuffer], fileData.name, { type: fileData.type || "image/jpeg" });
+      }
+      if (!file) throw new Error("Image download returned no file");
       dataTransfer.items.add(file);
     } catch (err) {
       console.warn("[CrossPost] Failed to fetch file:", fileData.url, err.message);

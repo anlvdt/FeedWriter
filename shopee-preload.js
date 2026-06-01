@@ -40,12 +40,19 @@ async function getDailyProductLinks(affiliateId) {
   const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
 
   // Check if we have links for today
+  const normalizedAffiliateId = (affiliateId || '').trim();
   const stored = await new Promise(resolve => {
-    chrome.storage.local.get(['shopeeLinksDate', 'shopeeLinks'], resolve);
+    chrome.storage.local.get(['shopeeLinksDate', 'shopeeLinksAffiliateId', 'shopeeLinks'], resolve);
   });
 
-  // If links exist and are from today, return them
-  if (stored.shopeeLinksDate === today && stored.shopeeLinks && stored.shopeeLinks.length === PRELOADED_PRODUCTS.length) {
+  // Affiliate ID is part of the cache key. Otherwise changing it during the
+  // day silently keeps links generated with the previous account.
+  if (
+    stored.shopeeLinksDate === today &&
+    stored.shopeeLinksAffiliateId === normalizedAffiliateId &&
+    stored.shopeeLinks &&
+    stored.shopeeLinks.length === PRELOADED_PRODUCTS.length
+  ) {
     console.log('[Shopee] Using cached links from today:', today);
     return stored.shopeeLinks;
   }
@@ -57,13 +64,14 @@ async function getDailyProductLinks(affiliateId) {
   // never delay summary rendering.
   const links = PRELOADED_PRODUCTS.map((product) => ({
     title: product.title,
-    link: generateShopeeSearchURL(product.keyword, affiliateId),
+    link: generateShopeeSearchURL(product.keyword, normalizedAffiliateId),
   }));
 
   // Save to storage
   await new Promise(resolve => {
     chrome.storage.local.set({
       shopeeLinksDate: today,
+      shopeeLinksAffiliateId: normalizedAffiliateId,
       shopeeLinks: links,
       shopeeLinksIndex: 0, // Reset index
     }, resolve);
@@ -94,12 +102,17 @@ async function getNextProductLink(affiliateId) {
     index = 0;
   }
 
-  const product = links[index];
+  const product = { ...links[index] };
 
   // Increment index for next time
   await new Promise(resolve => {
     chrome.storage.local.set({ shopeeLinksIndex: index + 1 }, resolve);
   });
+
+  const originalLink = product.link;
+  product.link = await shortenURL(originalLink);
+  product.originalLink = originalLink;
+  product.isShortened = product.link !== originalLink;
 
   console.log(`[Shopee] Using product ${index + 1}/24:`, product.title);
   return product;
@@ -134,6 +147,12 @@ function generateShopeeSearchURL(keyword, affiliateId) {
  * @returns {Promise<string>} - Shortened URL
  */
 async function shortenURL(longUrl) {
+  const stored = await new Promise(resolve => {
+    chrome.storage.local.get(['shopeeShortLinks'], resolve);
+  });
+  const cached = stored.shopeeShortLinks?.[longUrl];
+  if (cached) return cached;
+
   try {
     const response = await new Promise((resolve, reject) => {
       chrome.runtime.sendMessage(
@@ -141,16 +160,23 @@ async function shortenURL(longUrl) {
         (response) => {
           if (chrome.runtime.lastError) {
             reject(new Error(chrome.runtime.lastError.message));
-          } else if (response.success) {
+          } else if (response?.success && response.shortUrl) {
             resolve(response.shortUrl);
           } else {
-            reject(new Error(response.error || 'Unknown error'));
+            reject(new Error(response?.error || 'Unknown error'));
           }
         }
       );
     });
 
     console.log('[Shopee] URL shortened:', response);
+    if (response !== longUrl) {
+      const cache = { ...(stored.shopeeShortLinks || {}), [longUrl]: response };
+      const entries = Object.entries(cache).slice(-100);
+      await new Promise(resolve => {
+        chrome.storage.local.set({ shopeeShortLinks: Object.fromEntries(entries) }, resolve);
+      });
+    }
     return response;
   } catch (error) {
     console.warn('[Shopee] URL shortening failed:', error);

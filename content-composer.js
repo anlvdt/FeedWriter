@@ -85,21 +85,11 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
     '<div class="fbs-sp-comment-text"></div>' +
     '<button class="fbs-sp-copy-comment"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy nguồn</button>' +
     "</div>" +
-    '<div class="fbs-crosspost-area"></div>' +
     '<div class="fbs-sp-actions">' +
     '<button class="fbs-sp-open-fb"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg> Đăng status</button>' +
     "</div>";
 
   panelBody.appendChild(preview);
-
-  // Inject cross-post platform selector
-  if (typeof CrossPoster !== "undefined") {
-    const crosspostArea = preview.querySelector(".fbs-crosspost-area");
-    if (crosspostArea) {
-      const selector = CrossPoster.createPlatformSelector();
-      crosspostArea.appendChild(selector);
-    }
-  }
 
   panelBody.scrollTop = panelBody.scrollHeight;
 
@@ -117,19 +107,17 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
       .split(/\s+/)
       .map((url) => url.trim())
       .filter((url) => /^https?:\/\//i.test(url))
-      .filter((url) => {
-        if (seen.has(url)) return false;
-        seen.add(url);
-        return true;
-      })
       .map((url) => {
-        const lower = url.toLowerCase();
-        const type = lower.includes("github.com") || lower.includes("gitlab.com")
-          ? "github"
-          : /download|release|\.zip($|\?)|\.rar($|\?)|\.7z($|\?)|\.dmg($|\?)|\.exe($|\?)|\.apk($|\?)/i.test(url)
-            ? "download"
-            : "reference";
-        return { url, type };
+        if (typeof window.fbsClassifyRelatedUrl === "function") {
+          return window.fbsClassifyRelatedUrl(url, "", "manual");
+        }
+        return { url, type: "reference" };
+      })
+      .filter(Boolean)
+      .filter((url) => {
+        if (seen.has(url.url)) return false;
+        seen.add(url.url);
+        return true;
       });
   }
 
@@ -146,15 +134,16 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
     }
     if (window.buildCommentText) {
       const commentContent = window.buildCommentText(url, cleanAuthor, cleanSource);
-      // Use innerHTML with <br> to preserve line breaks
-      commentText.innerHTML = commentContent.replace(/\n/g, '<br>');
+      commentText.style.whiteSpace = "pre-line";
+      commentText.textContent = commentContent;
     } else {
       let fallbackContent = `📌 NGUỒN THAM KHẢO:\n· Link gốc: ${url || "(chưa có link bài gốc)"}`;
       for (const item of parseRelatedLinks(githubUrl)) {
         const label = item.type === "github" ? "Repo/Mã nguồn" : item.type === "download" ? "Download" : "Tham khảo";
         fallbackContent += `\n· ${label}: ${item.url}`;
       }
-      commentText.innerHTML = fallbackContent.replace(/\n/g, '<br>');
+      commentText.style.whiteSpace = "pre-line";
+      commentText.textContent = fallbackContent;
     }
     if (typeof globalRelatedSourceLinks !== "undefined") {
       globalRelatedSourceLinks = oldRelatedLinks;
@@ -833,6 +822,7 @@ function pasteToLexical(element, text, file = null) {
 window.fbsAgentPost = async function (summaryText, imageUrl, rawSourceUrl, postElement) {
   if (SITE !== "facebook") return { ok: false, reason: "not_facebook" };
 
+  let postText = summaryText || "";
   const cleanUrl = cleanSourceUrl(rawSourceUrl);
   // Lấy author + source (group/page name) từ DOM
   const postAuthor =

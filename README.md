@@ -22,10 +22,10 @@
 
 ### 🛍️ Shopee Affiliate Integration
 
-- **Tự động tìm sản phẩm hot** trên Shopee dựa trên nội dung bài viết
+- **Tự động chọn gợi ý Shopee** luân phiên từ danh sách sản phẩm phổ biến
 - **Tạo affiliate link** với Shopee Affiliate ID của bạn
-- **Hiển thị top 5 sản phẩm** liên quan ngay trong panel tóm tắt
-- **Thông tin chi tiết:** giá, rating, số lượng bán, link mua hàng
+- **Rút gọn link** qua nhiều dịch vụ, tự fallback về link gốc khi cần
+- **Chèn 1 gợi ý mua sắm** vào nội dung copy/comment nguồn
 
 👉 **[Xem hướng dẫn chi tiết](SHOPEE_AFFILIATE_GUIDE.md)**
 

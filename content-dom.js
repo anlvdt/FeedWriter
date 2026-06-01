@@ -88,6 +88,7 @@ const CACHE_TTL = 60000; // 1 minute
 
 
 function _findPostContainer(element) {
+  if (!element) return null;
   // Check cache first
   if (_containerCache.has(element)) {
     return _containerCache.get(element);
@@ -95,15 +96,15 @@ function _findPostContainer(element) {
 
   let p = element;
   for (let i = 0; i < 25; i++) {
-    p = p.parentElement;
-    if (!p || p === document.body) {
-      _containerCache.set(element, null);
-      return null;
-    }
-    if (p.getAttribute("role") === "article") {
+    if (
+      p.getAttribute?.("role") === "article" ||
+      p.hasAttribute?.("data-virtualized")
+    ) {
       _containerCache.set(element, p);
       return p;
     }
+    p = p.parentElement;
+    if (!p || p === document.body) break;
   }
 
   _containerCache.set(element, null);
@@ -1161,7 +1162,7 @@ function hideFeedClutter() {
 
 // === UNIFIED DETECTION ENGINE ===
 // Consolidates all ad/affiliate detection signals into a single pipeline.
-// Used by both UI hiding (content.js) and auto-pilot skipping (auto-pilot.js).
+// Used by the feed filtering UI in content.js.
 
 const AFFILIATE_DOMAINS = [
   "shope.ee", "shopee.vn", "lazada.vn", "tiki.vn", "tiktok.com/@shop",
@@ -1499,15 +1500,15 @@ function _classifyRelatedUrl(rawUrl, label = "", evidence = "post-link") {
   let type = "reference";
   let score = evidence === "post-link" ? 50 : 35;
   if (/nguồn|source|website|homepage|chi tiết|tham khảo|reference|xem thêm|read more/.test(haystack)) score += 12;
-  if (host === "github.com" || host.endsWith(".github.com") || host === "gitlab.com") {
-    type = "github";
-    score += 45;
-  } else if (
+  if (
     /\.(zip|rar|7z|dmg|pkg|exe|msi|apk|deb|rpm|tar|gz|pdf)$/i.test(parsed.pathname) ||
-    /download|tải xuống|release|releases|asset|installer/.test(haystack)
+    /download|tải xuống|release|releases|asset|installer|\/archive\//.test(haystack)
   ) {
     type = "download";
     score += 35;
+  } else if (host === "github.com" || host.endsWith(".github.com") || host === "gitlab.com") {
+    type = "github";
+    score += 45;
   } else if (/docs?|documentation|guide|tutorial|paper|arxiv\.org|demo|website|homepage/.test(haystack)) {
     type = "reference";
     score += 18;
@@ -1589,4 +1590,6 @@ window.fbsExtractImage = extractPostImage;
 window.fbsExtractImages = extractPostImages;
 window.fbsEvaluatePostSignals = evaluatePostSignals;
 window.fbsDiscoverRelatedSourceLinks = discoverRelatedSourceLinks;
+window.fbsCleanRelatedUrl = _cleanRelatedUrl;
+window.fbsClassifyRelatedUrl = _classifyRelatedUrl;
 window.fbsDisplayModes = DISPLAY_MODES;

@@ -213,6 +213,9 @@ class StorageBatcher {
     } catch (error) {
       console.error('Storage batch write failed:', error);
       Object.assign(this.pending, toSave);
+      if (!this.timeoutId) {
+        this.timeoutId = setTimeout(() => this.flush(), this.delay);
+      }
     } finally {
       this.flushing = false;
     }
