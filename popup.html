@@ -9,30 +9,18 @@
   <div id="main-view" class="popup">
     <header class="header">
       <div class="header-brand">
-        <span class="logo" aria-hidden="true"><img src="icons/icon48.png" width="28" height="28" alt=""></span>
-        <div class="header-text">
-          <div class="header-title-row">
-            <h1>FeedWriter</h1>
-            <span class="version-badge" id="headerVersion">v2.5.1</span>
-          </div>
-          <p class="header-tagline">Tóm tắt · Status · Affiliate bằng AI</p>
-        </div>
+        <span class="logo" aria-hidden="true">
+          <img src="icons/icon48.png" width="22" height="22" alt="">
+        </span>
+        <h1>FeedWriter</h1>
       </div>
     </header>
 
     <div class="tabs" role="tablist" aria-label="Mục chính">
-      <button class="tab active" role="tab" aria-selected="true" aria-controls="tab-settings" id="tabbtn-settings" data-tab="settings" title="Cài đặt">
-        <span class="tab-icon" aria-hidden="true">⚙️</span><span class="tab-label">Cài đặt</span>
-      </button>
-      <button class="tab" role="tab" aria-selected="false" aria-controls="tab-apikeys" id="tabbtn-apikeys" data-tab="apikeys" title="API Keys">
-        <span class="tab-icon" aria-hidden="true">🔑</span><span class="tab-label">Keys</span>
-      </button>
-      <button class="tab" role="tab" aria-selected="false" aria-controls="tab-history" id="tabbtn-history" data-tab="history" title="Lịch sử">
-        <span class="tab-icon" aria-hidden="true">📜</span><span class="tab-label">Lịch sử</span>
-      </button>
-      <button class="tab" role="tab" aria-selected="false" aria-controls="tab-about" id="tabbtn-about" data-tab="about" title="About">
-        <span class="tab-icon" aria-hidden="true">ℹ️</span><span class="tab-label">About</span>
-      </button>
+      <button class="tab active" role="tab" aria-selected="true" aria-controls="tab-settings" id="tabbtn-settings" data-tab="settings">Cài đặt</button>
+      <button class="tab" role="tab" aria-selected="false" aria-controls="tab-apikeys" id="tabbtn-apikeys" data-tab="apikeys">Keys</button>
+      <button class="tab" role="tab" aria-selected="false" aria-controls="tab-history" id="tabbtn-history" data-tab="history">Lịch sử</button>
+      <button class="tab" role="tab" aria-selected="false" aria-controls="tab-about" id="tabbtn-about" data-tab="about">About</button>
     </div>
 
     
@@ -441,54 +429,68 @@
     <!-- About Tab -->
     <div class="tab-content" id="tab-about" role="tabpanel" aria-labelledby="tabbtn-about">
       <div class="about-section">
-        <div class="about-section-title">Tác giả</div>
-        <div class="about-card">
+        <h2 class="about-section-title">Tác giả</h2>
+        <div class="about-card about-author-card">
           <div class="about-author">
-            <img class="about-avatar" src="icons/icon48.png" alt="avatar">
+            <div class="about-avatar-wrap" aria-hidden="true">
+              <img class="about-avatar" src="icons/icon48.png" alt="">
+            </div>
             <div class="about-author-info">
               <div class="about-author-name">Le An (anlvdt)</div>
               <div class="about-author-bio">Developer / Content Creator</div>
             </div>
           </div>
-          <div class="about-links">
-            <a href="https://github.com/anlvdt" target="_blank" rel="noopener">github.com/anlvdt</a>
-          </div>
+          <a class="about-github-link" href="https://github.com/anlvdt" target="_blank" rel="noopener">github.com/anlvdt</a>
         </div>
       </div>
 
       <div class="about-section">
-        <div class="about-section-title">Phím tắt</div>
+        <h2 class="about-section-title">Phím tắt</h2>
         <div class="about-card about-shortcuts">
-          <div class="about-shortcut"><span>Tóm tắt</span><span class="about-shortcut-key">Ctrl/⌘+Shift+S</span></div>
-          <div class="about-shortcut"><span>Affiliate</span><span class="about-shortcut-key">Ctrl/⌘+Shift+A</span></div>
-          <div class="about-shortcut"><span>Copy kết quả</span><span class="about-shortcut-key">Ctrl/⌘+C</span></div>
-          <div class="about-shortcut"><span>Sửa kết quả</span><span class="about-shortcut-key">Ctrl/⌘+E</span></div>
-          <div class="field-hint">Đổi phím tại <code>chrome://extensions/shortcuts</code></div>
+          <div class="about-shortcut">
+            <span class="about-shortcut-label">Tóm tắt</span>
+            <kbd class="about-shortcut-key">Ctrl+Shift+S</kbd>
+          </div>
+          <div class="about-shortcut">
+            <span class="about-shortcut-label">Affiliate</span>
+            <kbd class="about-shortcut-key">Ctrl+Shift+A</kbd>
+          </div>
+          <div class="about-shortcut">
+            <span class="about-shortcut-label">Copy kết quả</span>
+            <kbd class="about-shortcut-key">Ctrl+C</kbd>
+          </div>
+          <div class="about-shortcut">
+            <span class="about-shortcut-label">Sửa kết quả</span>
+            <kbd class="about-shortcut-key">Ctrl+E</kbd>
+          </div>
+          <p class="about-footnote">Đổi phím: <span class="about-mono">chrome://extensions/shortcuts</span></p>
         </div>
       </div>
 
       <div class="about-section">
-        <div class="about-section-title">Hướng dẫn</div>
-        <div class="about-card howto-steps">
-          <div class="howto-step"><span class="howto-num">1</span><span>Bôi đen chữ hoặc bấm <strong>Tóm tắt</strong> trên feed</span></div>
-          <div class="howto-step"><span class="howto-num">2</span><span>Chỉnh sửa / đổi tone → <strong>Copy</strong> hoặc <strong>Đăng Status</strong></span></div>
-          <div class="howto-step"><span class="howto-num">3</span><span>Dán nguồn thủ công vào comment đầu (Paste link)</span></div>
-          <div class="field-hint">Nền tảng: Facebook (ổn định) · Threads / X / LinkedIn / Reddit (thử nghiệm)</div>
+        <h2 class="about-section-title">Hướng dẫn</h2>
+        <div class="about-card about-howto">
+          <ol class="about-howto-list">
+            <li>Bôi đen chữ trên feed → chọn <strong>Tóm tắt / Status / Affiliate</strong>.</li>
+            <li>Chỉnh sửa hoặc đổi tone → <strong>Copy</strong> hoặc <strong>Đăng Status</strong>.</li>
+            <li>Paste link nguồn vào comment đầu (nút Paste trong panel).</li>
+          </ol>
+          <p class="about-footnote">Hỗ trợ: Facebook · Threads · X · LinkedIn · Reddit</p>
         </div>
       </div>
 
       <div class="about-section">
-        <div class="about-section-title">Quyền tùy chọn</div>
-        <div class="about-card" style="font-size:12px;line-height:1.45;">
-          Extension chỉ xin quyền tối thiểu khi cài. Clipboard, cookies Shopee và truy cập host HTTPS rộng được yêu cầu <strong>khi bạn dùng tính năng tương ứng lần đầu</strong>. Bạn có thể từ chối — các tính năng cốt lõi (tóm tắt, status) vẫn hoạt động.
+        <h2 class="about-section-title">Quyền tùy chọn</h2>
+        <div class="about-card about-note">
+          Chỉ xin clipboard, cookies Shopee và host HTTPS rộng <strong>khi bạn dùng tính năng đó lần đầu</strong>. Từ chối vẫn dùng được tóm tắt / status.
         </div>
       </div>
 
       <div class="about-section">
-        <div class="about-section-title">Giao diện</div>
-        <div class="theme-toggle">
-          <label>Theme</label>
-          <select id="themeSelect">
+        <h2 class="about-section-title">Giao diện</h2>
+        <div class="theme-row">
+          <span class="theme-row-label">Theme</span>
+          <select id="themeSelect" class="theme-select" aria-label="Chọn theme">
             <option value="auto">Tự động</option>
             <option value="dark">Dark</option>
             <option value="light">Light</option>
@@ -496,9 +498,9 @@
         </div>
       </div>
 
-      <div style="text-align:center; margin-top:10px;">
-        <a id="aboutVersion" href="https://github.com/anlvdt/fb-post-summarizer" target="_blank" style="color:var(--text-muted); font-size:11px; text-decoration:none;">FeedWriter</a>
-      </div>
+      <footer class="about-footer">
+        <a id="aboutVersion" href="https://github.com/anlvdt/FeedWriter" target="_blank" rel="noopener">FeedWriter</a>
+      </footer>
     </div>
   </div>
 

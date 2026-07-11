@@ -281,14 +281,8 @@ allTabs.forEach((tab, index) => {
   });
 });
 
-// Header version badge + dismissible quick tip
+// Dismissible quick tip + about version string
 (function initUiChrome() {
-  const verBadge = document.getElementById("headerVersion");
-  if (verBadge && chrome?.runtime?.getManifest) {
-    try {
-      verBadge.textContent = "v" + chrome.runtime.getManifest().version;
-    } catch (_) {}
-  }
   const tip = document.getElementById("quickTip");
   const dismiss = document.getElementById("dismissQuickTip");
   if (tip && dismiss) {
