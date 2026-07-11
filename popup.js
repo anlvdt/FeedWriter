@@ -267,11 +267,47 @@ const hideAffiliatePostsEl = document.getElementById("hideAffiliatePosts");
 const adDisplayModeEl = document.getElementById("adDisplayMode");
 const affiliateDisplayModeEl = document.getElementById("affiliateDisplayMode");
 const blockedDomainsEl = document.getElementById("blockedDomains");
-const shopeeAffiliateIdEl = document.getElementById("shopeeAffiliateId");
-const autoFindShopeeProductsEl = document.getElementById("autoFindShopeeProducts");
 const enableUnicodeBoldEl = document.getElementById("enableUnicodeBold");
 const saveBtn = document.getElementById("saveBtn");
 const status = document.getElementById("status");
+
+// Auto-GitHub → Facebook controls (+ Labs risk gate)
+const LABS_CONFIRM_PHRASE = "TOI HIEU RUI RO";
+const labsAutomationEnabledEl = document.getElementById("labsAutomationEnabled");
+const labsConfirmInputEl = document.getElementById("labsConfirmInput");
+const disableLabsBtn = document.getElementById("disableLabsBtn");
+const autoGithubEnabledEl = document.getElementById("autoGithubEnabled");
+const autoGithubTimeEl = document.getElementById("autoGithubTime");
+const autoGithubFocusEl = document.getElementById("autoGithubFocus");
+const autoGithubMinStarsEl = document.getElementById("autoGithubMinStars");
+const runGithubNowBtn = document.getElementById("runGithubNowBtn");
+const githubAutopostStatus = document.getElementById("githubAutopostStatus");
+const githubAutopostLog = document.getElementById("githubAutopostLog");
+
+function isLabsConfirmTextValid() {
+  const typed = labsConfirmInputEl ? labsConfirmInputEl.value.trim() : "";
+  return typed === LABS_CONFIRM_PHRASE;
+}
+
+/** Labs is armed only when checkbox is on AND confirm phrase matches. */
+function isLabsArmed() {
+  return !!(labsAutomationEnabledEl && labsAutomationEnabledEl.checked && isLabsConfirmTextValid());
+}
+
+/** Enable/disable schedule + run controls based on Labs gate. */
+function updateGithubLabsGateUI() {
+  const armed = isLabsArmed();
+  if (autoGithubEnabledEl) {
+    autoGithubEnabledEl.disabled = !armed;
+    if (!armed) autoGithubEnabledEl.checked = false;
+  }
+  if (runGithubNowBtn) {
+    // Keep disabled only for labs gate; run handler may re-disable while in-flight
+    if (!runGithubNowBtn.dataset.running) {
+      runGithubNowBtn.disabled = !armed;
+    }
+  }
+}
 
 // Advanced Mode Controls
 const advancedModeToggle = document.getElementById("advancedModeToggle");
@@ -308,11 +344,15 @@ chrome.storage.sync.get(
     "adDisplayMode",
     "affiliateDisplayMode",
     "blockedDomains",
-    "shopeeAffiliateId",
-    "autoFindShopeeProducts",
     "enableUnicodeBold",
     "apiKeys",
     "advancedModeEnabled",
+    "labsAutomationEnabled",
+    "labsAutomationAcknowledgedAt",
+    "autoGithubEnabled",
+    "autoGithubTime",
+    "autoGithubFocus",
+    "autoGithubMinStars",
   ],
   (d) => {
     if (d.minLength) minLengthInput.value = d.minLength;
@@ -328,10 +368,25 @@ chrome.storage.sync.get(
     if (d.adDisplayMode) adDisplayModeEl.value = d.adDisplayMode;
     if (d.affiliateDisplayMode) affiliateDisplayModeEl.value = d.affiliateDisplayMode;
     if (d.blockedDomains) blockedDomainsEl.value = d.blockedDomains;
-    if (d.shopeeAffiliateId) shopeeAffiliateIdEl.value = d.shopeeAffiliateId;
-    if (d.autoFindShopeeProducts) autoFindShopeeProductsEl.checked = true;
     if (d.enableUnicodeBold !== false) enableUnicodeBoldEl.checked = true;
-    
+
+    // Labs + Auto-GitHub settings
+    const labsOn = !!d.labsAutomationEnabled;
+    if (labsAutomationEnabledEl) labsAutomationEnabledEl.checked = labsOn;
+    // Pre-fill confirm phrase only when Labs was previously acknowledged
+    if (labsConfirmInputEl && labsOn && d.labsAutomationAcknowledgedAt) {
+      labsConfirmInputEl.value = LABS_CONFIRM_PHRASE;
+    }
+    if (autoGithubEnabledEl) {
+      // Force off in UI if Labs not on (safe default)
+      autoGithubEnabledEl.checked = !!(d.autoGithubEnabled && labsOn);
+    }
+    if (autoGithubTimeEl && d.autoGithubTime) autoGithubTimeEl.value = d.autoGithubTime;
+    if (autoGithubFocusEl && d.autoGithubFocus) autoGithubFocusEl.value = d.autoGithubFocus;
+    if (autoGithubMinStarsEl && d.autoGithubMinStars != null)
+      autoGithubMinStarsEl.value = d.autoGithubMinStars;
+    updateGithubLabsGateUI();
+
     // Set advanced mode toggle state
     const advancedEnabled = !!d.advancedModeEnabled;
     advancedModeToggle.checked = advancedEnabled;
@@ -354,6 +409,35 @@ saveBtn.addEventListener("click", () => {
     return;
   }
 
+  // Guard against double-submit while the async save + backup round-trip runs.
+  if (saveBtn.disabled) return;
+  const saveBtnLabel = saveBtn.textContent;
+  saveBtn.disabled = true;
+  saveBtn.textContent = "Đang lưu...";
+  const restoreSaveBtn = () => {
+    saveBtn.disabled = false;
+    saveBtn.textContent = saveBtnLabel;
+  };
+
+  // Labs gate: auto-post cannot stay on without Labs + confirm phrase
+  const labsArmed = isLabsArmed();
+  let labsEnabled = labsArmed;
+  let autoGithubEnabled = autoGithubEnabledEl ? autoGithubEnabledEl.checked : false;
+  if (autoGithubEnabled && !labsEnabled) {
+    autoGithubEnabled = false;
+    if (autoGithubEnabledEl) autoGithubEnabledEl.checked = false;
+  }
+  // If checkbox checked but phrase wrong, treat Labs as off
+  if (labsAutomationEnabledEl && labsAutomationEnabledEl.checked && !isLabsConfirmTextValid()) {
+    labsEnabled = false;
+    autoGithubEnabled = false;
+    if (autoGithubEnabledEl) autoGithubEnabledEl.checked = false;
+    showStatus("Labs: gõ đúng «TOI HIEU RUI RO» để xác nhận rủi ro.", "error");
+    // Still allow saving other settings, but force labs/auto off
+  }
+
+  const labsAcknowledgedAt = labsEnabled ? Date.now() : null;
+
   chrome.storage.sync.set(
     {
       minLength: minLen,
@@ -368,14 +452,32 @@ saveBtn.addEventListener("click", () => {
       adDisplayMode: adDisplayModeEl.value,
       affiliateDisplayMode: affiliateDisplayModeEl.value,
       blockedDomains: blockedDomainsEl.value.trim(),
-      shopeeAffiliateId: shopeeAffiliateIdEl.value.trim(),
-      autoFindShopeeProducts: autoFindShopeeProductsEl.checked,
       enableUnicodeBold: enableUnicodeBoldEl.checked,
       advancedModeEnabled: advancedModeToggle.checked,
+      labsAutomationEnabled: labsEnabled,
+      labsAutomationAcknowledgedAt: labsAcknowledgedAt,
+      autoGithubEnabled: autoGithubEnabled,
+      autoGithubTime: autoGithubTimeEl ? (autoGithubTimeEl.value || "09:00") : "09:00",
+      autoGithubFocus: autoGithubFocusEl ? autoGithubFocusEl.value : "ai",
+      autoGithubMinStars: autoGithubMinStarsEl
+        ? Math.max(1, parseInt(autoGithubMinStarsEl.value, 10) || 30)
+        : 30,
       languageAutoDetected: false, // User manually changed settings
     },
     () => {
-      showStatus("Đã lưu", "success");
+      restoreSaveBtn();
+      if (chrome.runtime.lastError) {
+        showStatus("Lưu thất bại — thử lại", "error");
+        return;
+      }
+      updateGithubLabsGateUI();
+      if (!(labsAutomationEnabledEl && labsAutomationEnabledEl.checked && !isLabsConfirmTextValid())) {
+        showStatus("Đã lưu", "success");
+      }
+      // Re-arm (or clear) the daily auto-GitHub alarm to match new settings.
+      try {
+        chrome.runtime.sendMessage({ action: "reschedule-github" });
+      } catch (_) {}
 
       // Create backup after saving
       chrome.runtime.sendMessage({ action: "backupSettings" }, (response) => {
@@ -424,6 +526,23 @@ function showStatus(msg, type) {
   }, 4000);
 }
 
+// History tab has its own status element (#status lives in the Settings tab,
+// so history actions must not write there — otherwise feedback + the Undo
+// button render on the wrong, hidden tab).
+const historyStatus = document.getElementById("historyStatus");
+let historyStatusTimer = null;
+function showHistoryStatus(msg, type, durationMs = 4000) {
+  if (!historyStatus) return showStatus(msg, type);
+  if (historyStatusTimer) clearTimeout(historyStatusTimer);
+  historyStatus.textContent = msg;
+  historyStatus.className = "status " + type;
+  historyStatus.style.display = "block";
+  historyStatusTimer = setTimeout(() => {
+    historyStatus.style.display = "none";
+  }, durationMs);
+  return historyStatus;
+}
+
 function esc(s) {
   const d = document.createElement("span");
   d.textContent = s;
@@ -433,6 +552,16 @@ function esc(s) {
 // === API KEYS ===
 const newApiKeyInput = document.getElementById("newApiKey");
 const addKeyBtn = document.getElementById("addKeyBtn");
+const toggleNewApiKey = document.getElementById("toggleNewApiKey");
+if (toggleNewApiKey) {
+  toggleNewApiKey.addEventListener("click", () => {
+    const show = newApiKeyInput.type === "password";
+    newApiKeyInput.type = show ? "text" : "password";
+    toggleNewApiKey.setAttribute("aria-pressed", String(show));
+    toggleNewApiKey.style.opacity = show ? "1" : "";
+    newApiKeyInput.focus();
+  });
+}
 const keyStatus = document.getElementById("keyStatus");
 const testBtn = document.getElementById("testBtn");
 const keyEmptyState = document.getElementById("keyEmptyState");
@@ -540,43 +669,60 @@ document.addEventListener("click", async (e) => {
 });
 
 
-// Auto-validate API key on paste
-newApiKeyInput.addEventListener('paste', (e) => {
-  setTimeout(() => {
+// Single in-flight guard shared by the button + paste auto-add, so a fast
+// double paste / click can't push the same key twice or race the storage write.
+let isAddingKey = false;
+
+// Returns true only when a new key was actually persisted.
+async function addApiKey() {
+  if (isAddingKey) return false;
+  const key = newApiKeyInput.value.trim();
+  if (!key) {
+    showKeyStatus("Nhập API Key", "error");
+    return false;
+  }
+  isAddingKey = true;
+  addKeyBtn.disabled = true;
+  try {
+    const provider = detectProvider(key);
+    const data = await chrome.storage.sync.get(["apiKeys"]);
+    const apiKeys = data.apiKeys || {};
+    for (const p of ALL_PROVIDERS) {
+      if (!apiKeys[p]) apiKeys[p] = [];
+    }
+    if (apiKeys[provider].includes(key)) {
+      showKeyStatus("Key đã tồn tại", "error");
+      return false;
+    }
+    apiKeys[provider].push(key);
+    await chrome.storage.sync.set({ apiKeys });
+    await chrome.storage.local.set({ backupApiKeys: apiKeys });
+    newApiKeyInput.value = "";
+    loadKeyLists();
+    showKeyStatus(
+      "Đã thêm — " + provider.charAt(0).toUpperCase() + provider.slice(1),
+      "success",
+    );
+    return true;
+  } finally {
+    isAddingKey = false;
+    addKeyBtn.disabled = false;
+  }
+}
+
+// Auto-validate API key on paste — add, then test only if the add succeeded.
+// Awaits the add (no fixed-delay guess) so the test reads committed storage.
+newApiKeyInput.addEventListener('paste', () => {
+  setTimeout(async () => {
     const key = newApiKeyInput.value.trim();
     if (key.length > 20) {
-      addKeyBtn.click();
-      setTimeout(() => testBtn.click(), 300);
+      const added = await addApiKey();
+      if (added) await handleTestConnection(testBtn);
     }
   }, 10);
 });
 
-addKeyBtn.addEventListener("click", async () => {
-  const key = newApiKeyInput.value.trim();
-  if (!key) {
-    showKeyStatus("Nhập API Key", "error");
-    return;
-  }
-  const provider = detectProvider(key);
-  const data = await chrome.storage.sync.get(["apiKeys"]);
-  const apiKeys = data.apiKeys || {};
-  for (const p of ALL_PROVIDERS) {
-    if (!apiKeys[p]) apiKeys[p] = [];
-  }
-  if (apiKeys[provider].includes(key)) {
-    showKeyStatus("Key đã tồn tại", "error");
-    return;
-  }
-  apiKeys[provider].push(key);
-  await chrome.storage.sync.set({ apiKeys });
-  await chrome.storage.local.set({ backupApiKeys: apiKeys });
-  newApiKeyInput.value = "";
-  loadKeyLists();
-  showKeyStatus(
-    "Đã thêm — " + provider.charAt(0).toUpperCase() + provider.slice(1),
-    "success",
-  );
-});
+addKeyBtn.addEventListener("click", () => addApiKey());
 
 async function handleTestConnection(btn) {
   const data = await chrome.storage.sync.get(["apiKeys"]);
@@ -834,14 +980,14 @@ document.getElementById("rescanBtn").addEventListener("click", async () => {
   try {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tabs[0]?.id) {
-      showStatus("Không tìm thấy tab hiện tại", "error");
+      showHistoryStatus("Không tìm thấy tab hiện tại", "error");
       return;
     }
     const res = await chrome.tabs.sendMessage(tabs[0].id, { action: "rescan-feed" });
-    if (res?.ok) showStatus("Đã yêu cầu quét lại feed", "success");
-    else showStatus(res?.error || "Không thể quét lại feed", "error");
+    if (res?.ok) showHistoryStatus("Đã yêu cầu quét lại feed", "success");
+    else showHistoryStatus(res?.error || "Không thể quét lại feed", "error");
   } catch (err) {
-    showStatus("Lỗi quét lại: " + (err?.message || err), "error");
+    showHistoryStatus("Lỗi quét lại: " + (err?.message || err), "error");
   }
 });
 
@@ -855,9 +1001,11 @@ document.getElementById("clearBtn").addEventListener("click", async () => {
   await chrome.storage.local.set({ history: [], historyBackup: { items: backup, deletedAt: Date.now() } });
   loadHistory();
 
-  // Show undo option
-  showStatus("Đã xóa lịch sử", "success");
+  // Show undo option in the History tab's own status bar (not the Settings
+  // tab's #status, which would be hidden while the user is on History).
+  const statusEl = showHistoryStatus("Đã xóa lịch sử", "success", 30000);
   const undoBtn = document.createElement("button");
+  undoBtn.type = "button";
   undoBtn.textContent = "↩ Hoàn tác";
   undoBtn.style.cssText = "margin-left:8px;padding:3px 10px;border:1px solid #a855f7;border-radius:6px;background:transparent;color:#a855f7;font-size:12px;cursor:pointer;";
   undoBtn.addEventListener("click", async () => {
@@ -866,10 +1014,12 @@ document.getElementById("clearBtn").addEventListener("click", async () => {
       await chrome.storage.local.set({ history: backupData.historyBackup.items });
       await chrome.storage.local.remove("historyBackup");
       loadHistory();
-      showStatus("Đã khôi phục lịch sử", "success");
+      showHistoryStatus("Đã khôi phục lịch sử", "success");
+    } else {
+      showHistoryStatus("Hết thời gian khôi phục — lịch sử đã xóa vĩnh viễn", "error");
     }
   });
-  status.appendChild(undoBtn);
+  if (statusEl) statusEl.appendChild(undoBtn);
 
   // Auto-remove backup after 30 seconds
   setTimeout(async () => {
@@ -1212,3 +1362,157 @@ function showSettingsManagementStatus(message, type) {
     settingsManagementStatus.style.display = "none";
   }, 3000);
 }
+
+// === AUTO GITHUB → FACEBOOK (popup wiring) ===
+function showGithubStatus(message, type) {
+  if (!githubAutopostStatus) return;
+  githubAutopostStatus.textContent = message;
+  githubAutopostStatus.className = `status ${type || ""}`.trim();
+  githubAutopostStatus.style.display = "block";
+}
+
+function renderGithubLog() {
+  if (!githubAutopostLog) return;
+  chrome.storage.local.get(["autoGithubLog"], (d) => {
+    const log = (d && d.autoGithubLog) || [];
+    if (!log.length) {
+      githubAutopostLog.innerHTML =
+        '<div class="field-hint">Chưa có lần chạy nào.</div>';
+      return;
+    }
+    githubAutopostLog.innerHTML = log
+      .map((e) => {
+        const dt = e.ts ? new Date(e.ts) : null;
+        const when = dt
+          ? dt.toLocaleDateString() + " " + dt.toLocaleTimeString().slice(0, 5)
+          : "";
+        const icon = e.ok ? "✅" : "⚠️";
+        const trig = e.trigger === "manual" ? "thủ công" : "tự động";
+        const repo = e.repo
+          ? ' · <span style="opacity:.85">' + escapeHtml(e.repo) + "</span>"
+          : "";
+        const msg = escapeHtml(e.message || "");
+        return (
+          '<div style="padding:6px 8px;border-bottom:1px solid rgba(127,127,127,.15);font-size:12px;line-height:1.4;">' +
+          icon +
+          ' <span style="opacity:.6">' +
+          when +
+          " (" +
+          trig +
+          ")</span>" +
+          repo +
+          '<br><span style="opacity:.9">' +
+          msg +
+          "</span></div>"
+        );
+      })
+      .join("");
+  });
+}
+
+// Live Labs gate: typing confirm phrase or toggling checkbox updates controls
+if (labsAutomationEnabledEl) {
+  labsAutomationEnabledEl.addEventListener("change", () => {
+    if (labsAutomationEnabledEl.checked && !isLabsConfirmTextValid()) {
+      // Allow checking, but keep auto controls locked until phrase matches
+      showGithubStatus(
+        "Gõ «TOI HIEU RUI RO» vào ô xác nhận để mở khóa auto-post.",
+        "error",
+      );
+    }
+    updateGithubLabsGateUI();
+    if (!labsAutomationEnabledEl.checked) {
+      // Turning Labs off immediately disables schedule + clears alarm path on next save;
+      // also persist + reschedule now so alarms do not keep firing.
+      chrome.storage.sync.set(
+        {
+          labsAutomationEnabled: false,
+          autoGithubEnabled: false,
+          labsAutomationAcknowledgedAt: null,
+        },
+        () => {
+          try {
+            chrome.runtime.sendMessage({ action: "reschedule-github" });
+          } catch (_) {}
+        },
+      );
+      if (labsConfirmInputEl) labsConfirmInputEl.value = "";
+      showGithubStatus("Đã tắt Labs — auto-post bị vô hiệu.", "");
+    }
+  });
+}
+if (labsConfirmInputEl) {
+  labsConfirmInputEl.addEventListener("input", () => {
+    updateGithubLabsGateUI();
+  });
+}
+if (disableLabsBtn) {
+  disableLabsBtn.addEventListener("click", () => {
+    if (labsAutomationEnabledEl) labsAutomationEnabledEl.checked = false;
+    if (labsConfirmInputEl) labsConfirmInputEl.value = "";
+    if (autoGithubEnabledEl) autoGithubEnabledEl.checked = false;
+    updateGithubLabsGateUI();
+    chrome.storage.sync.set(
+      {
+        labsAutomationEnabled: false,
+        autoGithubEnabled: false,
+        labsAutomationAcknowledgedAt: null,
+      },
+      () => {
+        try {
+          chrome.runtime.sendMessage({ action: "reschedule-github" });
+        } catch (_) {}
+        showGithubStatus("Đã tắt Labs ngay — lịch auto-post đã xóa.", "success");
+      },
+    );
+  });
+}
+
+if (runGithubNowBtn) {
+  runGithubNowBtn.addEventListener("click", () => {
+    if (runGithubNowBtn.disabled) return;
+    if (!isLabsArmed()) {
+      showGithubStatus(
+        "Labs automation chưa bật. Bật trong popup và xác nhận rủi ro.",
+        "error",
+      );
+      return;
+    }
+    const label = runGithubNowBtn.textContent;
+    runGithubNowBtn.dataset.running = "1";
+    runGithubNowBtn.disabled = true;
+    runGithubNowBtn.textContent = "Đang chạy… (mở tab FB, có thể mất ~1-2 phút)";
+    showGithubStatus(
+      "Đang lấy repo, viết tóm tắt và đăng… Vui lòng không đóng trình duyệt.",
+      "",
+    );
+    chrome.runtime.sendMessage(
+      { action: "run-github-autopost-now" },
+      (res) => {
+        delete runGithubNowBtn.dataset.running;
+        runGithubNowBtn.textContent = label;
+        updateGithubLabsGateUI();
+        if (chrome.runtime.lastError) {
+          showGithubStatus(
+            "Lỗi: " + chrome.runtime.lastError.message,
+            "error",
+          );
+          renderGithubLog();
+          return;
+        }
+        if (res && res.ok) {
+          showGithubStatus(res.message || "Đã đăng.", "success");
+        } else {
+          showGithubStatus(
+            (res && res.message) || "Không đăng được.",
+            "error",
+          );
+        }
+        renderGithubLog();
+      },
+    );
+  });
+}
+
+updateGithubLabsGateUI();
+renderGithubLog();

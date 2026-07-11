@@ -6,11 +6,11 @@
 
 <p align="center">
   Chrome Extension — Tóm tắt bài viết, viết status & affiliate bằng AI.<br>
-  Tự động tìm sản phẩm hot Shopee + tạo affiliate link. Dịch từ vựng Anh → Việt.
+  Hỗ trợ workflow nguồn thủ công, bóc link Shopee và dịch từ vựng Anh → Việt.
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.3.0-blue" alt="Version 2.3.0">
+  <img src="https://img.shields.io/badge/version-2.5.0-blue" alt="Version 2.5.0">
   <img src="https://img.shields.io/badge/manifest-v3-blue" alt="Manifest V3">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License">
   <img src="https://img.shields.io/badge/dependencies-zero-brightgreen" alt="Zero deps">
@@ -18,14 +18,27 @@
 
 ---
 
-## 🎉 Tính năng mới v2.3.0
+## Tính năng mới v2.5.0
 
-### 🛍️ Shopee Affiliate Integration
+### An toàn & Labs
 
-- **Tự động chọn gợi ý Shopee** luân phiên từ danh sách sản phẩm phổ biến
-- **Tạo affiliate link** với Shopee Affiliate ID của bạn
-- **Rút gọn link** qua nhiều dịch vụ, tự fallback về link gốc khi cần
-- **Chèn 1 gợi ý mua sắm** vào nội dung copy/comment nguồn
+- **Labs gate** cho auto-post GitHub → Facebook: phải gõ `TOI HIEU RUI RO` + tick xác nhận rủi ro.
+- **Optional permissions**: `cookies`, `clipboardRead`, `https://*/*` chỉ xin khi dùng.
+- **Phím tắt Mac**: panel Copy/Sửa nhận `⌘` (metaKey).
+
+### UX
+
+- Floating toolbar: **Tóm tắt · Status · Affiliate · Batch**.
+- Composer: nút **← Sửa lại** quay về chỉnh sửa kết quả.
+- Scan feed nhẹ hơn (IO-gated + interval 15s).
+- `npm test` — 28 pure-logic tests (zero deps).
+
+### Workflow đăng status và nguồn (v2.4+)
+
+- **Dán nguồn thủ công nhanh hơn**: ô link nguồn tự được chọn, có nút Paste để dùng link bạn vừa copy.
+- **Không tự copy nguồn sai** sau khi mở composer; bạn kiểm tra/dán nguồn trước khi đăng.
+- **Bóc link Shopee**: mở trang tạo link affiliate chính thức để tạo link hợp lệ.
+- **Tự động đăng repo GitHub**: Labs / rủi ro — bật trong popup sau khi xác nhận, cần đăng nhập Facebook.
 
 👉 **[Xem hướng dẫn chi tiết](SHOPEE_AFFILIATE_GUIDE.md)**
 
@@ -38,7 +51,7 @@ Extension giúp bạn xử lý nội dung trên Facebook nhanh hơn:
 - **Tóm tắt** bài viết dài thành vài câu ngắn gọn
 - **Viết lại** thành status cá nhân ở ngôi thứ nhất
 - **Chế bài affiliate** từ bài review sản phẩm
-- **Tìm sản phẩm Shopee** tự động với affiliate link
+- **Bóc link Shopee** để tạo affiliate link thủ công qua trang chính thức
 - **Dịch từ** tiếng Anh sang tiếng Việt bằng double-click
 
 Mọi thứ chạy bằng AI (Groq hoặc Gemini), API key miễn phí, không thu thập dữ liệu.
@@ -72,13 +85,25 @@ git clone https://github.com/anlvdt/fb-post-summarizer.git
 - Nút **Tóm tắt** tự động hiện cạnh "Xem thêm" trên Facebook
 - Bôi đen text → floating toolbar hiện lên → chọn chế độ
 - Chuột phải → context menu → chọn tính năng
-- Phím tắt: `Ctrl+Shift+S` (tóm tắt) · `Ctrl+Shift+T` (status) · `Ctrl+Shift+A` (affiliate)
+- Phím tắt: `Ctrl+Shift+S` (tóm tắt) · `Ctrl+Shift+A` (affiliate)
+
+**Đăng status + nguồn:**
+- Sau khi có kết quả, bấm **Đăng Status**
+- Copy link nguồn đúng từ bài gốc nếu app nhận sai
+- Bấm **Paste** ở ô "Link bài gốc" để dán đè nguồn
+- Kiểm tra preview comment nguồn, bấm **Copy nguồn**, rồi dán vào comment đầu tiên
 
 **Dịch từ vựng:**
 - Double-click vào từ tiếng Anh bất kỳ → tooltip hiện phiên âm + nghĩa
 
 **Bóc link Shopee:**
-- Bôi đen link shope.ee → chuột phải → "Bóc Link Shopee"
+- Bôi đen link `shope.ee` → chuột phải → **Bóc Link Shopee**
+- Extension mở trang Shopee Affiliate chính thức để bạn tạo custom affiliate link hợp lệ
+
+**Tự động đăng repo GitHub:**
+- Bật trong popup → Cài đặt → "Tự động đăng repo GitHub"
+- Tính năng này mở tab Facebook nền và tự thao tác đăng bài
+- Lưu ý: tự động hóa Facebook có rủi ro bị hạn chế tài khoản; nên dùng thận trọng
 
 ## Tính năng nổi bật
 
@@ -115,12 +140,25 @@ git clone https://github.com/anlvdt/fb-post-summarizer.git
 
 ```
 ├── manifest.json        # Chrome extension config
-├── background.js        # Service worker: API calls, prompts, guardrails
-├── content.js           # Content script: DOM scan, UI overlay, translate
+├── background.js        # Service worker: API calls, message router, alarms
+├── bg-api.js            # API key rotation, provider calls, prompt assembly
+├── bg-prompts.js        # Prompt templates
+├── content-dom.js       # DOM extraction, source/link/image detection
+├── content-composer.js  # Composer/posting workflow
+├── content.js           # Content UI, scan loop, streaming summary
+├── translate.js         # Double-click translation tooltip
+├── status-formatter.js  # Text formatter for platform output
+├── poster-*.js          # Cross-platform posting adapters
 ├── content.css          # Styles cho overlay, tooltip, buttons
+├── translate.css        # Styles cho tooltip dịch
 ├── popup.html           # Popup settings UI
 ├── popup.js             # Popup logic
 ├── popup.css            # Popup styles
+├── lib/pure-logic.js    # Pure functions for unit tests (mirror of runtime algorithms)
+├── tests/               # node:test harness (npm test)
+├── package.json         # test + check scripts only (no runtime deps)
+├── AUDIT_REPORT.md      # Deep audit hiện trạng
+├── UPGRADE_BACKLOG.md   # Roadmap cải tiến có acceptance criteria
 ├── icons/               # Extension icons (16, 48, 128)
 ├── LICENSE              # MIT
 └── README.md
@@ -145,6 +183,21 @@ UI                        overlay panel + quality warnings
 - Chrome Extension Manifest V3
 - Groq API (Llama 3.3 70B) / Google Gemini 2.0 Flash
 - Vanilla JS — zero dependencies, zero build step
+
+## Tests
+
+Zero npm install. Uses Node’s built-in test runner (`node:test`).
+
+```bash
+# Requires Node 18+
+npm test
+
+# Syntax-check main extension scripts
+npm run check
+```
+
+Pure algorithms under test live in `lib/pure-logic.js` (mirrors content/background logic).  
+`status-formatter.js` is loaded in a VM sandbox by the formatter tests.
 
 ## Contributing
 

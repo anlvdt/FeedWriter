@@ -10,6 +10,8 @@
 
   let translateTooltip = null;
   let lastClickTime = 0;
+  let lastRect = null; // viewport-relative rect of the looked-up word
+  let requestToken = 0; // guards against out-of-order async responses
   const DEBOUNCE_DELAY = 300; // ms
 
   function isContextValid() {
@@ -35,42 +37,55 @@
 
   function hideTranslateTooltip() {
     if (translateTooltip) translateTooltip.classList.remove("fbs-visible");
+    lastRect = null;
+  }
+
+  // Position the tooltip relative to `rect` (viewport-relative), measuring the
+  // tooltip's real size so it never renders off-screen. Re-run after content
+  // changes (loading → result) because the height differs a lot.
+  function positionTooltip(rect) {
+    if (!translateTooltip) return;
+    const tip = translateTooltip.getBoundingClientRect();
+    const w = tip.width || 240;
+    const h = tip.height || 60;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const M = 8; // viewport margin
+
+    // Horizontal: centre on the word, then clamp inside the viewport.
+    let left = rect.left + rect.width / 2 - w / 2;
+    left = Math.max(M, Math.min(left, vw - w - M));
+
+    // Vertical: prefer below; flip above when it would overflow the bottom and
+    // there's more room on top; finally clamp so the top never goes off-screen.
+    let top = rect.bottom + 6;
+    if (top + h > vh - M && rect.top - 6 - h > M) {
+      top = rect.top - 6 - h;
+    }
+    top = Math.max(M, Math.min(top, vh - h - M));
+
+    translateTooltip.style.top = top + window.scrollY + "px";
+    translateTooltip.style.left = left + window.scrollX + "px";
   }
 
   function showTranslateTooltip(text, rect) {
     createTranslateTooltip();
+    lastRect = rect;
+    const token = ++requestToken;
+    translateTooltip.setAttribute("role", "status");
+    translateTooltip.setAttribute("aria-live", "polite");
     translateTooltip.innerHTML =
-      '<div class="fbs-translate-loading"><div class="fbs-spinner" style="width:14px;height:14px;border-width:2px"></div> Đang dịch...</div>';
-
-    // Optimize tooltip positioning - check viewport boundaries
-    const tooltipWidth = 240;
-    const tooltipHeight = 100; // estimated
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-
-    let top = rect.bottom + window.scrollY + 6;
-    let left = rect.left + window.scrollX + rect.width / 2 - tooltipWidth / 2;
-
-    // Adjust horizontal position if overflow
-    if (left + tooltipWidth > viewportWidth + window.scrollX) {
-      left = viewportWidth + window.scrollX - tooltipWidth - 8;
-    }
-    left = Math.max(8, left);
-
-    // Adjust vertical position if overflow (show above selection)
-    if (rect.bottom + tooltipHeight > viewportHeight) {
-      top = rect.top + window.scrollY - tooltipHeight - 6;
-    }
-
-    translateTooltip.style.top = top + "px";
-    translateTooltip.style.left = left + "px";
+      '<div class="fbs-translate-loading"><div class="fbs-spinner"></div> Đang dịch...</div>';
     translateTooltip.classList.add("fbs-visible");
+    positionTooltip(rect);
 
     // Error handling for chrome.runtime.sendMessage
     try {
       chrome.runtime.sendMessage(
         { action: "translate-word", word: text },
         (resp) => {
+          // Ignore responses superseded by a newer lookup.
+          if (token !== requestToken) return;
           // Check if context is still valid
           if (chrome.runtime.lastError) {
             console.warn(
@@ -106,10 +121,17 @@
           }
 
           const word = esc(resp.word || text);
-          const translation = esc(resp.translation || "").replace(
-            /\n/g,
-            "<br>",
-          );
+          const rawTranslation = (resp.translation || "").trim();
+          if (!rawTranslation) {
+            translateTooltip.innerHTML =
+              '<div class="fbs-translate-word">' +
+              word +
+              "</div>" +
+              '<div class="fbs-translate-error">Không tìm thấy nghĩa</div>';
+            if (lastRect) positionTooltip(lastRect);
+            return;
+          }
+          const translation = esc(rawTranslation).replace(/\n/g, "<br>");
           translateTooltip.innerHTML =
             '<div class="fbs-translate-word">' +
             word +
@@ -117,18 +139,20 @@
             '<div class="fbs-translate-result">' +
             translation +
             "</div>" +
-            '<button class="fbs-translate-copy" title="Copy">Copy</button>';
+            '<button class="fbs-translate-copy" type="button" title="Sao chép nghĩa" aria-label="Sao chép nghĩa">Sao chép</button>';
+          // Re-measure: the result box is taller than the loading row.
+          if (lastRect) positionTooltip(lastRect);
 
           const copyBtn = translateTooltip.querySelector(".fbs-translate-copy");
           if (copyBtn) {
             copyBtn.addEventListener("click", (e) => {
               e.stopPropagation();
               navigator.clipboard
-                .writeText(resp.translation || "")
+                .writeText(rawTranslation)
                 .then(() => {
-                  e.target.textContent = "✓";
+                  e.target.textContent = "✓ Đã copy";
                   setTimeout(() => {
-                    e.target.textContent = "Copy";
+                    e.target.textContent = "Sao chép";
                   }, 1000);
                 })
                 .catch((err) => {
@@ -172,6 +196,15 @@
     )
       return;
 
+    // Don't hijack double-click inside editable fields (composers, search
+    // boxes, comment inputs) — the user is selecting their own text there.
+    if (
+      e.target.closest(
+        'input, textarea, select, [contenteditable=""], [contenteditable="true"], [role="textbox"]',
+      )
+    )
+      return;
+
     const selection = window.getSelection();
     const text = selection.toString().trim();
 
@@ -205,6 +238,15 @@
 
   document.addEventListener("mousedown", (e) => {
     if (translateTooltip && !translateTooltip.contains(e.target)) {
+      hideTranslateTooltip();
+    }
+  });
+  document.addEventListener("keydown", (e) => {
+    if (
+      e.key === "Escape" &&
+      translateTooltip &&
+      translateTooltip.classList.contains("fbs-visible")
+    ) {
       hideTranslateTooltip();
     }
   });

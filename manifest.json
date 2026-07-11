@@ -1,32 +1,37 @@
 {
   "manifest_version": 3,
   "name": "FeedWriter",
-  "version": "2.3.0",
-  "description": "Tóm tắt bài viết bằng AI với tiêu đề hook mạnh, chỉnh sửa & copy thành status. Viết Status tối ưu reach. Chế bài affiliate. Tự động tìm sản phẩm Shopee hot. Dịch từ Anh-Việt.",
+  "version": "2.5.0",
+  "description": "Tóm tắt bài viết bằng AI với tiêu đề hook mạnh, chỉnh sửa & copy thành status. Viết Status tối ưu reach. Chế bài affiliate. Tự động lấy repo hot GitHub, viết tóm tắt & đăng status Facebook theo lịch. Dịch từ Anh-Việt.",
   "author": "Le An (anlvdt)",
   "homepage_url": "https://github.com/anlvdt/fb-post-summarizer",
   "permissions": [
     "storage",
     "contextMenus",
     "activeTab",
-    "cookies",
     "scripting",
-    "alarms",
+    "alarms"
+  ],
+  "optional_permissions": [
+    "cookies",
     "clipboardRead"
   ],
   "host_permissions": [
     "https://generativelanguage.googleapis.com/*",
+    "https://api.github.com/*",
     "https://api.groq.com/*",
     "https://api.cerebras.ai/*",
     "https://api.sambanova.ai/*",
     "https://openrouter.ai/*",
-    "https://*/*",
     "*://*.shope.ee/*",
     "*://*.shopee.vn/*",
     "https://tinyurl.com/*",
     "https://is.gd/*",
     "https://v.gd/*",
     "https://da.gd/*"
+  ],
+  "optional_host_permissions": [
+    "https://*/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -43,7 +48,7 @@
         "https://www.linkedin.com/*",
         "https://www.reddit.com/*"
       ],
-      "js": ["errors.js", "utils.js", "shopee-preload.js", "dom-helpers.js", "post-data.js", "status-formatter.js", "content-dom.js", "poster-facebook.js", "poster-threads.js", "poster-x.js", "poster-linkedin.js", "poster-reddit.js", "cross-poster.js", "content-composer.js", "content.js"],
+      "js": ["errors.js", "utils.js", "dom-helpers.js", "post-data.js", "status-formatter.js", "content-dom.js", "poster-facebook.js", "poster-threads.js", "poster-x.js", "poster-linkedin.js", "poster-reddit.js", "cross-poster.js", "content-composer.js", "content.js"],
       "css": ["content.css"],
       "run_at": "document_end"
     },

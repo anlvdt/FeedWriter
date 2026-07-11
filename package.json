@@ -1,0 +1,8 @@
+{
+  "name": "feedwriter",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/**/*.test.mjs",
+    "check": "node --check background.js && node --check content.js && node --check popup.js && node --check content-composer.js && node --check status-formatter.js && node --check lib/pure-logic.js"
+  }
+}

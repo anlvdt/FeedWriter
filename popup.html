@@ -99,29 +99,77 @@
           </div>
           <div class="fbs-shopee-settings">
             <div class="fbs-shopee-settings-title">🛍️ Shopee Affiliate</div>
-            <div class="field">
-              <label for="shopeeAffiliateId">
-                Shopee Affiliate ID
-                <span class="fbs-hint-icon" data-tooltip="ID affiliate của bạn từ Shopee Affiliate Program. Để trống nếu chưa có.">?</span>
-              </label>
-              <input type="text" id="shopeeAffiliateId" placeholder="VD: 12345678">
-              <div class="fbs-shopee-settings-hint">Tạo affiliate link từ danh sách gợi ý Shopee phổ biến khi tóm tắt bài viết. Đăng ký tại: <a href="https://affiliate.shopee.vn" target="_blank" style="color: #ffa502;">affiliate.shopee.vn</a></div>
-            </div>
-            <div class="field">
-              <label class="checkbox-label">
-                <input type="checkbox" id="autoFindShopeeProducts">
-                <span>Thêm gợi ý Shopee khi copy</span>
-              </label>
-              <div class="field-hint">Tự động thêm 1 gợi ý Shopee luân phiên vào nội dung copy, kèm affiliate link đã rút gọn khi dịch vụ khả dụng.</div>
-            </div>
+            <div class="field-hint">Link affiliate hợp lệ phải do Shopee sinh ra. Khi gặp link <code>shope.ee</code> trên feed, bấm nút <strong>“Bóc Link”</strong> cạnh link để mở trang tạo link affiliate chính thức tại <a href="https://affiliate.shopee.vn" target="_blank" style="color: #ffa502;">affiliate.shopee.vn</a>.</div>
           </div>
           <div class="field">
             <label for="sourceTemplate">
               Thông tin nguồn & tham khảo
               <span class="fbs-hint-icon" data-tooltip="Tùy chỉnh dòng nguồn. Dùng {author}, {platform}, {source}, {link}, {repo}. Link Github/download/tham khảo cho từng bài có thể bổ sung ở màn hình đăng status.">?</span>
             </label>
-            <textarea id="sourceTemplate" rows="3" placeholder="• Nguồn bài viết: {platform} {author} {source}&#10;• Link gốc: {link}&#10;• Repo mặc định: {repo}" style="background: #fff; color: #1a1a2e; border: 1px solid var(--border);"></textarea>
+            <textarea id="sourceTemplate" rows="3" placeholder="• Nguồn bài viết: {platform} {author} {source}&#10;• Link gốc: {link}&#10;• Repo mặc định: {repo}"></textarea>
             <div class="field-hint">{author} = tác giả, {platform} = nền tảng, {source} = nhóm/page, {link} = URL gốc, {repo} = repo mặc định nếu đã cấu hình</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion">
+        <div class="accordion-header" role="button" aria-expanded="false" tabindex="0">
+          🤖 Tự động đăng repo GitHub
+          <span class="fbs-hint-icon" data-tooltip="Tự động lấy repo hot trên GitHub, viết tóm tắt bằng AI và đăng status Facebook theo lịch.">?</span>
+        </div>
+        <div class="accordion-content">
+          <div class="field-hint" style="margin-bottom:10px;padding:8px 10px;border:1px solid #ffa502;border-radius:6px;background:rgba(255,165,2,0.08);">
+            ⚠️ <strong>Lưu ý:</strong> Tự động đăng lên Facebook có thể vi phạm chính sách chống tự động hóa của Facebook và <strong>rủi ro bị khóa/hạn chế tài khoản</strong>. Mỗi lần chạy sẽ mở một tab Facebook nền, đăng 1 repo rồi đóng lại. Cần ít nhất 1 API key &amp; đang đăng nhập Facebook.
+          </div>
+
+          <!-- Labs / Rủi ro gate — must accept before enable/run -->
+          <div id="labsGateBox" style="margin-bottom:12px;padding:10px 12px;border:1px solid #e17055;border-radius:8px;background:rgba(225,112,85,0.08);">
+            <div style="font-weight:700;margin-bottom:6px;color:#e17055;">🧪 Labs / Rủi ro</div>
+            <div class="field-hint" style="margin-bottom:8px;">
+              Tính năng tự động đăng là <strong>Labs</strong>. Bạn phải xác nhận hiểu rủi ro trước khi bật lịch hoặc chạy thử.
+            </div>
+            <div class="field" style="margin-bottom:8px;">
+              <label class="checkbox-label">
+                <input type="checkbox" id="labsAutomationEnabled">
+                <span>Tôi hiểu rủi ro bị hạn chế tài khoản Facebook</span>
+              </label>
+            </div>
+            <div class="field" style="margin-bottom:8px;">
+              <label for="labsConfirmInput">Gõ xác nhận: <code>TOI HIEU RUI RO</code></label>
+              <input type="text" id="labsConfirmInput" placeholder="TOI HIEU RUI RO" autocomplete="off" spellcheck="false" style="width:100%;margin-top:4px;">
+              <div class="field-hint">Phải gõ đúng cụm trên (không dấu, chữ hoa) trước khi bật auto-post.</div>
+            </div>
+            <button type="button" id="disableLabsBtn" class="btn btn-secondary" style="width:100%;border-color:#e17055;color:#e17055;">Tắt Labs ngay</button>
+          </div>
+
+          <div class="field">
+            <label class="checkbox-label">
+              <input type="checkbox" id="autoGithubEnabled" disabled>
+              <span>Bật tự động đăng theo lịch</span>
+            </label>
+          </div>
+          <div class="field">
+            <label for="autoGithubTime">Giờ chạy hằng ngày</label>
+            <input type="time" id="autoGithubTime" value="09:00">
+            <div class="field-hint">Theo giờ máy của bạn. Trình duyệt phải đang mở thì lịch mới chạy.</div>
+          </div>
+          <div class="field">
+            <label for="autoGithubFocus">Chủ đề repo</label>
+            <select id="autoGithubFocus">
+              <option value="ai">Thiên về AI / tooling</option>
+              <option value="all">Tất cả chủ đề</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="autoGithubMinStars">Số sao tối thiểu</label>
+            <input type="number" id="autoGithubMinStars" min="1" max="100000" step="1" value="30">
+            <div class="field-hint">Chỉ lấy repo (tạo trong 21 ngày gần đây) đạt tối thiểu số sao này.</div>
+          </div>
+          <button id="runGithubNowBtn" class="btn btn-secondary" style="width:100%;margin-bottom:10px;" disabled>▶︎ Chạy ngay (test đăng 1 repo)</button>
+          <div id="githubAutopostStatus" class="status" role="status" aria-live="polite"></div>
+          <div style="margin-top:12px;">
+            <label style="display:block;margin-bottom:6px;font-weight:600;">Nhật ký gần đây</label>
+            <div id="githubAutopostLog" class="backup-list"></div>
           </div>
         </div>
       </div>
@@ -244,7 +292,8 @@
       <div class="field">
         <label>Thêm API Key</label>
         <div class="input-group">
-          <input type="text" id="newApiKey" placeholder="Dán API key vào đây">
+          <input type="password" id="newApiKey" placeholder="Dán API key vào đây" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <button type="button" id="toggleNewApiKey" class="icon-btn" title="Hiện / ẩn key" aria-label="Hiện hoặc ẩn API key" aria-pressed="false">👁</button>
           <button type="button" id="addKeyBtn" class="icon-btn" title="Thêm" style="background:linear-gradient(135deg,#6c5ce7,#a855f7);color:#fff;border:none;font-size:18px">+</button>
         </div>
         <div class="field-hint">Tự nhận diện provider từ key prefix. Hỗ trợ Groq, Gemini, Cerebras, SambaNova, OpenRouter.</div>
@@ -252,6 +301,9 @@
 
       <div class="apikey-info">
         Tự động rotate key khi bị rate limit. Tự động chuyển provider khi tất cả key của 1 provider hết hạn.
+      </div>
+      <div class="field-hint" style="margin:8px 0 10px;padding:8px 10px;border:1px solid var(--border,#2d3748);border-radius:6px;">
+        🔐 Một số tính năng (đọc clipboard, xóa cookie Shopee, tải ảnh/URL ngoài host cố định) cần <strong>quyền tùy chọn</strong> — Chrome sẽ hỏi khi bạn dùng lần đầu.
       </div>
 
       <div id="keyEmptyState" class="empty" style="display:none">Chưa có key nào. Dán key vào ô trên để bắt đầu.</div>
@@ -278,7 +330,7 @@
       </div>
 
       <button id="testBtn" class="btn btn-secondary" style="margin-top:10px">Test kết nối</button>
-      <div id="keyStatus" class="status"></div>
+      <div id="keyStatus" class="status" role="status" aria-live="polite"></div>
 
       <div class="provider-guide">
         <div class="provider-guide-title">Lấy API Key miễn phí</div>
@@ -331,6 +383,7 @@
         <button id="exportMdBtn" class="btn btn-secondary">Export Markdown</button>
         <button id="clearBtn" class="btn btn-danger">Xóa lịch sử</button>
       </div>
+      <div id="historyStatus" class="status" role="status" aria-live="polite"></div>
     </div>
 
     <!-- About Tab -->
@@ -354,8 +407,10 @@
       <div class="about-section">
         <div class="about-section-title">Phím tắt</div>
         <div class="about-card">
-          <div class="about-shortcut"><span>Tóm tắt</span><span class="about-shortcut-key">Ctrl+Shift+S</span></div>
-          <div class="about-shortcut"><span>Affiliate</span><span class="about-shortcut-key">Ctrl+Shift+A</span></div>
+          <div class="about-shortcut"><span>Tóm tắt</span><span class="about-shortcut-key">Ctrl/⌘+Shift+S</span></div>
+          <div class="about-shortcut"><span>Affiliate</span><span class="about-shortcut-key">Ctrl/⌘+Shift+A</span></div>
+          <div class="about-shortcut"><span>Copy kết quả</span><span class="about-shortcut-key">Ctrl/⌘+C</span></div>
+          <div class="about-shortcut"><span>Sửa kết quả</span><span class="about-shortcut-key">Ctrl/⌘+E</span></div>
           <div style="font-size:10px; color:var(--text-muted); margin-top:6px;">Đổi phím: chrome://extensions/shortcuts</div>
         </div>
       </div>
@@ -366,6 +421,13 @@
           Chuột phải bôi đen chữ → chọn tính năng.<br>
           Tóm tắt xong → Sửa → Copy Status.<br>
           Hỗ trợ: Facebook, Threads, X, LinkedIn, Reddit.
+        </div>
+      </div>
+
+      <div class="about-section">
+        <div class="about-section-title">Quyền tùy chọn</div>
+        <div class="about-card" style="font-size:12px;line-height:1.45;">
+          Extension chỉ xin quyền tối thiểu khi cài. Clipboard, cookies Shopee và truy cập host HTTPS rộng được yêu cầu <strong>khi bạn dùng tính năng tương ứng lần đầu</strong>. Bạn có thể từ chối — các tính năng cốt lõi (tóm tắt, status) vẫn hoạt động.
         </div>
       </div>
 
@@ -436,7 +498,7 @@
 
       <div class="field">
         <label for="wizardApiKey">API Key</label>
-        <input type="text" id="wizardApiKey" placeholder="Dán API key vào đây">
+        <input type="password" id="wizardApiKey" placeholder="Dán API key vào đây" autocomplete="off" autocapitalize="off" spellcheck="false">
         <div class="field-hint">Tự động nhận diện provider từ key prefix</div>
       </div>
 
@@ -447,7 +509,7 @@
         <div class="wizard-api-guide-step" style="font-size: var(--text-xs); color: var(--text-secondary); margin-bottom: var(--space-1); line-height: 1.5;">3. <a href="https://aistudio.google.com/apikey" target="_blank" style="color: var(--accent); text-decoration: none;">Gemini</a> — 1500 req/ngày</div>
       </div>
 
-      <div id="wizardKeyStatus" class="status" style="margin-top: var(--space-3); display: none;"></div>
+      <div id="wizardKeyStatus" class="status" role="status" aria-live="polite" style="margin-top: var(--space-3); display: none;"></div>
 
       <div class="wizard-actions" style="display: flex; gap: var(--space-2); margin-top: var(--space-5);">
         <button class="btn btn-secondary" id="wizardStep1Back" style="flex: 1;">Quay lại</button>
@@ -511,7 +573,7 @@
         </li>
         <li class="wizard-feature-item" style="display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-2) 0; font-size: var(--text-sm); color: var(--text-secondary);">
           <span class="wizard-feature-icon" style="flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: var(--success-bg); color: var(--success); display: flex; align-items: center; justify-content: center; font-size: var(--text-xs); font-weight: 700;">⌨️</span>
-          <span>Phím tắt: Ctrl+Shift+S (Tóm tắt), Ctrl+Shift+A (Affiliate)</span>
+          <span>Phím tắt: Ctrl/⌘+Shift+S (Tóm tắt), Ctrl/⌘+Shift+A (Affiliate)</span>
         </li>
       </ul>
 

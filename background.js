@@ -65,9 +65,14 @@ const DEFAULT_SETTINGS = {
   adDisplayMode: 'collapse',
   affiliateDisplayMode: 'collapse',
   blockedDomains: '',
-  shopeeAffiliateId: '',
-  autoFindShopeeProducts: false,
-  theme: 'auto'
+  theme: 'auto',
+  // === Auto GitHub → Facebook (Labs) ===
+  labsAutomationEnabled: false,           // risk gate — required before auto-post
+  labsAutomationAcknowledgedAt: null,     // timestamp when user confirmed risk
+  autoGithubEnabled: false,               // master on/off for scheduled auto-post
+  autoGithubTime: '09:00',                // HH:MM (local) daily run time
+  autoGithubFocus: 'ai',                  // 'ai' = AI/tooling, 'all' = no topic filter
+  autoGithubMinStars: 30                  // minimum stars for a repo to qualify
 };
 
 // === STORAGE MIGRATION ===
@@ -149,6 +154,21 @@ async function validateSettings() {
     const value = data[key];
     const defaultValue = DEFAULT_SETTINGS[key];
 
+    // Timestamp may be null (default) or a number — not strict typeof match
+    if (key === "labsAutomationAcknowledgedAt") {
+      if (value === undefined || value === null) {
+        validatedSettings[key] = null;
+        if (value === undefined) hasInvalidSettings = true;
+      } else if (typeof value === "number" && !isNaN(value)) {
+        validatedSettings[key] = value;
+      } else {
+        validatedSettings[key] = null;
+        hasInvalidSettings = true;
+        logger.warn(`Invalid type for setting ${key}: expected number|null`);
+      }
+      continue;
+    }
+
     // Validate each setting
     if (value === undefined || value === null) {
       validatedSettings[key] = defaultValue;
@@ -160,6 +180,14 @@ async function validateSettings() {
     } else {
       validatedSettings[key] = value;
     }
+  }
+
+  // Safe default: auto-post without Labs acknowledgement must be disabled
+  if (validatedSettings.autoGithubEnabled && !validatedSettings.labsAutomationEnabled) {
+    validatedSettings.autoGithubEnabled = false;
+    validatedSettings.labsAutomationEnabled = false;
+    hasInvalidSettings = true;
+    logger.info("Disabled autoGithubEnabled — Labs automation not acknowledged");
   }
 
   if (hasInvalidSettings) {
@@ -270,7 +298,7 @@ function trackEvent(event, data = {}) {
 // === KEEP SERVICE WORKER ALIVE ===
 // Optimized keep-alive strategy with adaptive intervals
 let keepAliveState = {
-  lastActivity: Date.now(),
+  lastActivity: 0, // 0 = cold start / no activity yet → do not arm keep-alive
   isActive: false,
   activityCount: 0
 };
@@ -281,20 +309,26 @@ function ensureKeepAliveAlarm() {
     return;
   }
 
-  // Adaptive interval: 1 min when active, 5 min when idle
-  const getDesiredPeriod = () => {
-    const timeSinceActivity = Date.now() - keepAliveState.lastActivity;
-    const isRecentlyActive = timeSinceActivity < 5 * 60 * 1000; // 5 minutes
-    return isRecentlyActive ? 1 : 5;
-  };
+  // Prefer not keeping SW alive when idle 10+ min (cold start / no activity).
+  // When active, use a gentle 5 min interval only (no aggressive 1 min ping).
+  const KEEP_ALIVE_PERIOD_MIN = 5;
+  const IDLE_CLEAR_MS = 10 * 60 * 1000;
+  const timeSinceActivity = Date.now() - keepAliveState.lastActivity;
+  const hasRecentActivity = timeSinceActivity < IDLE_CLEAR_MS;
 
-  const desiredPeriod = getDesiredPeriod();
+  if (!hasRecentActivity) {
+    chrome.alarms.clear('keep-alive', () => {
+      logger.debug('Keep-alive cleared — no recent activity (idle ≥10 min)');
+    });
+    return;
+  }
+
   const createAlarm = () => {
     chrome.alarms.create('keep-alive', {
-      delayInMinutes: desiredPeriod,
-      periodInMinutes: desiredPeriod,
+      delayInMinutes: KEEP_ALIVE_PERIOD_MIN,
+      periodInMinutes: KEEP_ALIVE_PERIOD_MIN,
     });
-    logger.info('Keep-alive alarm created with periodInMinutes=' + desiredPeriod);
+    logger.info('Keep-alive alarm created with periodInMinutes=' + KEEP_ALIVE_PERIOD_MIN);
   };
 
   chrome.alarms.get('keep-alive', (existing) => {
@@ -306,8 +340,8 @@ function ensureKeepAliveAlarm() {
 
     if (!existing) {
       createAlarm();
-    } else if (existing.periodInMinutes !== desiredPeriod) {
-      logger.info('Adjusting keep-alive interval to ' + desiredPeriod + ' min');
+    } else if (existing.periodInMinutes !== KEEP_ALIVE_PERIOD_MIN) {
+      logger.info('Adjusting keep-alive interval to ' + KEEP_ALIVE_PERIOD_MIN + ' min');
       chrome.alarms.clear('keep-alive', (wasCleared) => {
         if (!wasCleared) {
           logger.warn('Failed to clear stale keep-alive alarm');
@@ -326,14 +360,14 @@ function trackActivity() {
   keepAliveState.activityCount++;
   keepAliveState.isActive = true;
 
-  // Adjust keep-alive interval based on activity
-  if (keepAliveState.activityCount % 10 === 0) {
+  // Ensure keep-alive exists while there is recent user/extension activity
+  if (keepAliveState.activityCount === 1 || keepAliveState.activityCount % 10 === 0) {
     ensureKeepAliveAlarm();
   }
 }
 
-// Setup keep-alive on startup
-ensureKeepAliveAlarm();
+// Do not arm keep-alive aggressively on cold start — only after activity.
+// ensureKeepAliveAlarm() will no-op/clear when idle ≥10 min.
 
 // === MEMORY MANAGEMENT ===
 const memoryCache = {
@@ -396,6 +430,11 @@ if (chrome?.alarms?.onAlarm) {
       if (timeSinceActivity > 10 * 60 * 1000) {
         keepAliveState.isActive = false;
       }
+    } else if (alarm.name === GITHUB_ALARM_NAME) {
+      logger.info('Auto-GitHub alarm fired');
+      runGithubAutoPost('schedule')
+        .catch((e) => logger.error('Auto-GitHub run failed:', e?.message || e))
+        .finally(() => { ensureGithubAlarm(); }); // re-arm for next day
     }
   });
 }
@@ -424,7 +463,6 @@ async function injectAndSend(tabId, message) {
       files: [
         "errors.js",
         "utils.js",
-        "shopee-preload.js",
         "dom-helpers.js",
         "post-data.js",
         "status-formatter.js",
@@ -525,13 +563,101 @@ function extractRelatedMetadata(html, finalUrl) {
   return links;
 }
 
-async function enrichRelatedSourceUrl(rawUrl) {
+// === OPTIONAL PERMISSION HELPERS ===
+async function hasPermission(permissions = [], origins = []) {
+  if (!chrome?.permissions?.contains) return false;
+  const perms = Array.isArray(permissions) ? permissions : [];
+  const orgs = Array.isArray(origins) ? origins : [];
+  return new Promise((resolve) => {
+    try {
+      const query = {};
+      if (perms.length) query.permissions = perms;
+      if (orgs.length) query.origins = orgs;
+      if (!query.permissions && !query.origins) {
+        resolve(false);
+        return;
+      }
+      chrome.permissions.contains(query, (result) => {
+        if (chrome.runtime.lastError) {
+          resolve(false);
+          return;
+        }
+        resolve(!!result);
+      });
+    } catch (_) {
+      resolve(false);
+    }
+  });
+}
+
+async function requestPermission(permissions = [], origins = []) {
+  if (!chrome?.permissions?.request) return false;
+  const perms = Array.isArray(permissions) ? permissions : [];
+  const orgs = Array.isArray(origins) ? origins : [];
+  return new Promise((resolve) => {
+    try {
+      const query = {};
+      if (perms.length) query.permissions = perms;
+      if (orgs.length) query.origins = orgs;
+      if (!query.permissions && !query.origins) {
+        resolve(false);
+        return;
+      }
+      chrome.permissions.request(query, (granted) => {
+        if (chrome.runtime.lastError) {
+          resolve(false);
+          return;
+        }
+        resolve(!!granted);
+      });
+    } catch (_) {
+      resolve(false);
+    }
+  });
+}
+
+function originPatternFromUrl(rawUrl) {
+  try {
+    const u = new URL(rawUrl);
+    if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+    return u.origin + "/*";
+  } catch (_) {
+    return null;
+  }
+}
+
+/** Check host access for an origin. Optionally request (user-gesture only). */
+async function ensureHostPermissionForUrl(rawUrl, { request = false } = {}) {
+  const pattern = originPatternFromUrl(rawUrl);
+  if (!pattern) return false;
+  // Broad optional host or specific origin both count
+  const hasSpecific = await hasPermission([], [pattern]);
+  if (hasSpecific) return true;
+  const hasBroad = await hasPermission([], ["https://*/*"]);
+  if (hasBroad) return true;
+  if (!request) return false;
+  // Prefer requesting the specific origin (least privilege)
+  const granted = await requestPermission([], [pattern]);
+  if (granted) return true;
+  return requestPermission([], ["https://*/*"]);
+}
+
+async function enrichRelatedSourceUrl(rawUrl, { allowRequest = false } = {}) {
   if (!isSafePublicHttpsUrl(rawUrl)) return [];
+  // Background enrich has no user gesture — only fetch if host already granted
+  const allowed = await ensureHostPermissionForUrl(rawUrl, { request: allowRequest });
+  if (!allowed) {
+    logger.debug("enrichRelatedSourceUrl skipped — no host permission for", rawUrl);
+    return [];
+  }
   try {
     let currentUrl = rawUrl;
     let response = null;
     for (let redirectCount = 0; redirectCount <= 3; redirectCount++) {
       if (!isSafePublicHttpsUrl(currentUrl)) return [];
+      // Re-check each hop; never request mid-redirect in background
+      const hopAllowed = await ensureHostPermissionForUrl(currentUrl, { request: false });
+      if (!hopAllowed) return [];
       response = await fetchWithTimeout(currentUrl, {
         method: "GET",
         credentials: "omit",
@@ -637,21 +763,67 @@ chrome.runtime.onInstalled.addListener(async () => {
     chrome.storage.sync.set({ apiKeys });
   });
 
+  // Safe migration: auto-post without Labs → force both off
+  await migrateLabsAutomationGate().catch((e) =>
+    logger.warn("Labs migration (onInstalled) failed:", e?.message || e),
+  );
+
   ensureKeepAliveAlarm();
+  ensureGithubAlarm().catch((e) => logger.warn('ensureGithubAlarm (onInstalled) failed:', e?.message || e));
 });
 } // end if (chrome?.runtime?.onInstalled)
 
+/** Disable autoGithub if Labs gate was never acknowledged (safe default). */
+async function migrateLabsAutomationGate() {
+  if (!chrome?.storage?.sync) return;
+  const s = await chrome.storage.sync.get([
+    "labsAutomationEnabled",
+    "labsAutomationAcknowledgedAt",
+    "autoGithubEnabled",
+  ]);
+  if (s.autoGithubEnabled && !s.labsAutomationEnabled) {
+    await chrome.storage.sync.set({
+      labsAutomationEnabled: false,
+      autoGithubEnabled: false,
+      labsAutomationAcknowledgedAt: s.labsAutomationAcknowledgedAt || null,
+    });
+    logger.info("Migrated: disabled autoGithubEnabled without Labs acknowledgement");
+    try {
+      await chrome.alarms.clear(GITHUB_ALARM_NAME);
+    } catch (_) {}
+  }
+}
+
 async function clearShopeeCookies() {
-  const domains = [".shopee.vn", "shopee.vn", ".shope.ee", "shope.ee"];
-  for (const d of domains) {
-    const cookies = await chrome.cookies.getAll({ domain: d });
-    for (const c of cookies) {
-      await chrome.cookies.remove({
-        url: "https://" + c.domain.replace(/^\./, "") + c.path,
-        name: c.name,
-      });
+  // cookies is optional — skip cleanup gracefully if not granted
+  const hasCookies = await hasPermission(["cookies"], []);
+  if (!hasCookies) {
+    // Best-effort request only works from a user gesture path (context menu / message)
+    const granted = await requestPermission(["cookies"], []);
+    if (!granted) {
+      logger.info("clearShopeeCookies skipped — cookies permission not granted");
+      return { ok: false, skipped: true, reason: "cookies-permission-denied" };
     }
   }
+  if (!chrome?.cookies?.getAll) {
+    logger.warn("clearShopeeCookies skipped — chrome.cookies unavailable");
+    return { ok: false, skipped: true, reason: "cookies-api-unavailable" };
+  }
+  const domains = [".shopee.vn", "shopee.vn", ".shope.ee", "shope.ee"];
+  for (const d of domains) {
+    try {
+      const cookies = await chrome.cookies.getAll({ domain: d });
+      for (const c of cookies) {
+        await chrome.cookies.remove({
+          url: "https://" + c.domain.replace(/^\./, "") + c.path,
+          name: c.name,
+        });
+      }
+    } catch (e) {
+      logger.warn("clearShopeeCookies domain failed:", d, e?.message || e);
+    }
+  }
+  return { ok: true };
 }
 
 async function processUnshorten(url, tabId) {
@@ -759,10 +931,18 @@ async function incrementBadge() {
 if (chrome?.runtime?.onConnect) {
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== "summarize-stream") return;
+  trackActivity();
   const controller = new AbortController();
 
   port.onMessage.addListener(async (msg) => {
     if (msg.action !== "summarize") return;
+    trackActivity();
+    if (typeof msg.text !== "string" || !msg.text.trim()) {
+      try {
+        port.postMessage({ action: "error", error: "summarize requires a non-empty text string" });
+      } catch (_) {}
+      return;
+    }
     try {
       const result = await handleStream(
         msg.text,
@@ -804,15 +984,34 @@ chrome.runtime.onConnect.addListener((port) => {
 // === FALLBACK: non-streaming for test/context menu ===
 if (chrome?.runtime?.onMessage) {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  trackActivity();
+
   if (sender.id && sender.id !== chrome.runtime.id) {
     console.warn("[FeedWriter] Rejected message from untrusted sender:", sender.id);
     return false;
   }
 
-  const sensitiveActions = new Set(["summarize", "fetch-image"]);
+  const sensitiveActions = new Set([
+    "summarize",
+    "fetch-image",
+    "run-github-autopost-now",
+    "enrich-related-source-links",
+    "unshorten-shopee-inline",
+  ]);
   if (sensitiveActions.has(request.action) && !sender.id) {
     console.warn("[FeedWriter] Rejected sensitive message without extension sender id");
     sendResponse({ error: "Untrusted sender" });
+    return true;
+  }
+
+  // Extension-page only (popup/options): no content-script tab sender
+  function isExtensionPageSender(s) {
+    if (!s || s.id !== chrome.runtime.id) return false;
+    if (s.tab) return false; // content scripts / tabs have sender.tab
+    const url = s.url || "";
+    if (url && !url.startsWith("chrome-extension://") && !url.startsWith("moz-extension://")) {
+      return false;
+    }
     return true;
   }
 
@@ -821,11 +1020,74 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  // Optional permission request (must run in a user-gesture context when possible)
+  if (request.action === "request-optional-permission") {
+    (async () => {
+      try {
+        const permissions = Array.isArray(request.permissions) ? request.permissions : [];
+        const origins = Array.isArray(request.origins) ? request.origins : [];
+        // Light shape filter — only known optional permission names
+        const allowedPerms = new Set(["cookies", "clipboardRead"]);
+        const safePerms = permissions.filter((p) => allowedPerms.has(p));
+        const safeOrigins = origins.filter((o) => typeof o === "string" && o.length < 300);
+        if (!safePerms.length && !safeOrigins.length) {
+          sendResponse({ ok: false, error: "No valid permissions/origins" });
+          return;
+        }
+        const granted = await requestPermission(safePerms, safeOrigins);
+        sendResponse({ ok: granted, granted });
+      } catch (e) {
+        sendResponse({ ok: false, error: e?.message || String(e) });
+      }
+    })();
+    return true;
+  }
+
+  // === AUTO GITHUB → FACEBOOK ===
+  // Manual "Chạy ngay" trigger from the popup only (extension pages).
+  if (request.action === "run-github-autopost-now") {
+    if (!isExtensionPageSender(sender)) {
+      console.warn("[FeedWriter] Rejected run-github-autopost-now from non-extension page");
+      sendResponse({ ok: false, message: "Chỉ cho phép từ trang extension (popup)." });
+      return true;
+    }
+    runGithubAutoPost("manual")
+      .then((res) => sendResponse(res))
+      .catch((e) => sendResponse({ ok: false, message: e?.message || String(e) }));
+    return true;
+  }
+  // Popup saved settings → re-arm (or clear) the daily alarm.
+  if (request.action === "reschedule-github") {
+    ensureGithubAlarm()
+      .then(() => sendResponse({ ok: true }))
+      .catch((e) => sendResponse({ ok: false, message: e?.message || String(e) }));
+    return true;
+  }
+  // Content script reports the result of an auto-post it just performed.
+  if (request.action === "github-autopost-done") {
+    if (
+      pendingGithubPost &&
+      sender.tab &&
+      sender.tab.id === pendingGithubPost.tabId
+    ) {
+      pendingGithubPost.settle({
+        ok: !!request.ok,
+        message: request.message || (request.ok ? "Đã đăng" : "Đăng thất bại"),
+      });
+    }
+    return false;
+  }
+
   if (request.action === "enrich-related-source-links") {
     (async () => {
       const urls = Array.isArray(request.urls) ? request.urls : [];
-      const unique = [...new Set(urls.filter(isSafePublicHttpsUrl))].slice(0, 4);
-      const enriched = await Promise.all(unique.map(enrichRelatedSourceUrl));
+      const unique = [...new Set(
+        urls.filter((u) => typeof u === "string" && isSafePublicHttpsUrl(u)),
+      )].slice(0, 4);
+      // Background path: no user gesture — only fetch if host already granted
+      const enriched = await Promise.all(
+        unique.map((u) => enrichRelatedSourceUrl(u, { allowRequest: false })),
+      );
       sendResponse({ links: enriched.flat().slice(0, 60) });
     })().catch((error) => sendResponse({ links: [], error: error.message }));
     return true;
@@ -956,23 +1218,27 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
     return true;
   }
-  if (
-    request.action === "unshorten-shopee-inline" &&
-    request.url &&
-    sender.tab
-  ) {
+  if (request.action === "unshorten-shopee-inline") {
+    if (typeof request.url !== "string" || !request.url || !sender.tab) {
+      sendResponse({ error: "Invalid unshorten request" });
+      return true;
+    }
     processUnshorten(request.url, sender.tab.id);
     return true;
   }
   if (request.action === "summarize") {
+    if (typeof request.text !== "string" || !request.text.trim()) {
+      sendResponse({ error: "summarize requires a non-empty text string" });
+      return true;
+    }
     const fakePort = { postMessage: () => {} };
     const controller = new AbortController();
     handleStream(
       request.text,
-      request.site || "unknown",
+      typeof request.site === "string" ? request.site : "unknown",
       fakePort,
       controller.signal,
-      "summary",
+      typeof request.type === "string" ? request.type : "summary",
     )
       .then((r) => sendResponse(r || { error: "Unknown error" }))
       .catch((e) => sendResponse({ error: e.message }));
@@ -1034,6 +1300,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // Used by fetchImageBlob() in content.js to bypass cross-origin canvas taint.
   // Timeout 20s (ảnh Facebook thường < 2MB, 20s đủ; 30s quá dài cho parallel fetch)
   if (request.action === "fetch-image") {
+    if (typeof request.url !== "string" || !request.url) {
+      sendResponse({ error: "fetch-image requires url string" });
+      return true;
+    }
     const url = request.url;
     let parsedUrl;
     try {
@@ -1046,16 +1316,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse({ error: "Only public HTTPS URLs allowed" });
       return true;
     }
-    fetchWithTimeout(url, {
-      credentials: "omit",
-      referrer: "",
-      referrerPolicy: "no-referrer",
-    }, 20000)
-      .then((res) => {
+    (async () => {
+      // User-initiated via content UI — try request host permission if missing
+      const allowed = await ensureHostPermissionForUrl(parsedUrl.href, { request: true });
+      if (!allowed) {
+        sendResponse({ error: "Thiếu quyền truy cập host cho ảnh. Cấp quyền khi được hỏi." });
+        return;
+      }
+      try {
+        const res = await fetchWithTimeout(url, {
+          credentials: "omit",
+          referrer: "",
+          referrerPolicy: "no-referrer",
+        }, 20000);
         if (!res.ok) throw new Error("HTTP " + res.status);
-        return res.blob();
-      })
-      .then((blob) => {
+        const blob = await res.blob();
         // Reject empty/invalid blobs
         if (!blob || blob.size < 100) {
           sendResponse({ error: "Empty or invalid image" });
@@ -1070,8 +1345,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         reader.onloadend = () => sendResponse({ base64: reader.result, size: blob.size, type: blob.type });
         reader.onerror = () => sendResponse({ error: "FileReader failed" });
         reader.readAsDataURL(blob);
-      })
-      .catch((e) => sendResponse({ error: e.message || "fetch failed" }));
+      } catch (e) {
+        sendResponse({ error: e.message || "fetch failed" });
+      }
+    })();
     return true;
   }
 });
@@ -2117,8 +2394,361 @@ chrome.runtime.onStartup.addListener(async () => {
     chrome.action.setBadgeBackgroundColor({ color: "#6c5ce7" });
   }
 
+  await migrateLabsAutomationGate().catch((e) =>
+    logger.warn("Labs migration (onStartup) failed:", e?.message || e),
+  );
+
   ensureKeepAliveAlarm();
+  ensureGithubAlarm().catch((e) => logger.warn('ensureGithubAlarm (onStartup) failed:', e?.message || e));
 });
 } // end if (chrome?.runtime?.onStartup)
 
 // keep-alive alarm handled by the listener near line 386
+
+// ============================================================================
+// === AUTO GITHUB → FACEBOOK =================================================
+// Fetch hot/trending GitHub repos (AI/tooling focus) on a daily schedule,
+// generate a Vietnamese status via the configured LLM, and auto-post it to
+// Facebook through a dedicated background tab. All steps are gated by the
+// user-controlled `autoGithubEnabled` setting and logged for review.
+// ============================================================================
+const GITHUB_ALARM_NAME = "auto-github-post";
+const GITHUB_POSTED_KEY = "autoGithubPostedRepos"; // storage.local: string[] of full_name
+const GITHUB_LOG_KEY = "autoGithubLog";            // storage.local: log entries
+const GITHUB_MAX_POSTED = 60;
+const GITHUB_MAX_LOG = 25;
+
+// Tracks the in-flight auto-post so the content script's done-message can
+// resolve the orchestration promise. { tabId, settle }
+let pendingGithubPost = null;
+
+// AI / developer-tooling keyword filter (matched against name+desc+topics).
+const GITHUB_AI_KEYWORDS = [
+  "ai", "agent", "llm", "gpt", "genai", "generative", "machine learning",
+  "machine-learning", "deep learning", "neural", "transformer", "diffusion",
+  "rag", "prompt", "chatbot", "copilot", "assistant", "inference", "embedding",
+  "vector", "semantic", "nlp", "mcp", "sdk", "cli", "framework", "toolkit",
+  "devtool", "dev tool", "automation", "workflow", "openai", "anthropic",
+  "claude", "gemini", "llama", "mistral", "ollama", "langchain", "fine-tune",
+  "finetune", "speech", "vision", "tts", "stt", "text-to", "image generation",
+];
+
+function ghMatchesFocus(repo, focus) {
+  if (focus !== "ai") return true;
+  const hay = (
+    (repo.name || "") + " " +
+    (repo.full_name || "") + " " +
+    (repo.description || "") + " " +
+    (Array.isArray(repo.topics) ? repo.topics.join(" ") : "")
+  ).toLowerCase();
+  return GITHUB_AI_KEYWORDS.some((k) => hay.includes(k));
+}
+
+async function fetchHotGithubRepos(focus, minStars) {
+  // Most-starred repos CREATED in the last 21 days ≈ "hot/trending recently".
+  const sinceDate = new Date(Date.now() - 21 * 86400000)
+    .toISOString()
+    .slice(0, 10);
+  const stars = Math.max(1, parseInt(minStars, 10) || 30);
+  const q = "created:>" + sinceDate + " stars:>=" + stars;
+  const url =
+    "https://api.github.com/search/repositories?q=" +
+    encodeURIComponent(q) +
+    "&sort=stars&order=desc&per_page=50";
+  const resp = await fetchWithTimeout(
+    url,
+    {
+      headers: {
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    },
+    30000,
+  );
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => "");
+    throw new Error(
+      "GitHub API " + resp.status + (body ? ": " + body.slice(0, 140) : ""),
+    );
+  }
+  const data = await resp.json();
+  const items = Array.isArray(data.items) ? data.items : [];
+  return items.filter((r) => ghMatchesFocus(r, focus));
+}
+
+function buildRepoUserMessage(repo) {
+  const topics =
+    Array.isArray(repo.topics) && repo.topics.length
+      ? repo.topics.slice(0, 8).join(", ")
+      : "(không có)";
+  // Frame the repo metadata as "content to summarize" so the shared summary
+  // prompt (getSystemPrompt) treats it the same as any other source: produce a
+  // hook title on line 1 + a short narrative body. The link goes in the first
+  // comment, so we do NOT ask for a URL in the body.
+  return [
+    "Đây là một dự án mã nguồn mở GitHub đang được chú ý. Hãy viết status giới thiệu dự án dựa CHÍNH XÁC trên thông tin dưới đây (không bịa thêm tính năng/số liệu). KHÔNG chèn URL vào bài (link sẽ để ở bình luận).",
+    "",
+    "Tên repo: " + (repo.full_name || repo.name || ""),
+    "Mô tả: " + (repo.description || "(không có mô tả)"),
+    "Ngôn ngữ chính: " + (repo.language || "N/A"),
+    "Số sao: " + (repo.stargazers_count || 0),
+    "Chủ đề: " + topics,
+  ].join("\n");
+}
+
+async function generateRepoStatus(repo) {
+  const keyInfo = await getAvailableKey();
+  if (!keyInfo || !keyInfo.key) {
+    if (keyInfo && keyInfo.allLimited) {
+      throw new Error(
+        "Tất cả API key đang bị giới hạn — thử lại sau ~" +
+          keyInfo.waitMinutes +
+          " phút.",
+      );
+    }
+    throw new Error("Chưa có API key — thêm key trong popup trước.");
+  }
+  const nonStreamFns = {
+    groq: callGroqNonStream,
+    gemini: callGeminiNonStream,
+    cerebras: callCerebrasNonStream,
+    sambanova: callSambanovaNonStream,
+    openrouter: callOpenrouterNonStream,
+  };
+  const callFn = nonStreamFns[keyInfo.provider] || callGroqNonStream;
+  const userMessage = buildRepoUserMessage(repo);
+  // Reuse the SAME summary prompt machinery as the manual FB-status feature.
+  // It emits the title on line 1 in normal case; StatusFormatter uppercases it
+  // and appends the footer on the content side (parity with normal posts).
+  const systemPrompt = await getSystemPrompt(
+    "summary",
+    null, // source site — no platform hint (origin is GitHub, not a feed)
+    "", // author
+    repo.html_url || "",
+    repo.full_name || repo.name || "",
+    "GitHub",
+    null, // tone
+  );
+  const out = await callFn(keyInfo.key, userMessage, systemPrompt);
+  const text = (out || "").trim();
+  if (!text) throw new Error("LLM trả về nội dung rỗng.");
+  return text;
+}
+
+function waitForTabComplete(tabId, timeoutMs = 40000) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      try {
+        chrome.tabs.onUpdated.removeListener(listener);
+      } catch (_) {}
+      resolve(ok);
+    };
+    const listener = (id, info) => {
+      if (id === tabId && info.status === "complete") finish(true);
+    };
+    chrome.tabs.onUpdated.addListener(listener);
+    chrome.tabs.get(tabId, (t) => {
+      if (chrome.runtime.lastError) return finish(false);
+      if (t && t.status === "complete") finish(true);
+    });
+    setTimeout(() => finish(false), timeoutMs);
+  });
+}
+
+// Open a dedicated background Facebook tab, run the auto-post there, then close
+// it. A dedicated tab avoids hijacking the user's active Facebook session.
+async function postToFacebookViaTab(payload) {
+  const tab = await chrome.tabs.create({
+    url: "https://www.facebook.com/",
+    active: false,
+  });
+  const tabId = tab.id;
+  await waitForTabComplete(tabId, 45000);
+  // Let the feed hydrate (composer + main area render).
+  await new Promise((r) => setTimeout(r, 6000));
+
+  const message = {
+    action: "auto-github-post",
+    text: payload.text,
+    url: payload.url,
+    image: payload.image || "",
+  };
+
+  const result = await new Promise((resolve) => {
+    let settled = false;
+    const settle = (res) => {
+      if (settled) return;
+      settled = true;
+      pendingGithubPost = null;
+      resolve(res);
+    };
+    pendingGithubPost = { tabId, settle };
+    // Content scripts auto-load on facebook.com; fall back to manual injection.
+    chrome.tabs
+      .sendMessage(tabId, message)
+      .catch(() => injectAndSend(tabId, message));
+    // Posting + source comment can take ~60–90s; allow generous headroom.
+    setTimeout(
+      () => settle({ ok: false, message: "Quá hạn chờ đăng (timeout)." }),
+      150000,
+    );
+  });
+
+  // Close the dedicated tab after a short grace period.
+  setTimeout(() => {
+    chrome.tabs.remove(tabId).catch(() => {});
+  }, 8000);
+  return result;
+}
+
+async function ghAppendLog(entry) {
+  const local = await chrome.storage.local.get([GITHUB_LOG_KEY]);
+  const log = local[GITHUB_LOG_KEY] || [];
+  log.unshift(entry);
+  await chrome.storage.local.set({ [GITHUB_LOG_KEY]: log.slice(0, GITHUB_MAX_LOG) });
+}
+
+// trigger: 'schedule' (alarm) | 'manual' (popup button)
+async function runGithubAutoPost(trigger) {
+  const t0 = Date.now();
+  const settings = await chrome.storage.sync.get([
+    "labsAutomationEnabled",
+    "autoGithubEnabled",
+    "autoGithubFocus",
+    "autoGithubMinStars",
+  ]);
+  // Labs risk gate required for BOTH schedule and manual
+  if (!settings.labsAutomationEnabled) {
+    logger.info("Auto-GitHub blocked — Labs automation not enabled.");
+    return {
+      ok: false,
+      message: "Labs automation chưa bật. Bật trong popup và xác nhận rủi ro.",
+    };
+  }
+  if (trigger === "schedule" && !settings.autoGithubEnabled) {
+    logger.info("Auto-GitHub disabled — skipping scheduled run.");
+    return { ok: false, message: "Tính năng đang tắt." };
+  }
+  const focus = settings.autoGithubFocus || "ai";
+  const minStars = settings.autoGithubMinStars || 30;
+
+  let result;
+  try {
+    const repos = await fetchHotGithubRepos(focus, minStars);
+    const local = await chrome.storage.local.get([GITHUB_POSTED_KEY]);
+    const postedArr = local[GITHUB_POSTED_KEY] || [];
+    const posted = new Set(postedArr);
+    const pick = repos.find((r) => r.full_name && !posted.has(r.full_name));
+    if (!pick) {
+      result = {
+        ok: false,
+        message:
+          repos.length === 0
+            ? "Không tìm thấy repo hot phù hợp (thử hạ số sao tối thiểu)."
+            : "Các repo hot hiện tại đều đã đăng — chờ repo mới.",
+      };
+    } else {
+      const status = await generateRepoStatus(pick);
+      // GitHub social-preview card (repo name, description, stars, language,
+      // contributors) — acts as the repo "screenshot". First path segment is a
+      // cache-busting token and can be any value.
+      const ogImage =
+        "https://opengraph.githubassets.com/" +
+        Date.now() +
+        "/" +
+        (pick.full_name || "");
+      const postRes = await postToFacebookViaTab({
+        text: status,
+        url: pick.html_url,
+        image: ogImage,
+      });
+      if (postRes.ok) {
+        const arr = postedArr.concat(pick.full_name).slice(-GITHUB_MAX_POSTED);
+        await chrome.storage.local.set({ [GITHUB_POSTED_KEY]: arr });
+        result = {
+          ok: true,
+          repo: pick.full_name,
+          url: pick.html_url,
+          message: "Đã đăng: " + pick.full_name,
+        };
+      } else {
+        result = {
+          ok: false,
+          repo: pick.full_name,
+          url: pick.html_url,
+          message: postRes.message || "Đăng thất bại.",
+        };
+      }
+    }
+  } catch (e) {
+    result = { ok: false, message: e?.message || String(e) };
+  }
+
+  await ghAppendLog({ ts: Date.now(), trigger, ...result }).catch(() => {});
+  logger.info(
+    "Auto-GitHub run (" +
+      trigger +
+      ") done in " +
+      (Date.now() - t0) +
+      "ms: " +
+      result.message,
+  );
+  return result;
+}
+
+function parseHHMM(s) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec((s || "09:00").trim());
+  let h = m ? parseInt(m[1], 10) : 9;
+  let min = m ? parseInt(m[2], 10) : 0;
+  if (isNaN(h) || h < 0 || h > 23) h = 9;
+  if (isNaN(min) || min < 0 || min > 59) min = 0;
+  return { h, min };
+}
+
+async function ensureGithubAlarm() {
+  if (!chrome?.alarms) return;
+  const s = await chrome.storage.sync.get([
+    "labsAutomationEnabled",
+    "autoGithubEnabled",
+    "autoGithubTime",
+  ]);
+  // Clear alarm if Labs off even when autoGithubEnabled is still true
+  if (!s.labsAutomationEnabled || !s.autoGithubEnabled) {
+    try {
+      await chrome.alarms.clear(GITHUB_ALARM_NAME);
+    } catch (_) {}
+    logger.info(
+      "Auto-GitHub alarm cleared — labs=" +
+        !!s.labsAutomationEnabled +
+        " auto=" +
+        !!s.autoGithubEnabled,
+    );
+    return;
+  }
+  const { h, min } = parseHHMM(s.autoGithubTime);
+  const now = new Date();
+  const next = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    h,
+    min,
+    0,
+    0,
+  );
+  if (next.getTime() <= now.getTime()) next.setDate(next.getDate() + 1);
+  chrome.alarms.create(GITHUB_ALARM_NAME, {
+    when: next.getTime(),
+    periodInMinutes: 1440,
+  });
+  logger.info("Auto-GitHub alarm set for " + next.toLocaleString());
+}
+
+// Safe Labs migration + arm alarm on service-worker load (covers SW restarts).
+migrateLabsAutomationGate()
+  .catch((e) => logger.warn("Labs migration (load) failed:", e?.message || e))
+  .then(() => ensureGithubAlarm())
+  .catch((e) => logger.warn("ensureGithubAlarm (load) failed:", e?.message || e));

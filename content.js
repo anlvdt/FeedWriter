@@ -5,7 +5,24 @@
 // Author: Le An (anlvdt)
 
 let MIN_LEN = 400;
+/** Min chars for summarize / floating toolbar (feed injection still uses MIN_LEN). */
+const SUMMARIZE_MIN_CHARS = 50;
 let isBlocked = false;
+
+function isMacPlatform() {
+  try {
+    if (navigator.userAgentData && navigator.userAgentData.platform) {
+      return /mac/i.test(navigator.userAgentData.platform);
+    }
+  } catch (_) {}
+  return /Mac|iPhone|iPad|iPod/i.test(
+    navigator.platform || navigator.userAgent || "",
+  );
+}
+
+function modKeyLabel() {
+  return isMacPlatform() ? "\u2318" : "Ctrl";
+}
 const DEFAULT_SOURCE_TEMPLATE = "• Nguồn bài viết: {platform} {author} {source}\n  {link}";
 let globalSourceTemplate = DEFAULT_SOURCE_TEMPLATE;
 let globalCustomSourceLink = "";
@@ -296,9 +313,28 @@ function scanAffiliatePosts() {
     ...root.querySelectorAll('[data-virtualized]'),
     ...root.querySelectorAll('div[data-pagelet^="FeedUnit"]'),
   ];
+  const useIO = !!postObserver;
+  let evaluated = 0;
 
   for (const article of candidates) {
     if (affiliatePostsHidden.has(article)) continue;
+
+    const isNew = !article.dataset.fbsObserved;
+    if (postObserver && isNew) {
+      article.dataset.fbsObserved = "1";
+      postObserver.observe(article);
+    }
+
+    // IO-gate: skip expensive evaluatePostSignals for off-screen, already-evaluated posts
+    if (
+      useIO &&
+      !isNew &&
+      !visiblePosts.has(article) &&
+      article.dataset.fbsEvalFingerprint
+    ) {
+      continue;
+    }
+
     const evalFingerprint = hashText((article.innerText || article.textContent || "").trim());
     if (article.dataset.fbsEvalFingerprint === evalFingerprint) continue;
 
@@ -319,6 +355,7 @@ function scanAffiliatePosts() {
 
     article.dataset.fbsEvalFingerprint = evalFingerprint;
     telemetry.postsScanned++;
+    evaluated++;
 
     const evalResult = window.fbsEvaluatePostSignals(article);
 
@@ -343,6 +380,10 @@ function scanAffiliatePosts() {
     }
   }
 
+  if (typeof scanPerfCounts !== "undefined" && scanPerfCounts) {
+    scanPerfCounts.affiliateEvaluated = evaluated;
+    scanPerfCounts.affiliateCandidates = candidates.length;
+  }
   saveTelemetry();
 }
 
@@ -514,6 +555,21 @@ let backdrop = null,
 let isSummarizing = false,
   currentPort = null;
 
+function getPanelFocusables() {
+  if (!panel) return [];
+  return Array.from(
+    panel.querySelectorAll(
+      'button, [href], input, select, textarea, [role="button"][tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter((el) => {
+    if (el.disabled) return false;
+    const style = window.getComputedStyle(el);
+    if (style.display === "none" || style.visibility === "hidden") return false;
+    if (el.offsetParent === null && style.position !== "fixed") return false;
+    return true;
+  });
+}
+
 function ensureOverlay() {
   if (panel && panel.isConnected) return;
   backdrop = document.createElement("div");
@@ -521,8 +577,12 @@ function ensureOverlay() {
   document.body.appendChild(backdrop);
   backdrop.addEventListener("click", closeOverlay);
 
+  const mod = modKeyLabel();
   panel = document.createElement("div");
   panel.className = "fbs-panel";
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-modal", "true");
+  panel.setAttribute("aria-label", "FeedWriter");
   panel.innerHTML =
     '<div class="fbs-panel-head"><span><img src="' +
     ICON_BASE64 +
@@ -539,12 +599,12 @@ function ensureOverlay() {
     '<div class="fbs-panel-footer">' +
     '<div class="fbs-shortcuts-hint">' +
       '<div class="fbs-shortcut-item">' +
-        '<span class="fbs-shortcut-key">Ctrl</span>' +
+        '<span class="fbs-shortcut-key">' + mod + '</span>' +
         '<span class="fbs-shortcut-key">C</span>' +
         '<span class="fbs-shortcut-label">Copy</span>' +
       '</div>' +
       '<div class="fbs-shortcut-item">' +
-        '<span class="fbs-shortcut-key">Ctrl</span>' +
+        '<span class="fbs-shortcut-key">' + mod + '</span>' +
         '<span class="fbs-shortcut-key">E</span>' +
         '<span class="fbs-shortcut-label">Sửa</span>' +
       '</div>' +
@@ -553,9 +613,9 @@ function ensureOverlay() {
         '<span class="fbs-shortcut-label">Đóng</span>' +
       '</div>' +
     '</div>' +
-    '<div style="display:flex;gap:8px;">' +
-    '<div class="fbs-footer-left" style="display:flex;gap:8px;">' +
-      '<button class="fbs-edit-btn" title="Chỉnh sửa (Ctrl+E)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>' +
+    '<div class="fbs-footer-row">' +
+    '<div class="fbs-footer-left fbs-footer-secondary">' +
+      '<button class="fbs-edit-btn" title="Chỉnh sửa (' + mod + '+E)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>' +
       '<button class="fbs-stop-btn" title="Dừng stream"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg></button>' +
       '<select class="fbs-model-select" title="Chọn provider">' +
         '<option value="">Auto</option>' +
@@ -567,16 +627,16 @@ function ensureOverlay() {
       '</select>' +
       '<button class="fbs-regen-btn" title="Viết lại"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M21 13a9 9 0 1 1-3-7.7L21 8"/></svg></button>' +
     '</div>' +
-    '<div class="fbs-footer-right" style="display:flex;gap:10px;">' +
-      '<button class="fbs-copy-btn" title="Copy (Ctrl+C)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy</button>' +
-      '<button class="fbs-post-status-btn" style="display:none; padding:8px 18px; font-size:13px; font-weight:600; border-radius:8px; border:none; background:linear-gradient(135deg, #00b894, #00cec9); color:#fff; cursor:pointer;" title="Mở FB Composer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Đăng Status</button>' +
+    '<div class="fbs-footer-right fbs-footer-primary">' +
+      '<button class="fbs-copy-btn" title="Copy (' + mod + '+C)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy</button>' +
+      '<button class="fbs-post-status-btn" style="display:none" title="Mở FB Composer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Đăng Status</button>' +
     '</div>' +
     '</div>' +
     "</div>";
   document.body.appendChild(panel);
   panelBody = panel.querySelector(".fbs-panel-body");
   panel.querySelector(".fbs-close").addEventListener("click", closeOverlay);
-    panel.querySelector(".fbs-min").addEventListener("click", toggleMinimize);
+  panel.querySelector(".fbs-min").addEventListener("click", toggleMinimize);
   panel.querySelector(".fbs-copy-btn").addEventListener("click", copyResult);
   panel
     .querySelector(".fbs-post-status-btn")
@@ -595,6 +655,24 @@ function ensureOverlay() {
       const { text, type, _element } = lastSummarizeParams;
       summarizeText(text, type, _element, tone);
     });
+  });
+
+  // Simple focus trap: Tab cycles within the dialog
+  panel.addEventListener("keydown", (e) => {
+    if (e.key !== "Tab" || !panel.classList.contains("fbs-visible")) return;
+    const focusables = getPanelFocusables();
+    if (focusables.length === 0) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (e.shiftKey) {
+      if (document.activeElement === first || !panel.contains(document.activeElement)) {
+        e.preventDefault();
+        last.focus();
+      }
+    } else if (document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
   });
 }
 
@@ -729,6 +807,7 @@ function regenerate() {
 
 function openOverlay(html, streaming, type = "summary") {
   ensureOverlay();
+  const newlyOpened = !panel.classList.contains("fbs-visible");
   const titleText = panel.querySelector(".fbs-title-text");
   if (titleText) {
     if (type === "affiliate") titleText.textContent = "Chế bài Affiliate";
@@ -812,6 +891,16 @@ function openOverlay(html, streaming, type = "summary") {
   }
   if (streaming && panelBody.scrollHeight - panelBody.scrollTop < 500)
     panelBody.scrollTop = panelBody.scrollHeight;
+
+  // a11y: focus close (or first focusable) when panel first opens
+  if (newlyOpened) {
+    requestAnimationFrame(() => {
+      if (!panel || !panel.classList.contains("fbs-visible")) return;
+      const closeBtn = panel.querySelector(".fbs-close");
+      const target = closeBtn || getPanelFocusables()[0];
+      if (target && typeof target.focus === "function") target.focus();
+    });
+  }
 }
 
 
@@ -880,20 +969,6 @@ function copyResult() {
       lines[0] = lines[0].toUpperCase();
     }
     text = lines.join("\n");
-  }
-
-  // Add Shopee products to copied text if available
-  if (currentShopeeProducts && currentShopeeProducts.length > 0 && typeof window.formatSingleProduct === 'function') {
-    console.log('[FeedWriter] Adding Shopee product to copy:', currentShopeeProducts[0]);
-    try {
-      const productText = window.formatSingleProduct(currentShopeeProducts[0]);
-      console.log('[FeedWriter] Product text:', productText);
-      text = text + productText;
-    } catch (error) {
-      console.error('[FeedWriter] Error formatting product for copy:', error);
-    }
-  } else {
-    console.log('[FeedWriter] No Shopee products to add');
   }
 
   navigator.clipboard.writeText(text).then(() => {
@@ -1021,6 +1096,7 @@ async function handlePostStatus() {
 document.addEventListener("keydown", (e) => {
   // Close panel with Escape
   if (e.key === "Escape") {
+    if (floatingToolbar) floatingToolbar.classList.remove("fbs-visible");
     closeOverlay();
     return;
   }
@@ -1029,16 +1105,18 @@ document.addEventListener("keydown", (e) => {
   const panel = document.querySelector(".fbs-panel.fbs-visible");
   if (!panel) return;
 
-  // Copy with Ctrl+C (when not in input/textarea)
-  if (e.ctrlKey && e.key === "c" && !["INPUT", "TEXTAREA"].includes(e.target.tagName)) {
+  const mod = e.ctrlKey || e.metaKey;
+
+  // Copy with Ctrl/⌘+C (when not in input/textarea)
+  if (mod && e.key === "c" && !["INPUT", "TEXTAREA"].includes(e.target.tagName)) {
     e.preventDefault();
     const copyBtn = panel.querySelector(".fbs-copy-btn");
     if (copyBtn) copyBtn.click();
     return;
   }
 
-  // Edit with Ctrl+E
-  if (e.ctrlKey && e.key === "e") {
+  // Edit with Ctrl/⌘+E
+  if (mod && e.key === "e") {
     e.preventDefault();
     const editBtn = panel.querySelector(".fbs-edit-btn");
     if (editBtn && editBtn.style.display !== "none") editBtn.click();
@@ -1088,7 +1166,7 @@ function cleanSourceUrl(rawUrl) {
 
 
 
-function buildCommentText(cleanUrl, author, source) {
+function buildCommentText(cleanUrl, author, source, options = {}) {
   const isValidName = (n) =>
     n && n.length >= 2 && n.length < 80 && !/[a-f0-9]{10,}/i.test(n) && !/\d{8,}/.test(n);
 
@@ -1132,7 +1210,9 @@ function buildCommentText(cleanUrl, author, source) {
 
   out = out.replaceAll("{link}", linkStr);
 
-  const relatedLinks = Array.isArray(globalRelatedSourceLinks)
+  const relatedLinks = Array.isArray(options.relatedLinks)
+    ? options.relatedLinks
+    : Array.isArray(globalRelatedSourceLinks)
     ? globalRelatedSourceLinks
     : [];
   const normalizedSourceUrl = typeof window.fbsCleanRelatedUrl === "function"
@@ -1161,16 +1241,6 @@ function buildCommentText(cleanUrl, author, source) {
   // Cleanup extra spaces but preserve intentional line breaks
   out = out.split('\n').map(line => line.replace(/\s+/g, ' ').trim()).filter(line => line).join('\n');
   if (!out) out = "📌 NGUỒN THAM KHẢO:\n· Link gốc: " + linkStr;
-
-  // Add Shopee product if available
-  if (currentShopeeProducts && currentShopeeProducts.length > 0 && typeof window.formatSingleProduct === 'function') {
-    try {
-      const productText = window.formatSingleProduct(currentShopeeProducts[0]);
-      out += productText;
-    } catch (error) {
-      console.error('[FeedWriter] Error adding Shopee to source:', error);
-    }
-  }
 
   // Strip any markdown bold/italic asterisks to ensure clean copy in comments
   out = out.replace(/\*\*/g, "").replace(/\*/g, "");
@@ -1215,7 +1285,8 @@ window.fbsExtractPermalinkAsync = async function (element) {
         shareBtn.click();
         await new Promise(r => setTimeout(r, 800));
 
-        const dialog = document.querySelector('div[role="dialog"]');
+        // Exclude FeedWriter panel (also role=dialog) from FB share dialog lookup
+        const dialog = document.querySelector('div[role="dialog"]:not(.fbs-panel)');
         if (dialog) {
            let copyBtn = null;
            const spans = Array.from(dialog.querySelectorAll('span[dir="auto"], div[dir="auto"]'));
@@ -1234,7 +1305,7 @@ window.fbsExtractPermalinkAsync = async function (element) {
              const newClip = await navigator.clipboard.readText().catch(() => "");
              if (newClip && newClip.includes("facebook.com") && newClip !== oldClip) {
                try {
-                 const closeBtn = document.querySelector('div[role="dialog"] [aria-label="Đóng"][role="button"], div[role="dialog"] [aria-label="Close"][role="button"]');
+                 const closeBtn = document.querySelector('div[role="dialog"]:not(.fbs-panel) [aria-label="Đóng"][role="button"], div[role="dialog"]:not(.fbs-panel) [aria-label="Close"][role="button"]');
                  if (closeBtn) closeBtn.click();
                } catch (_) {}
 
@@ -1244,7 +1315,7 @@ window.fbsExtractPermalinkAsync = async function (element) {
            }
            
            try {
-             const closeBtn = document.querySelector('div[role="dialog"] [aria-label="Đóng"][role="button"], div[role="dialog"] [aria-label="Close"][role="button"]');
+             const closeBtn = document.querySelector('div[role="dialog"]:not(.fbs-panel) [aria-label="Đóng"][role="button"], div[role="dialog"]:not(.fbs-panel) [aria-label="Close"][role="button"]');
              if (closeBtn) closeBtn.click();
              else document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", keyCode: 27, bubbles: true }));
            } catch (_) {}
@@ -1690,18 +1761,34 @@ async function processBatchNext() {
 }
 
 async function processSingleText(text, type) {
+  let settings = {};
+  try {
+    settings = await new Promise((r) =>
+      chrome.storage.sync.get(
+        ["summaryLength", "promptStyle", "outputLanguage"],
+        r,
+      ),
+    );
+  } catch (_) {
+    settings = {};
+  }
   return new Promise((resolve, reject) => {
     chrome.runtime.sendMessage(
       {
         action: "summarize",
         text: text,
         type: type,
-        summaryLength: "medium",
-        promptStyle: "default"
+        summaryLength: settings.summaryLength || "medium",
+        promptStyle: settings.promptStyle || "default",
+        outputLanguage: settings.outputLanguage || "auto",
       },
       (response) => {
-        if (response && response.success) {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+        } else if (response && response.success && response.result) {
           resolve(response.result);
+        } else if (response && typeof response.summary === "string" && response.summary.trim()) {
+          resolve(response.summary);
         } else {
           reject(new Error(response?.error || "Unknown error"));
         }
@@ -1824,10 +1911,13 @@ function showBatchResults() {
 }
 
 async function summarizeText(text, type = "summary", contextElement = null, tone = null) {
-  if (!text || text.length < 50) {
+  if (!text || text.length < SUMMARIZE_MIN_CHARS) {
     openOverlay(
-      '<div class="fbs-error">Text quá ngắn để tóm tắt.</div>',
+      '<div class="fbs-error">Text quá ngắn để tóm tắt (tối thiểu ' +
+        SUMMARIZE_MIN_CHARS +
+        " ký tự).</div>",
       false,
+      type,
     );
     return;
   }
@@ -2163,8 +2253,24 @@ chrome.runtime.onMessage.addListener((msg) => {
         false,
       );
   }
+  if (msg.action === "auto-github-post") {
+    // Triggered by the background scheduler in a dedicated FB tab.
+    if (typeof window.fbsGithubAutoPost === "function") {
+      window.fbsGithubAutoPost(msg.text, msg.url, msg.image);
+    } else {
+      try {
+        chrome.runtime.sendMessage({
+          action: "github-autopost-done",
+          ok: false,
+          message: "fbsGithubAutoPost chưa sẵn sàng.",
+        });
+      } catch (_) {}
+    }
+    return;
+  }
   if (msg.action === "unshorten-result") {
     if (msg.error) {
+      finishUnshorten("✗ Bóc link lỗi", true);
       openOverlay(
         '<div class="fbs-error">' + esc(msg.error) + "</div>",
         false,
@@ -2172,14 +2278,16 @@ chrome.runtime.onMessage.addListener((msg) => {
     } else if (msg.text) {
       navigator.clipboard
         .writeText(msg.text)
-        .catch(() =>
+        .then(() => finishUnshorten("✓ Đã copy link", false))
+        .catch(() => {
+          finishUnshorten("✗ Lỗi clipboard", true);
           openOverlay(
             '<div class="fbs-error">Lỗi ghi clipboard. Link gốc là:<br><code>' +
               esc(msg.text) +
               "</code></div>",
             false,
-          ),
-        );
+          );
+        });
     }
   }
 });
@@ -2245,6 +2353,13 @@ function inject(target, seeMoreClickable, textContainer, seeMoreOriginal) {
 
   const btnEl =
     wrap.querySelector(".fbs-btn") || wrap.querySelector(".fbs-btn-inline");
+  // role="button" elements must be operable by keyboard (Enter / Space).
+  btnEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      btnEl.click();
+    }
+  });
   btnEl.addEventListener("click", async (e) => {
     e.stopPropagation();
     const type = "summary";
@@ -2328,11 +2443,17 @@ function createFloatingToolbar() {
   if (floatingToolbar) return;
   floatingToolbar = document.createElement("div");
   floatingToolbar.className = "fbs-floating-toolbar";
+  floatingToolbar.setAttribute("role", "toolbar");
+  floatingToolbar.setAttribute("aria-label", "FeedWriter — công cụ cho vùng chọn");
   floatingToolbar.innerHTML =
-    '<button class="fbs-floating-btn fbs-btn-highlight" data-action="summary"><img src="' +
+    '<button class="fbs-floating-btn fbs-btn-highlight" data-action="summary" title="Tóm tắt"><img src="' +
     ICON_BASE64 +
-    '" width="13" height="13" style="vertical-align:-2px"> Tóm tắt</button>' +
-    (SITE === "facebook" ? '<button class="fbs-floating-btn" data-action="batch" title="Chọn nhiều bài để tóm tắt (Alt+B)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Batch</button>' : '');
+    '" width="12" height="12" style="vertical-align:-2px"> Tóm tắt</button>' +
+    '<button class="fbs-floating-btn" data-action="status_share" title="Viết Status">Status</button>' +
+    '<button class="fbs-floating-btn" data-action="affiliate" title="Chế bài Affiliate">Affiliate</button>' +
+    (SITE === "facebook"
+      ? '<button class="fbs-floating-btn" data-action="batch" title="Chọn nhiều bài để tóm tắt (Alt+B)">Batch</button>'
+      : "");
   document.body.appendChild(floatingToolbar);
 
   floatingToolbar.addEventListener("mousedown", (e) => e.preventDefault());
@@ -2358,12 +2479,15 @@ function createFloatingToolbar() {
     }
   });
 
-  const scrollHandler = () => {
-    if (floatingToolbar.classList.contains("fbs-visible"))
+  const hideToolbar = () => {
+    if (floatingToolbar && floatingToolbar.classList.contains("fbs-visible"))
       floatingToolbar.classList.remove("fbs-visible");
   };
-  document.addEventListener("scroll", scrollHandler, { capture: true, passive: true });
-  listeners.push({ element: document, event: "scroll", handler: scrollHandler, options: { capture: true, passive: true } });
+  document.addEventListener("scroll", hideToolbar, { capture: true, passive: true });
+  listeners.push({ element: document, event: "scroll", handler: hideToolbar, options: { capture: true, passive: true } });
+  // A resize invalidates the stored coordinates → dismiss rather than mispoint.
+  window.addEventListener("resize", hideToolbar, { passive: true });
+  listeners.push({ element: window, event: "resize", handler: hideToolbar, options: { passive: true } });
 }
 
 function handleSelection() {
@@ -2371,7 +2495,8 @@ function handleSelection() {
   setTimeout(() => {
     const selection = window.getSelection();
     const text = selection.toString().trim();
-    if (text.length < 15 || selection.rangeCount === 0) {
+    // Gate on SUMMARIZE_MIN_CHARS (same as summarizeText), not MIN_LEN (feed inject).
+    if (text.length < SUMMARIZE_MIN_CHARS || selection.rangeCount === 0) {
       floatingToolbar.classList.remove("fbs-visible");
       return;
     }
@@ -2381,11 +2506,23 @@ function handleSelection() {
       floatingToolbar.classList.remove("fbs-visible");
       return;
     }
-    const top = rect.top + window.scrollY - 44;
-    const left = rect.left + window.scrollX + rect.width / 2 - 80;
-    floatingToolbar.style.top = top + "px";
-    floatingToolbar.style.left = left + "px";
+    // Make it visible first so we can measure its real width/height, then
+    // centre on the selection and clamp inside the viewport (never off-screen).
     floatingToolbar.classList.add("fbs-visible");
+    const tbW = floatingToolbar.offsetWidth || 160;
+    const tbH = floatingToolbar.offsetHeight || 40;
+    const M = 8;
+    let left = rect.left + rect.width / 2 - tbW / 2;
+    left = Math.max(M, Math.min(left, window.innerWidth - tbW - M));
+    let below = false;
+    let top = rect.top - tbH - 8; // preferred: above the selection
+    if (top < M) {
+      top = rect.bottom + 8; // not enough room above → flip below
+      below = true;
+    }
+    floatingToolbar.classList.toggle("fbs-below", below);
+    floatingToolbar.style.top = top + window.scrollY + "px";
+    floatingToolbar.style.left = left + window.scrollX + "px";
   }, 0);
 }
 
@@ -2409,13 +2546,17 @@ const visiblePosts = new Set();
 let postObserver = null;
 if (typeof IntersectionObserver !== "undefined") {
   postObserver = new IntersectionObserver((entries) => {
+    let becameVisible = false;
     for (const entry of entries) {
       if (entry.isIntersecting) {
+        if (!visiblePosts.has(entry.target)) becameVisible = true;
         visiblePosts.add(entry.target);
       } else {
         visiblePosts.delete(entry.target);
       }
     }
+    // Re-scan when posts enter the viewport (IO-gated scanners skip off-screen work)
+    if (becameVisible && typeof scheduleScan === "function") scheduleScan();
   }, { rootMargin: "800px 0px" });
 }
 
@@ -2430,11 +2571,21 @@ function scanFBAllPosts() {
     ...root.querySelectorAll('[data-virtualized]'),
     ...root.querySelectorAll('div[data-pagelet^="FeedUnit"]'),
   ];
+  const useIO = !!postObserver;
+  let processed = 0;
+  let skippedOffscreen = 0;
 
   for (const article of candidates) {
-    if (postObserver && !article.dataset.fbsObserved) {
+    const isNew = !article.dataset.fbsObserved;
+    if (postObserver && isNew) {
       article.dataset.fbsObserved = "1";
       postObserver.observe(article);
+    }
+
+    // IO-gate: skip re-query for off-screen posts already processed
+    if (useIO && !isNew && !visiblePosts.has(article) && fbAllPostInjected.has(article)) {
+      skippedOffscreen++;
+      continue;
     }
 
     if (fbAllPostInjected.has(article)) {
@@ -2461,6 +2612,7 @@ function scanFBAllPosts() {
     const text = (article.innerText || "").trim();
     if (text.length < MIN_LEN) continue;
     fbAllPostInjected.add(article);
+    processed++;
     const pos = getComputedStyle(article).position;
     if (pos === "static" || pos === "") article.style.position = "relative";
     const btn = document.createElement("button");
@@ -2475,6 +2627,12 @@ function scanFBAllPosts() {
     });
     article.appendChild(btn);
   }
+
+  if (typeof scanPerfCounts !== "undefined" && scanPerfCounts) {
+    scanPerfCounts.fbAllCandidates = candidates.length;
+    scanPerfCounts.fbAllInjected = processed;
+    scanPerfCounts.fbAllSkippedOffscreen = skippedOffscreen;
+  }
 }
 
 // === COMMENT THREAD SUMMARY (Feature 11) ===
@@ -2487,7 +2645,22 @@ function scanCommentSections() {
     ...root.querySelectorAll('article[role="article"]'),
     ...root.querySelectorAll('[data-virtualized]'),
   ];
+  const useIO = !!postObserver;
+  let skippedOffscreen = 0;
+
   for (const article of articles) {
+    const isNew = !article.dataset.fbsObserved;
+    if (postObserver && isNew) {
+      article.dataset.fbsObserved = "1";
+      postObserver.observe(article);
+    }
+
+    // IO-gate: skip re-query for off-screen posts already processed
+    if (useIO && !isNew && !visiblePosts.has(article) && commentBtnInjected.has(article)) {
+      skippedOffscreen++;
+      continue;
+    }
+
     // Only top-level post containers — not nested in another post
     let depth = 0;
     let ancestor = article.parentElement;
@@ -2530,6 +2703,11 @@ function scanCommentSections() {
     const firstComment = commentArticles[0];
     firstComment.parentElement?.insertBefore(btn, firstComment);
   }
+
+  if (typeof scanPerfCounts !== "undefined" && scanPerfCounts) {
+    scanPerfCounts.commentCandidates = articles.length;
+    scanPerfCounts.commentSkippedOffscreen = skippedOffscreen;
+  }
 }
 
 // === BATCH QUEUE (Feature 12) ===
@@ -2545,7 +2723,7 @@ function createBatchBar() {
   batchBar.innerHTML =
     '<span class="fbs-batch-count">0 bài đã chọn</span>' +
     '<button class="fbs-batch-run-btn">Tóm tắt tất cả</button>' +
-    '<button class="fbs-batch-cancel-btn" title="Thoát Batch Mode">✕</button>';
+    '<button class="fbs-batch-cancel-btn" title="Thoát Batch Mode" aria-label="Thoát Batch Mode">✕</button>';
   document.body.appendChild(batchBar);
   batchBar.querySelector(".fbs-batch-run-btn").addEventListener("click", runBatch);
   batchBar.querySelector(".fbs-batch-cancel-btn").addEventListener("click", exitBatchMode);
@@ -2718,6 +2896,37 @@ function scanRedditPosts() {
 }
 
 // === MAIN SCAN ===
+// "Bóc Link" runs a network fetch in the background (up to 30s) and the result
+// comes back asynchronously via the "unshorten-result" message. We track a
+// single in-flight request + its triggering pill so we can show a loading
+// state, surface success/failure on the button itself, and stop repeat clicks
+// from spawning duplicate fetches (and duplicate affiliate tabs).
+let unshortenInFlight = false;
+let activeUnshortenPill = null;
+let activeUnshortenOriginalHTML = "";
+let unshortenTimeout = null;
+
+const UNSHORTEN_PILL_STYLE =
+  "cursor:pointer;display:inline-flex;align-items:center;gap:4px;padding:0px 6px 1px;border-radius:6px;background:rgba(255,107,107,0.15);color:#ff6b6b;font-size:0.85em;font-weight:bold;margin-left:4px;";
+
+// Restore the active pill to its idle state after a brief result message.
+function finishUnshorten(message, isError) {
+  clearTimeout(unshortenTimeout);
+  unshortenInFlight = false;
+  const pill = activeUnshortenPill;
+  activeUnshortenPill = null;
+  if (!pill) return;
+  pill.style.pointerEvents = "";
+  pill.style.color = isError ? "#ff6b6b" : "#2ed573";
+  pill.textContent = message;
+  const original = activeUnshortenOriginalHTML;
+  setTimeout(() => {
+    pill.innerHTML = original;
+    pill.style.opacity = "";
+    pill.style.color = "";
+  }, 2500);
+}
+
 function scanShopeeLinks() {
   const links = document.querySelectorAll('a[href*="shope.ee/"]');
   for (const a of links) {
@@ -2725,20 +2934,45 @@ function scanShopeeLinks() {
     a.dataset.fbsUnshorten = "1";
     const btn = document.createElement("span");
     btn.innerHTML =
-      ' <span title="Bóc Link Không Cookie" style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;padding:0px 6px 1px;border-radius:6px;background:rgba(255,107,107,0.15);color:#ff6b6b;font-size:0.85em;font-weight:bold;margin-left:4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>Bóc Link</span>';
-    btn.querySelector("span").addEventListener("click", (e) => {
+      ' <span class="fbs-unshorten-pill" title="Bóc Link Không Cookie" style="' +
+      UNSHORTEN_PILL_STYLE +
+      '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>Bóc Link</span>';
+    const pill = btn.querySelector("span");
+    const originalHTML = pill.innerHTML;
+    pill.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
+      // Single in-flight: ignore clicks (this or other pills) while one runs.
+      if (unshortenInFlight) return;
+      unshortenInFlight = true;
+      activeUnshortenPill = pill;
+      activeUnshortenOriginalHTML = originalHTML;
+      pill.style.opacity = "0.65";
+      pill.style.pointerEvents = "none";
+      pill.style.color = "";
+      pill.textContent = "Đang bóc link…";
+      clearTimeout(unshortenTimeout);
+      unshortenTimeout = setTimeout(() => {
+        finishUnshorten("✗ Quá hạn — thử lại", true);
+      }, 35000);
       chrome.runtime
         .sendMessage({ action: "unshorten-shopee-inline", url: a.href })
-        .catch(() => {});
+        .catch(() => finishUnshorten("✗ Lỗi gửi yêu cầu", true));
     });
     a.insertAdjacentElement("afterend", btn);
   }
 }
 
+/** Set during a scan when localStorage.fbsDebugPerf === '1' */
+let scanPerfCounts = null;
+
 function scan() {
   if (!isContextValid() || isBlocked) return;
+  const debugPerf =
+    typeof localStorage !== "undefined" && localStorage.fbsDebugPerf === "1";
+  const t0 = debugPerf ? performance.now() : 0;
+  scanPerfCounts = debugPerf ? {} : null;
+
   if (SITE === "reddit") scanRedditPosts();
   hideFeedClutter();
   findNewSeeMoreElements().forEach(processSeeMore);
@@ -2746,6 +2980,18 @@ function scan() {
   scanCommentSections();
   scanShopeeLinks();
   scanAffiliatePosts();
+
+  if (debugPerf) {
+    console.debug(
+      "[FeedWriter] scan",
+      (performance.now() - t0).toFixed(1) + "ms",
+      {
+        visible: visiblePosts.size,
+        ...scanPerfCounts,
+      },
+    );
+  }
+  scanPerfCounts = null;
 }
 
 let scanDebounceTimer = null;
@@ -2765,8 +3011,8 @@ function scheduleScan() {
 scan();
 scheduleScan();
 
-// Safety-net: periodic scan catches posts missed by MutationObserver
-scanTimer = setInterval(scan, 5000);
+// Safety-net only: periodic scan catches posts missed by MutationObserver
+scanTimer = setInterval(scan, 15000);
 
 // Chrome throttles background tabs and Facebook may rebuild virtualized feed
 // nodes while a tab is idle. Re-scan as soon as the user returns.
@@ -2829,69 +3075,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   return false;
 });
 
-// === SHOPEE PRODUCTS INTEGRATION ===
-// Store current Shopee products for copy function
-let currentShopeeProducts = [];
-
-/**
- * Add Shopee products to summary result
- * @param {string} text - Original text to extract keywords from
- * @param {string} summaryHtml - Current summary HTML
- * @returns {Promise<string>} - Summary HTML with products appended
- */
-async function addShopeeProductsToSummary(text, summaryHtml) {
-  try {
-    console.log('[FeedWriter] addShopeeProductsToSummary called');
-
-    // Get settings
-    const settings = await new Promise(resolve => {
-      chrome.storage.sync.get(['shopeeAffiliateId', 'autoFindShopeeProducts'], resolve);
-    });
-
-    console.log('[FeedWriter] Shopee settings:', settings);
-
-    // Skip if auto-find is disabled
-    if (!settings.autoFindShopeeProducts) {
-      console.log('[FeedWriter] Auto-find Shopee products is disabled');
-      currentShopeeProducts = [];
-      return summaryHtml;
-    }
-
-    // Guard: shopee-preload.js may not have loaded successfully
-    if (typeof window.getNextProductLink !== 'function') {
-      console.warn('[FeedWriter] getNextProductLink not available — shopee-preload.js may have failed to load');
-      currentShopeeProducts = [];
-      return summaryHtml;
-    }
-
-    console.log('[FeedWriter] Getting next product link...');
-
-    // Get next product link (fast, no API calls)
-    const product = await window.getNextProductLink(settings.shopeeAffiliateId || '');
-
-    console.log('[FeedWriter] Got product:', product);
-
-    // Store product for copy function (don't display in panel)
-    currentShopeeProducts = [product];
-
-    // Return summary without product (product only appears when copying)
-    return summaryHtml;
-  } catch (error) {
-    console.error('[FeedWriter] Error adding Shopee product:', error);
-    currentShopeeProducts = [];
-    // Return original summary if error
-    return summaryHtml;
-  }
-}
-
-/**
- * Prepare an optional Shopee suggestion without touching the streaming panel.
- */
-const originalSummarizeText = summarizeText;
-summarizeText = async function(text, type, element, tone) {
-  currentShopeeProducts = [];
-  if (type === 'summary') {
-    addShopeeProductsToSummary(text, '').catch(() => {});
-  }
-  return originalSummarizeText.call(this, text, type, element, tone);
-};
+// Note: the auto-generated Shopee affiliate suggestion (search URL + aff_sid)
+// was removed — that link format does not earn commission. Affiliate links are
+// now created manually via the "Bóc Link" pill (scanShopeeLinks) which opens
+// the official Shopee custom-link generator.
