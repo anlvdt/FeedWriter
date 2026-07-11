@@ -102,17 +102,19 @@
       <div class="accordion advanced-accordion">
         <div class="accordion-header" role="button" aria-expanded="false" tabindex="0">Hỗ trợ đăng bài</div>
         <div class="accordion-content">
-          <div class="field-hint" style="margin-bottom:12px">Workflow đề xuất: lọc feed → dùng Batch để chọn bài đáng đọc → preview, chỉnh sửa và đăng thủ công.</div>
+          <div class="callout callout-info">
+            Workflow: lọc feed → Batch chọn bài → preview / sửa → đăng thủ công.
+          </div>
           <div class="field">
             <label class="checkbox-label">
               <input type="checkbox" id="hideAffiliatePosts">
               <span>Ẩn bài viết có link Affiliate</span>
             </label>
-            <div class="field-hint">Tự động ẩn các bài viết chứa link Shopee, Lazada, Tiki, TikTok Shop và các affiliate link khác.</div>
+            <div class="field-hint">Tự động ẩn Shopee, Lazada, Tiki, TikTok Shop và affiliate khác.</div>
           </div>
           <div class="fbs-shopee-settings">
-            <div class="fbs-shopee-settings-title">🛍️ Shopee Affiliate</div>
-            <div class="field-hint">Link affiliate hợp lệ phải do Shopee sinh ra. Khi gặp link <code>shope.ee</code> trên feed, bấm nút <strong>“Bóc Link”</strong> cạnh link để mở trang tạo link affiliate chính thức tại <a href="https://affiliate.shopee.vn" target="_blank" style="color: #ffa502;">affiliate.shopee.vn</a>.</div>
+            <div class="fbs-shopee-settings-title">Shopee Affiliate</div>
+            <div class="field-hint">Link hợp lệ do Shopee sinh. Gặp <code>shope.ee</code> → bấm <strong>Bóc Link</strong> → tạo tại <a href="https://affiliate.shopee.vn" target="_blank" rel="noopener">affiliate.shopee.vn</a>.</div>
           </div>
           <div class="field">
             <label for="sourceTemplate">
@@ -127,32 +129,31 @@
 
       <div class="accordion">
         <div class="accordion-header" role="button" aria-expanded="false" tabindex="0">
-          🤖 Tự động đăng repo GitHub
+          Tự động đăng repo GitHub
           <span class="fbs-hint-icon" data-tooltip="Tự động lấy repo hot trên GitHub, viết tóm tắt bằng AI và đăng status Facebook theo lịch.">?</span>
         </div>
         <div class="accordion-content">
-          <div class="field-hint" style="margin-bottom:10px;padding:8px 10px;border:1px solid #ffa502;border-radius:6px;background:rgba(255,165,2,0.08);">
-            ⚠️ <strong>Lưu ý:</strong> Tự động đăng lên Facebook có thể vi phạm chính sách chống tự động hóa của Facebook và <strong>rủi ro bị khóa/hạn chế tài khoản</strong>. Mỗi lần chạy sẽ mở một tab Facebook nền, đăng 1 repo rồi đóng lại. Cần ít nhất 1 API key &amp; đang đăng nhập Facebook.
+          <div class="callout callout-warn">
+            <strong>Rủi ro tài khoản:</strong> Auto-post Facebook có thể bị hạn chế. Mỗi lần mở tab nền, đăng 1 repo rồi đóng. Cần API key + đang đăng nhập Facebook.
           </div>
 
-          <!-- Labs / Rủi ro gate — must accept before enable/run -->
-          <div id="labsGateBox" style="margin-bottom:12px;padding:10px 12px;border:1px solid #e17055;border-radius:8px;background:rgba(225,112,85,0.08);">
-            <div style="font-weight:700;margin-bottom:6px;color:#e17055;">🧪 Labs / Rủi ro</div>
-            <div class="field-hint" style="margin-bottom:8px;">
-              Tính năng tự động đăng là <strong>Labs</strong>. Bạn phải xác nhận hiểu rủi ro trước khi bật lịch hoặc chạy thử.
+          <div id="labsGateBox" class="labs-gate">
+            <div class="labs-gate-title">Labs / Rủi ro</div>
+            <div class="field-hint labs-gate-desc">
+              Xác nhận hiểu rủi ro trước khi bật lịch hoặc chạy thử.
             </div>
-            <div class="field" style="margin-bottom:8px;">
+            <div class="field">
               <label class="checkbox-label">
                 <input type="checkbox" id="labsAutomationEnabled">
                 <span>Tôi hiểu rủi ro bị hạn chế tài khoản Facebook</span>
               </label>
             </div>
-            <div class="field" style="margin-bottom:8px;">
+            <div class="field">
               <label for="labsConfirmInput">Gõ xác nhận: <code>TOI HIEU RUI RO</code></label>
-              <input type="text" id="labsConfirmInput" placeholder="TOI HIEU RUI RO" autocomplete="off" spellcheck="false" style="width:100%;margin-top:4px;">
-              <div class="field-hint">Phải gõ đúng cụm trên (không dấu, chữ hoa) trước khi bật auto-post.</div>
+              <input type="text" id="labsConfirmInput" class="labs-confirm-input" placeholder="TOI HIEU RUI RO" autocomplete="off" spellcheck="false">
+              <div class="field-hint">Phải gõ đúng (không dấu, chữ hoa).</div>
             </div>
-            <button type="button" id="disableLabsBtn" class="btn btn-secondary" style="width:100%;border-color:#e17055;color:#e17055;">Tắt Labs ngay</button>
+            <button type="button" id="disableLabsBtn" class="btn btn-secondary btn-block btn-danger-outline">Tắt Labs ngay</button>
           </div>
 
           <div class="field">
@@ -164,7 +165,7 @@
           <div class="field">
             <label for="autoGithubTime">Giờ chạy hằng ngày</label>
             <input type="time" id="autoGithubTime" value="09:00">
-            <div class="field-hint">Theo giờ máy của bạn. Trình duyệt phải đang mở thì lịch mới chạy.</div>
+            <div class="field-hint">Theo giờ máy. Trình duyệt phải đang mở.</div>
           </div>
           <div class="field">
             <label for="autoGithubFocus">Chủ đề repo</label>
@@ -176,12 +177,12 @@
           <div class="field">
             <label for="autoGithubMinStars">Số sao tối thiểu</label>
             <input type="number" id="autoGithubMinStars" min="1" max="100000" step="1" value="30">
-            <div class="field-hint">Chỉ lấy repo (tạo trong 21 ngày gần đây) đạt tối thiểu số sao này.</div>
+            <div class="field-hint">Repo tạo trong 21 ngày gần đây.</div>
           </div>
-          <button id="runGithubNowBtn" class="btn btn-secondary" style="width:100%;margin-bottom:10px;" disabled>▶︎ Chạy ngay (test đăng 1 repo)</button>
+          <button id="runGithubNowBtn" class="btn btn-secondary btn-block" disabled>Chạy ngay (test 1 repo)</button>
           <div id="githubAutopostStatus" class="status" role="status" aria-live="polite"></div>
-          <div style="margin-top:12px;">
-            <label style="display:block;margin-bottom:6px;font-weight:600;">Nhật ký gần đây</label>
+          <div class="log-block">
+            <div class="log-block-label">Nhật ký gần đây</div>
             <div id="githubAutopostLog" class="backup-list"></div>
           </div>
         </div>
@@ -265,16 +266,36 @@
             <label for="templatePrompt">Nội dung prompt</label>
             <textarea id="templatePrompt" rows="3" placeholder="VD: Viết review ngắn gọn 2-3 câu, tập trung vào ưu điểm chính..."></textarea>
           </div>
-          <div style="display: flex; gap: 8px; margin-bottom: 12px;">
-            <button id="saveTemplateBtn" class="btn btn-primary" style="flex: 1;">Lưu Template</button>
-            <button id="clearTemplateFormBtn" class="btn btn-secondary" style="flex: 1;">Xóa Form</button>
+          <div class="btn-row">
+            <button id="saveTemplateBtn" class="btn btn-primary btn-flex">Lưu Template</button>
+            <button id="clearTemplateFormBtn" class="btn btn-secondary btn-flex">Xóa Form</button>
           </div>
           <div id="templateStatus" class="status" role="status" aria-live="polite"></div>
 
-          <div style="margin-top: 16px;">
-            <label style="display: block; margin-bottom: 8px; font-weight: 600;">Templates đã lưu</label>
+          <div class="subblock">
+            <div class="subblock-label">Templates đã lưu</div>
             <div id="templateList" class="template-list"></div>
           </div>
+        </div>
+      </div>
+
+      <!-- Settings Management -->
+      <div class="accordion advanced-accordion">
+        <div class="accordion-header" role="button" aria-expanded="false" tabindex="0">
+          Quản lý cài đặt
+          <span class="fbs-hint-icon" data-tooltip="Backup và restore cài đặt của bạn.">?</span>
+        </div>
+        <div class="accordion-content">
+          <div class="field">
+            <label>Backup &amp; Restore</label>
+            <div class="btn-row">
+              <button id="backupSettingsBtn" class="btn btn-secondary btn-flex">Backup ngay</button>
+              <button id="restoreSettingsBtn" class="btn btn-secondary btn-flex">Restore</button>
+            </div>
+            <div class="field-hint">Tự động backup khi đổi cài đặt. Giữ 5 bản gần nhất.</div>
+          </div>
+          <div id="backupList" class="backup-list"></div>
+          <div id="settingsManagementStatus" class="status" role="status" aria-live="polite"></div>
         </div>
       </div>
 
@@ -283,121 +304,107 @@
         <div id="status" class="status status-inline" role="status" aria-live="polite"></div>
       </div>
 
-      <!-- Settings Management -->
-      <div class="accordion advanced-accordion" style="margin-top:15px">
-        <div class="accordion-header" role="button" aria-expanded="false" tabindex="0">
-          Quản lý cài đặt
-          <span class="fbs-hint-icon" data-tooltip="Backup và restore cài đặt của bạn.">?</span>
+      <div id="debugPanel" class="debug-panel" style="display:none">
+        <h4 class="debug-panel-title">Test Mode Debug</h4>
+        <div class="btn-row">
+          <button id="debugTestBtn" class="btn btn-secondary btn-flex">Test kết nối</button>
+          <button id="clearCacheBtn" class="btn btn-secondary btn-flex">Clear Cache</button>
         </div>
-        <div class="accordion-content">
-          <div class="field">
-            <label>Backup & Restore</label>
-            <div style="display: flex; gap: 8px; margin-bottom: 12px;">
-              <button id="backupSettingsBtn" class="btn btn-secondary" style="flex: 1;">Backup ngay</button>
-              <button id="restoreSettingsBtn" class="btn btn-secondary" style="flex: 1;">Restore</button>
-            </div>
-            <div class="field-hint">Tự động backup khi cài đặt thay đổi. Giữ 5 backup gần nhất.</div>
-          </div>
-          <div id="backupList" class="backup-list"></div>
-          <div id="settingsManagementStatus" class="status" role="status" aria-live="polite"></div>
-        </div>
-      </div>
-
-<!-- Debug Panel (Test Mode) -->
-      <div id="debugPanel" class="debug-panel" style="display:none;margin-top:20px;padding:15px;border:1px solid #ddd;border-radius:8px;background:#f9f9f9;">
-        <h4 style="margin:0 0 10px 0;color:#666;">🧪 Test Mode Debug</h4>
-        <button id="debugTestBtn" class="btn btn-secondary" style="margin-right:10px;">Test kết nối</button>
-        <button id="clearCacheBtn" class="btn btn-secondary">Clear Cache</button>
-        <div id="debugInfo" style="margin-top:10px;font-size:12px;color:#666;"></div>
+        <div id="debugInfo" class="debug-info"></div>
       </div>
     </div>
+
     <!-- API Keys Tab -->
     <div class="tab-content" id="tab-apikeys" role="tabpanel" aria-labelledby="tabbtn-apikeys">
       <div class="section-intro">
         <strong>API Keys</strong>
-        <span>Thêm ít nhất 1 key miễn phí (Groq khuyến nghị). Hệ thống tự xoay key khi bị rate limit.</span>
+        <span>Thêm ít nhất 1 key miễn phí (Groq khuyến nghị). Tự xoay key khi rate limit.</span>
       </div>
-      <div class="field">
-        <label for="newApiKey">Thêm API Key</label>
-        <div class="input-group">
-          <input type="password" id="newApiKey" placeholder="Dán API key vào đây" autocomplete="off" autocapitalize="off" spellcheck="false">
-          <button type="button" id="toggleNewApiKey" class="icon-btn" title="Hiện / ẩn key" aria-label="Hiện hoặc ẩn API key" aria-pressed="false">👁</button>
-          <button type="button" id="addKeyBtn" class="icon-btn" title="Thêm" style="background:linear-gradient(135deg,#6c5ce7,#a855f7);color:#fff;border:none;font-size:18px">+</button>
+
+      <div class="panel-card">
+        <div class="field field-tight">
+          <label for="newApiKey">Thêm API Key</label>
+          <div class="input-group">
+            <input type="password" id="newApiKey" placeholder="Dán API key vào đây" autocomplete="off" autocapitalize="off" spellcheck="false">
+            <button type="button" id="toggleNewApiKey" class="icon-btn" title="Hiện / ẩn key" aria-label="Hiện hoặc ẩn API key" aria-pressed="false">👁</button>
+            <button type="button" id="addKeyBtn" class="icon-btn icon-btn-primary" title="Thêm" aria-label="Thêm key">+</button>
+          </div>
+          <div class="field-hint">Tự nhận provider từ prefix: Groq, Gemini, Cerebras, SambaNova, OpenRouter.</div>
         </div>
-        <div class="field-hint">Tự nhận diện provider từ key prefix. Hỗ trợ Groq, Gemini, Cerebras, SambaNova, OpenRouter.</div>
       </div>
 
-      <div class="apikey-info">
-        Tự động rotate key khi bị rate limit. Tự động chuyển provider khi tất cả key của 1 provider hết hạn.
+      <div class="callout callout-info">
+        Tự rotate key khi rate limit; chuyển provider khi hết key khả dụng.
       </div>
-      <div class="field-hint" style="margin:8px 0 10px;padding:8px 10px;border:1px solid var(--border,#2d3748);border-radius:6px;">
-        🔐 Một số tính năng (đọc clipboard, xóa cookie Shopee, tải ảnh/URL ngoài host cố định) cần <strong>quyền tùy chọn</strong> — Chrome sẽ hỏi khi bạn dùng lần đầu.
-      </div>
-
-      <div id="keyEmptyState" class="empty" style="display:none">Chưa có key nào. Dán key vào ô trên để bắt đầu.</div>
-
-      <div id="keyListGroq" class="key-list" style="display:none">
-        <div class="key-list-header">Groq <span class="key-limit-badge">100K token/ngày/key</span></div>
-        <div id="keyListGroqItems" class="key-list-items"></div>
-      </div>
-      <div id="keyListGemini" class="key-list" style="display:none;margin-top:6px">
-        <div class="key-list-header">Gemini <span class="key-limit-badge">1500 req/ngày/key</span></div>
-        <div id="keyListGeminiItems" class="key-list-items"></div>
-      </div>
-      <div id="keyListCerebras" class="key-list" style="display:none;margin-top:6px">
-        <div class="key-list-header">Cerebras <span class="key-limit-badge">1M token/ngày/key</span></div>
-        <div id="keyListCerebrasItems" class="key-list-items"></div>
-      </div>
-      <div id="keyListSambanova" class="key-list" style="display:none;margin-top:6px">
-        <div class="key-list-header">SambaNova <span class="key-limit-badge">20M token/ngày</span></div>
-        <div id="keyListSambanovaItems" class="key-list-items"></div>
-      </div>
-      <div id="keyListOpenrouter" class="key-list" style="display:none;margin-top:6px">
-        <div class="key-list-header">OpenRouter <span class="key-limit-badge">50 req/ngày free</span></div>
-        <div id="keyListOpenrouterItems" class="key-list-items"></div>
+      <div class="callout callout-muted">
+        Clipboard, cookie Shopee, fetch host ngoài cần <strong>quyền tùy chọn</strong> — Chrome hỏi lần đầu dùng.
       </div>
 
-      <button id="testBtn" class="btn btn-secondary" style="margin-top:10px">Test kết nối</button>
+      <div id="keyEmptyState" class="empty-state" style="display:none">Chưa có key. Dán key vào ô trên để bắt đầu.</div>
+
+      <div class="key-lists">
+        <div id="keyListGroq" class="key-list" style="display:none">
+          <div class="key-list-header">Groq <span class="key-limit-badge">100K token/ngày</span></div>
+          <div id="keyListGroqItems" class="key-list-items"></div>
+        </div>
+        <div id="keyListGemini" class="key-list" style="display:none">
+          <div class="key-list-header">Gemini <span class="key-limit-badge">1500 req/ngày</span></div>
+          <div id="keyListGeminiItems" class="key-list-items"></div>
+        </div>
+        <div id="keyListCerebras" class="key-list" style="display:none">
+          <div class="key-list-header">Cerebras <span class="key-limit-badge">1M token/ngày</span></div>
+          <div id="keyListCerebrasItems" class="key-list-items"></div>
+        </div>
+        <div id="keyListSambanova" class="key-list" style="display:none">
+          <div class="key-list-header">SambaNova <span class="key-limit-badge">20M token/ngày</span></div>
+          <div id="keyListSambanovaItems" class="key-list-items"></div>
+        </div>
+        <div id="keyListOpenrouter" class="key-list" style="display:none">
+          <div class="key-list-header">OpenRouter <span class="key-limit-badge">50 req/ngày free</span></div>
+          <div id="keyListOpenrouterItems" class="key-list-items"></div>
+        </div>
+      </div>
+
+      <button id="testBtn" class="btn btn-secondary btn-block">Test kết nối</button>
       <div id="keyStatus" class="status" role="status" aria-live="polite"></div>
 
-      <!-- Provider Health Panel -->
-      <div id="providerHealth" class="provider-health">
+      <div id="providerHealth" class="provider-health panel-card">
         <div class="provider-health-header">
-          <span class="provider-health-title">Trạng thái provider / key</span>
-          <button type="button" id="refreshProviderHealthBtn" class="btn btn-secondary" style="padding:4px 10px;font-size:11px;">Làm mới trạng thái</button>
-          <button type="button" id="clearRateLimitBtn" class="btn btn-secondary" style="padding:4px 10px;font-size:11px;" title="Xóa cờ rate-limit, không xóa API key">Xóa rate-limit</button>
+          <span class="provider-health-title">Trạng thái key</span>
+          <div class="provider-health-actions">
+            <button type="button" id="refreshProviderHealthBtn" class="btn btn-secondary btn-sm">Làm mới</button>
+            <button type="button" id="clearRateLimitBtn" class="btn btn-secondary btn-sm" title="Xóa cờ rate-limit, không xóa API key">Xóa rate-limit</button>
+          </div>
         </div>
         <div id="providerHealthList" class="provider-health-list">
-          <div class="field-hint">Chưa có dữ liệu. Thêm key và dùng thử, hoặc bấm làm mới.</div>
+          <div class="field-hint">Chưa có dữ liệu. Thêm key và dùng thử.</div>
         </div>
       </div>
 
-      <div class="provider-guide">
+      <div class="provider-guide panel-card">
         <div class="provider-guide-title">Lấy API Key miễn phí</div>
-        <div class="guide-step"><a href="https://console.groq.com/keys" target="_blank">Groq</a> — gsk_... / 100K token/ngày</div>
-        <div class="guide-step"><a href="https://cloud.cerebras.ai" target="_blank">Cerebras</a> — csk-... / 1M token/ngày</div>
-        <div class="guide-step"><a href="https://cloud.sambanova.ai" target="_blank">SambaNova</a> — $5 credit free / 20M token/ngày</div>
-        <div class="guide-step"><a href="https://aistudio.google.com/apikey" target="_blank">Gemini</a> — AI... / 1500 req/ngày</div>
-        <div class="guide-step"><a href="https://openrouter.ai/keys" target="_blank">OpenRouter</a> — sk-or-... / 50 req/ngày</div>
+        <a class="guide-step" href="https://console.groq.com/keys" target="_blank" rel="noopener"><strong>Groq</strong><span>gsk_… · 100K token/ngày</span></a>
+        <a class="guide-step" href="https://cloud.cerebras.ai" target="_blank" rel="noopener"><strong>Cerebras</strong><span>csk-… · 1M token/ngày</span></a>
+        <a class="guide-step" href="https://cloud.sambanova.ai" target="_blank" rel="noopener"><strong>SambaNova</strong><span>$5 credit · 20M token/ngày</span></a>
+        <a class="guide-step" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener"><strong>Gemini</strong><span>AI… · 1500 req/ngày</span></a>
+        <a class="guide-step" href="https://openrouter.ai/keys" target="_blank" rel="noopener"><strong>OpenRouter</strong><span>sk-or-… · 50 req/ngày free</span></a>
       </div>
     </div>
 
     <!-- History Tab -->
     <div class="tab-content" id="tab-history" role="tabpanel" aria-labelledby="tabbtn-history">
-      <!-- Agent Stats (Feature 7) - Redesigned -->
       <div id="agentStatsBox" class="agent-stats-widget">
         <div class="agent-stats-header">
-          <span class="agent-stats-icon">📊</span>
-          <span class="agent-stats-title">Detection Stats</span>
+          <span class="agent-stats-title">Thống kê phát hiện</span>
         </div>
         <div class="agent-stats-grid">
           <div class="agent-stat-item">
             <div class="agent-stat-value" id="statPostsToday">–</div>
-            <div class="agent-stat-label">Bài đã quét</div>
+            <div class="agent-stat-label">Đã quét</div>
           </div>
           <div class="agent-stat-item">
             <div class="agent-stat-value" id="statPostsTotal">–</div>
-            <div class="agent-stat-label">Bài bị chặn</div>
+            <div class="agent-stat-label">Bị chặn</div>
           </div>
           <div class="agent-stat-item">
             <div class="agent-stat-value" id="statSkipped">–</div>
@@ -412,16 +419,16 @@
       <div id="postTimeSuggestBox" class="post-time-suggest" style="display:none"></div>
       <div id="historyList" class="history-list"></div>
       <div id="historyDetail" class="history-detail" style="display:none">
-        <button id="historyBack" class="btn btn-secondary" style="margin-bottom:6px">← Quay lại</button>
+        <button id="historyBack" class="btn btn-secondary btn-sm history-back">← Quay lại</button>
         <div class="history-detail-date" id="historyDetailDate"></div>
         <div class="history-detail-body" id="historyDetailBody"></div>
-        <button id="historyDetailCopy" class="btn btn-secondary" style="margin-top:6px">Copy</button>
+        <button id="historyDetailCopy" class="btn btn-secondary btn-block">Copy</button>
       </div>
-      <div id="historyActions">
-        <button id="rescanBtn" class="btn btn-secondary">Quét lại feed</button>
-        <button id="exportBtn" class="btn btn-secondary">Export JSON</button>
-        <button id="exportMdBtn" class="btn btn-secondary">Export Markdown</button>
-        <button id="clearBtn" class="btn btn-danger">Xóa lịch sử</button>
+      <div id="historyActions" class="history-actions">
+        <button id="rescanBtn" class="btn btn-secondary btn-sm">Quét lại</button>
+        <button id="exportBtn" class="btn btn-secondary btn-sm">JSON</button>
+        <button id="exportMdBtn" class="btn btn-secondary btn-sm">Markdown</button>
+        <button id="clearBtn" class="btn btn-danger btn-sm">Xóa</button>
       </div>
       <div id="historyStatus" class="status" role="status" aria-live="polite"></div>
     </div>

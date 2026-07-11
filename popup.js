@@ -1066,7 +1066,8 @@ async function loadHistory() {
   actions.style.display = historyData.length > 0 ? "block" : "none";
   renderPostTimeSuggestions(historyData);
   if (historyData.length === 0) {
-    list.innerHTML = '<p class="empty">Chưa có lịch sử</p>';
+    list.innerHTML =
+      '<div class="empty-state">Chưa có lịch sử tóm tắt.<br><span class="field-hint">Tóm tắt một bài trên feed để xuất hiện tại đây.</span></div>';
     return;
   }
   list.innerHTML = historyData
