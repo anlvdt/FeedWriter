@@ -1572,19 +1572,24 @@ function calcReadTime(el) {
 
 // === BUTTONS ===
 function createBtn(stats) {
-  const d = document.createElement("div");
+  const d = document.createElement("button");
+  d.type = "button";
   d.className = "fbs-btn";
-  d.setAttribute("role", "button");
-  d.setAttribute("tabindex", "0");
+  d.setAttribute("title", "Tóm tắt nội dung bằng FeedWriter");
+  d.setAttribute("aria-label", "Tóm tắt bài viết");
   const statsHtml = stats
-    ? '<span class="fbs-btn-stats"> · ~' + stats.mins + " phút · " + stats.words.toLocaleString("vi-VN") + " từ</span>"
+    ? '<span class="fbs-btn-stats">~' +
+      stats.mins +
+      " phút · " +
+      stats.words.toLocaleString("vi-VN") +
+      " từ</span>"
     : "";
   d.innerHTML =
     '<img src="' +
     ICON_BASE64 +
-    '" width="12" height="12" style="vertical-align:-2px"><span title="Tóm tắt nội dung"> Tóm tắt' +
-    statsHtml +
-    "</span>";
+    '" width="13" height="13" alt="">' +
+    "<span>Tóm tắt</span>" +
+    statsHtml;
   return d;
 }
 
@@ -1593,24 +1598,19 @@ function createInlineBtn(stats) {
   d.className = "fbs-btn-inline";
   d.setAttribute("role", "button");
   d.setAttribute("tabindex", "0");
-  d.style.cssText =
-    "cursor:pointer;font-size:inherit;font-family:inherit;background:none;border:none;padding:0;margin:0;display:inline;line-height:inherit;vertical-align:baseline;";
+  d.setAttribute("title", "Tóm tắt nội dung bằng FeedWriter");
   const statsHtml = stats
-    ? '<span class="fbs-btn-inline-stats"> · ~' + stats.mins + " phút</span>"
+    ? '<span class="fbs-inline-stats">~' + stats.mins + " phút</span>"
     : "";
   d.innerHTML =
-    ' · <span title="Tóm tắt nội dung" style="cursor:pointer;display:inline-flex;align-items:center;gap:3px;vertical-align:baseline;color:#4fc3f7;font-weight:600;font-size:0.92em;background:rgba(79,195,247,0.13);padding:0px 6px 1px;border-radius:8px;transition:background 0.15s"><img src="' +
+    '<span class="fbs-inline-sep" aria-hidden="true">·</span>' +
+    '<span class="fbs-inline-pill">' +
+    '<img class="fbs-inline-icon" src="' +
     ICON_BASE64 +
-    '" style="width:11px;height:11px;vertical-align:-1px;flex-shrink:0">Tóm tắt' +
+    '" width="12" height="12" alt="">' +
+    "<span>Tóm tắt</span>" +
     statsHtml +
     "</span>";
-  const pill = d.querySelector("span");
-  d.addEventListener("mouseenter", () => {
-    pill.style.background = "rgba(79,195,247,0.28)";
-  });
-  d.addEventListener("mouseleave", () => {
-    pill.style.background = "rgba(79,195,247,0.13)";
-  });
   return d;
 }
 
@@ -2091,15 +2091,20 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
           ? "Đang tóm tắt bình luận..."
           : "Đang tóm tắt...";
 
-  // Show skeleton loading instead of spinner
-  const skeletonHtml = '<div class="fbs-panel-body fbs-loading">' +
+  // Skeleton loading with status label (no spinner-only dead end)
+  const skeletonHtml =
+    '<div class="fbs-loading-wrap">' +
+    '<div class="fbs-loading-status">' +
+    '<span class="fbs-spinner" aria-hidden="true"></span>' +
+    '<span class="fbs-loading-title">' +
+    esc(title) +
+    "</span></div>" +
     '<div class="fbs-skeleton fbs-skeleton-text"></div>' +
     '<div class="fbs-skeleton fbs-skeleton-text"></div>' +
     '<div class="fbs-skeleton fbs-skeleton-text"></div>' +
-    '<div class="fbs-skeleton fbs-skeleton-text"></div>' +
-    '<div class="fbs-skeleton fbs-skeleton-text"></div>' +
-    '<div style="margin-top:8px;font-size:11px;color:rgba(255,255,255,0.5);">' + title + '</div>' +
-    '</div>';
+    '<div class="fbs-skeleton fbs-skeleton-text fbs-skeleton-short"></div>' +
+    '<p class="fbs-loading-hint">AI đang viết… bạn có thể bấm Dừng nếu chờ lâu.</p>' +
+    "</div>";
 
   openOverlay(skeletonHtml, false, type);
 
@@ -2557,13 +2562,19 @@ function createFloatingToolbar() {
   floatingToolbar.setAttribute("role", "toolbar");
   floatingToolbar.setAttribute("aria-label", "FeedWriter — công cụ cho vùng chọn");
   floatingToolbar.innerHTML =
-    '<button class="fbs-floating-btn fbs-btn-highlight" data-action="summary" title="Tóm tắt"><img src="' +
+    '<div class="fbs-floating-brand" aria-hidden="true"><img src="' +
     ICON_BASE64 +
-    '" width="12" height="12" style="vertical-align:-2px"> Tóm tắt</button>' +
-    '<button class="fbs-floating-btn" data-action="status_share" title="Viết Status">Status</button>' +
-    '<button class="fbs-floating-btn" data-action="affiliate" title="Chế bài Affiliate">Affiliate</button>' +
+    '" width="14" height="14" alt=""></div>' +
+    '<button type="button" class="fbs-floating-btn fbs-btn-highlight" data-action="summary" title="Tóm tắt vùng chọn">' +
+    "<span>Tóm tắt</span></button>" +
+    '<button type="button" class="fbs-floating-btn fbs-floating-status" data-action="status_share" title="Viết Status ngôi thứ nhất">' +
+    "<span>Status</span></button>" +
+    '<button type="button" class="fbs-floating-btn fbs-floating-aff" data-action="affiliate" title="Chế bài Affiliate">' +
+    "<span>Affiliate</span></button>" +
     (SITE === "facebook"
-      ? '<button class="fbs-floating-btn" data-action="batch" title="Chọn nhiều bài để tóm tắt (Alt+B)">Batch</button>'
+      ? '<span class="fbs-floating-sep" aria-hidden="true"></span>' +
+        '<button type="button" class="fbs-floating-btn fbs-floating-batch" data-action="batch" title="Chọn nhiều bài (Alt+B)">' +
+        "<span>Batch</span></button>"
       : "");
   document.body.appendChild(floatingToolbar);
 
@@ -2731,9 +2742,15 @@ function scanFBAllPosts() {
     const pos = getComputedStyle(article).position;
     if (pos === "static" || pos === "") article.style.position = "relative";
     const btn = document.createElement("button");
+    btn.type = "button";
     btn.className = "fbs-allpost-btn";
-    btn.innerHTML = '<img src="' + ICON_BASE64 + '" width="12" height="12" style="vertical-align:-1px"> Tóm tắt';
-    btn.title = "Tóm tắt bài này";
+    btn.innerHTML =
+      '<img class="fbs-allpost-icon" src="' +
+      ICON_BASE64 +
+      '" width="13" height="13" alt="">' +
+      '<span class="fbs-allpost-label">Tóm tắt</span>';
+    btn.title = "FeedWriter — Tóm tắt bài này";
+    btn.setAttribute("aria-label", "Tóm tắt bài viết bằng FeedWriter");
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       e.preventDefault();
@@ -2801,9 +2818,15 @@ function scanCommentSections() {
     if (commentTexts.length < 2) continue;
     st.commentInjected = true;
     const btn = document.createElement("button");
+    btn.type = "button";
     btn.className = "fbs-comment-summary-btn";
-    btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg> Tóm tắt ' + commentTexts.length + ' bình luận';
-    btn.title = "Tóm tắt toàn bộ thread bình luận";
+    btn.innerHTML =
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>' +
+      "<span>Tóm tắt " +
+      commentTexts.length +
+      " bình luận</span>";
+    btn.title = "FeedWriter — Tóm tắt thread bình luận";
+    btn.setAttribute("aria-label", "Tóm tắt " + commentTexts.length + " bình luận");
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       e.preventDefault();
@@ -2835,10 +2858,19 @@ function createBatchBar() {
   if (batchBar) return;
   batchBar = document.createElement("div");
   batchBar.className = "fbs-batch-bar";
+  batchBar.setAttribute("role", "status");
   batchBar.innerHTML =
+    '<div class="fbs-batch-bar-left">' +
+    '<img class="fbs-batch-logo" src="' +
+    ICON_BASE64 +
+    '" width="16" height="16" alt="">' +
     '<span class="fbs-batch-count">0 bài đã chọn</span>' +
-    '<button class="fbs-batch-run-btn">Tóm tắt tất cả</button>' +
-    '<button class="fbs-batch-cancel-btn" title="Thoát Batch Mode" aria-label="Thoát Batch Mode">✕</button>';
+    '<span class="fbs-batch-hint">Alt+B để thoát</span>' +
+    "</div>" +
+    '<div class="fbs-batch-bar-actions">' +
+    '<button type="button" class="fbs-batch-run-btn">Tóm tắt tất cả</button>' +
+    '<button type="button" class="fbs-batch-cancel-btn" title="Thoát Batch Mode" aria-label="Thoát Batch Mode">✕</button>' +
+    "</div>";
   document.body.appendChild(batchBar);
   batchBar.querySelector(".fbs-batch-run-btn").addEventListener("click", runBatch);
   batchBar.querySelector(".fbs-batch-cancel-btn").addEventListener("click", exitBatchMode);
@@ -2846,7 +2878,11 @@ function createBatchBar() {
 
 function updateBatchBar() {
   if (!batchBar) return;
-  batchBar.querySelector(".fbs-batch-count").textContent = batchQueue.length + " bài đã chọn";
+  const n = batchQueue.length;
+  batchBar.querySelector(".fbs-batch-count").textContent =
+    n + " bài đã chọn";
+  const runBtn = batchBar.querySelector(".fbs-batch-run-btn");
+  if (runBtn) runBtn.disabled = n === 0;
 }
 
 function enterBatchMode() {
@@ -3021,9 +3057,6 @@ let activeUnshortenPill = null;
 let activeUnshortenOriginalHTML = "";
 let unshortenTimeout = null;
 
-const UNSHORTEN_PILL_STYLE =
-  "cursor:pointer;display:inline-flex;align-items:center;gap:4px;padding:0px 6px 1px;border-radius:6px;background:rgba(255,107,107,0.15);color:#ff6b6b;font-size:0.85em;font-weight:bold;margin-left:4px;";
-
 // Restore the active pill to its idle state after a brief result message.
 function finishUnshorten(message, isError) {
   clearTimeout(unshortenTimeout);
@@ -3031,14 +3064,14 @@ function finishUnshorten(message, isError) {
   const pill = activeUnshortenPill;
   activeUnshortenPill = null;
   if (!pill) return;
-  pill.style.pointerEvents = "";
-  pill.style.color = isError ? "#ff6b6b" : "#2ed573";
+  pill.classList.remove("fbs-pill-busy");
+  pill.classList.toggle("fbs-pill-error", !!isError);
+  pill.classList.toggle("fbs-pill-ok", !isError);
   pill.textContent = message;
   const original = activeUnshortenOriginalHTML;
   setTimeout(() => {
     pill.innerHTML = original;
-    pill.style.opacity = "";
-    pill.style.color = "";
+    pill.classList.remove("fbs-pill-error", "fbs-pill-ok", "fbs-pill-busy");
   }, 2500);
 }
 
@@ -3047,34 +3080,34 @@ function scanShopeeLinks() {
   for (const a of links) {
     if (a.dataset.fbsUnshorten) continue;
     a.dataset.fbsUnshorten = "1";
-    const btn = document.createElement("span");
-    btn.innerHTML =
-      ' <span class="fbs-unshorten-pill" title="Bóc Link Không Cookie" style="' +
-      UNSHORTEN_PILL_STYLE +
-      '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>Bóc Link</span>';
-    const pill = btn.querySelector("span");
+    const pill = document.createElement("button");
+    pill.type = "button";
+    pill.className = "fbs-unshorten-pill";
+    pill.title = "Mở trang tạo link affiliate Shopee chính thức";
+    pill.setAttribute("aria-label", "Bóc link Shopee affiliate");
+    pill.innerHTML =
+      '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>' +
+      "<span>Bóc Link</span>";
     const originalHTML = pill.innerHTML;
     pill.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      // Single in-flight: ignore clicks (this or other pills) while one runs.
       if (unshortenInFlight) return;
       unshortenInFlight = true;
       activeUnshortenPill = pill;
       activeUnshortenOriginalHTML = originalHTML;
-      pill.style.opacity = "0.65";
-      pill.style.pointerEvents = "none";
-      pill.style.color = "";
-      pill.textContent = "Đang bóc link…";
+      pill.classList.add("fbs-pill-busy");
+      pill.classList.remove("fbs-pill-error", "fbs-pill-ok");
+      pill.textContent = "Đang bóc…";
       clearTimeout(unshortenTimeout);
       unshortenTimeout = setTimeout(() => {
-        finishUnshorten("✗ Quá hạn — thử lại", true);
+        finishUnshorten("Quá hạn — thử lại", true);
       }, 35000);
       chrome.runtime
         .sendMessage({ action: "unshorten-shopee-inline", url: a.href })
-        .catch(() => finishUnshorten("✗ Lỗi gửi yêu cầu", true));
+        .catch(() => finishUnshorten("Lỗi gửi yêu cầu", true));
     });
-    a.insertAdjacentElement("afterend", btn);
+    a.insertAdjacentElement("afterend", pill);
   }
 }
 

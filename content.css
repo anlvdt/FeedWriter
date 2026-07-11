@@ -3327,3 +3327,554 @@ article:hover .fbs-allpost-btn,
   border-color: rgba(124, 58, 237, 0.4) !important;
   color: #6d28d9 !important;
 }
+
+/* ============================================================
+   CONTENT PAGE UI/UX WAVE — feed, toolbar, panel, composer
+   ============================================================ */
+
+/* Design tokens for content surface */
+:root {
+  --fbs-purple: #a855f7;
+  --fbs-purple-2: #6c5ce7;
+  --fbs-cyan: #4fc3f7;
+  --fbs-teal: #00cec9;
+  --fbs-panel-bg: rgba(22, 22, 36, 0.94);
+  --fbs-glass: blur(18px);
+}
+
+/* ── Corner hover button on posts ── */
+.fbs-allpost-btn {
+  position: absolute !important;
+  top: 10px !important;
+  right: 12px !important;
+  bottom: auto !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 6px 12px !important;
+  border-radius: 999px !important;
+  background: rgba(18, 16, 32, 0.88) !important;
+  color: #e9d5ff !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+  opacity: 0 !important;
+  transform: translateY(-4px) !important;
+  transition: opacity 0.18s ease, transform 0.18s ease, background 0.15s ease, box-shadow 0.15s ease !important;
+  pointer-events: none !important;
+  z-index: 20 !important;
+  border: 1px solid rgba(168, 85, 247, 0.45) !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28) !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  line-height: 1 !important;
+}
+article:hover .fbs-allpost-btn,
+[role="article"]:hover .fbs-allpost-btn,
+[data-virtualized]:hover .fbs-allpost-btn,
+div[data-pagelet^="FeedUnit"]:hover .fbs-allpost-btn {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  transform: translateY(0) !important;
+}
+.fbs-allpost-btn:hover {
+  background: linear-gradient(135deg, rgba(108, 92, 231, 0.95), rgba(168, 85, 247, 0.9)) !important;
+  color: #fff !important;
+  box-shadow: 0 8px 22px rgba(108, 92, 231, 0.45) !important;
+}
+.fbs-allpost-btn:focus-visible {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  outline: 2px solid #c084fc !important;
+  outline-offset: 2px !important;
+}
+.fbs-allpost-icon { flex-shrink: 0; border-radius: 3px; }
+.fbs-allpost-label { letter-spacing: 0.01em; }
+
+/* ── Inline "· Tóm tắt" pill after Xem thêm ── */
+.fbs-btn-inline {
+  display: inline !important;
+  cursor: pointer !important;
+  font: inherit !important;
+  vertical-align: baseline !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  background: none !important;
+}
+.fbs-inline-sep {
+  margin: 0 4px 0 2px;
+  opacity: 0.45;
+  color: inherit;
+}
+.fbs-inline-pill {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  vertical-align: baseline !important;
+  color: #38bdf8 !important;
+  font-weight: 700 !important;
+  font-size: 0.92em !important;
+  background: rgba(56, 189, 248, 0.14) !important;
+  padding: 1px 8px 2px !important;
+  border-radius: 999px !important;
+  border: 1px solid rgba(56, 189, 248, 0.28) !important;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease !important;
+  line-height: 1.35 !important;
+}
+.fbs-btn-inline:hover .fbs-inline-pill,
+.fbs-inline-pill:hover {
+  background: rgba(56, 189, 248, 0.26) !important;
+  border-color: rgba(56, 189, 248, 0.5) !important;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.12) !important;
+}
+.fbs-inline-icon {
+  width: 12px !important;
+  height: 12px !important;
+  flex-shrink: 0 !important;
+  vertical-align: -1px !important;
+  border-radius: 2px;
+}
+.fbs-inline-stats {
+  font-weight: 600;
+  opacity: 0.85;
+  font-size: 0.92em;
+  margin-left: 2px;
+}
+
+/* Floating absolute wrap button */
+.fbs-btn {
+  letter-spacing: 0.01em;
+}
+.fbs-btn-stats {
+  opacity: 0.85;
+  font-weight: 500;
+  font-size: 10px;
+  margin-left: 2px;
+}
+
+/* ── Floating selection toolbar (page) ── */
+.fbs-floating-toolbar {
+  position: absolute !important;
+  z-index: 2147483647 !important;
+  display: none !important;
+  align-items: center !important;
+  gap: 2px !important;
+  padding: 5px !important;
+  border-radius: 16px !important;
+  background: rgba(16, 16, 28, 0.96) !important;
+  border: 1px solid rgba(168, 85, 247, 0.4) !important;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.04) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  max-width: min(460px, calc(100vw - 16px)) !important;
+  flex-wrap: nowrap !important;
+  animation: fbsToolbarIn 0.16s ease-out !important;
+}
+.fbs-floating-toolbar.fbs-visible {
+  display: flex !important;
+}
+@keyframes fbsToolbarIn {
+  from { opacity: 0; transform: translateY(4px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+.fbs-floating-toolbar::after {
+  bottom: -7px !important;
+  border-width: 7px 7px 0 !important;
+  border-color: rgba(16, 16, 28, 0.96) transparent transparent transparent !important;
+  filter: drop-shadow(0 1px 0 rgba(168, 85, 247, 0.25));
+}
+.fbs-floating-toolbar.fbs-below::after {
+  top: -7px !important;
+  bottom: auto !important;
+  border-width: 0 7px 7px !important;
+  border-color: transparent transparent rgba(16, 16, 28, 0.96) transparent !important;
+}
+.fbs-floating-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-right: 2px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(108, 92, 231, 0.35), rgba(168, 85, 247, 0.25));
+  flex-shrink: 0;
+}
+.fbs-floating-brand img {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+}
+.fbs-floating-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 3px;
+  background: rgba(255, 255, 255, 0.12);
+  flex-shrink: 0;
+}
+.fbs-floating-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  background: transparent !important;
+  border: none !important;
+  color: rgba(255, 255, 255, 0.88) !important;
+  padding: 7px 11px !important;
+  border-radius: 11px !important;
+  font-size: 12px !important;
+  font-weight: 650 !important;
+  cursor: pointer !important;
+  white-space: nowrap !important;
+  transition: background 0.12s ease, color 0.12s ease, transform 0.12s ease !important;
+  line-height: 1.15 !important;
+}
+.fbs-floating-btn:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: #fff !important;
+}
+.fbs-floating-btn.fbs-btn-highlight {
+  background: linear-gradient(135deg, #6c5ce7, #a855f7) !important;
+  color: #fff !important;
+  box-shadow: 0 2px 10px rgba(108, 92, 231, 0.4) !important;
+}
+.fbs-floating-btn.fbs-btn-highlight:hover {
+  filter: brightness(1.06);
+}
+.fbs-floating-status:hover { color: #5eead4 !important; }
+.fbs-floating-aff:hover { color: #fdba74 !important; }
+.fbs-floating-batch:hover { color: #c4b5fd !important; }
+
+/* ── Comment summary chip ── */
+.fbs-comment-summary-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 7px 14px !important;
+  margin: 8px 0 6px !important;
+  border-radius: 999px !important;
+  border: 1px solid rgba(56, 189, 248, 0.35) !important;
+  background: rgba(14, 165, 233, 0.1) !important;
+  color: #38bdf8 !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  box-shadow: 0 2px 8px rgba(14, 165, 233, 0.12) !important;
+}
+.fbs-comment-summary-btn:hover {
+  background: rgba(14, 165, 233, 0.2) !important;
+  border-color: #38bdf8 !important;
+  box-shadow: 0 4px 14px rgba(14, 165, 233, 0.22) !important;
+  transform: translateY(-1px);
+}
+
+/* ── Shopee Bóc Link pill ── */
+.fbs-unshorten-pill {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  margin-left: 6px !important;
+  padding: 2px 8px 3px !important;
+  border-radius: 999px !important;
+  border: 1px solid rgba(255, 107, 107, 0.35) !important;
+  background: rgba(255, 107, 107, 0.12) !important;
+  color: #ff6b6b !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+  vertical-align: middle !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  line-height: 1.2 !important;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease !important;
+}
+.fbs-unshorten-pill:hover {
+  background: rgba(255, 107, 107, 0.22) !important;
+  border-color: rgba(255, 107, 107, 0.55) !important;
+  transform: translateY(-1px);
+}
+.fbs-unshorten-pill.fbs-pill-busy {
+  opacity: 0.7;
+  pointer-events: none;
+  cursor: wait !important;
+}
+.fbs-unshorten-pill.fbs-pill-ok {
+  color: #2ed573 !important;
+  border-color: rgba(46, 213, 115, 0.45) !important;
+  background: rgba(46, 213, 115, 0.12) !important;
+}
+.fbs-unshorten-pill.fbs-pill-error {
+  color: #ff7675 !important;
+}
+
+/* ── Batch floating bar ── */
+.fbs-batch-bar {
+  position: fixed !important;
+  bottom: 28px !important;
+  left: 50% !important;
+  transform: translateX(-50%) translateY(8px) !important;
+  background: rgba(16, 12, 32, 0.96) !important;
+  border: 1px solid rgba(168, 85, 247, 0.5) !important;
+  border-radius: 18px !important;
+  padding: 10px 12px 10px 14px !important;
+  display: none !important;
+  align-items: center !important;
+  gap: 16px !important;
+  z-index: 2147483640 !important;
+  color: #f3e8ff !important;
+  font-size: 13px !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.04) !important;
+  backdrop-filter: blur(14px) !important;
+  -webkit-backdrop-filter: blur(14px) !important;
+  min-width: 300px !important;
+  justify-content: space-between !important;
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease !important;
+}
+.fbs-batch-bar.fbs-batch-visible {
+  display: flex !important;
+  opacity: 1 !important;
+  transform: translateX(-50%) translateY(0) !important;
+}
+.fbs-batch-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.fbs-batch-logo {
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.fbs-batch-count {
+  font-weight: 800 !important;
+  color: #e9d5ff !important;
+  white-space: nowrap;
+}
+.fbs-batch-hint {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.4);
+  white-space: nowrap;
+}
+.fbs-batch-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fbs-batch-run-btn {
+  padding: 7px 16px !important;
+  border-radius: 999px !important;
+  border: none !important;
+  background: linear-gradient(135deg, #6c5ce7, #a855f7) !important;
+  color: #fff !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  cursor: pointer !important;
+  box-shadow: 0 4px 14px rgba(108, 92, 231, 0.4) !important;
+  transition: filter 0.15s ease, opacity 0.15s ease !important;
+}
+.fbs-batch-run-btn:hover:not(:disabled) { filter: brightness(1.06); }
+.fbs-batch-run-btn:disabled {
+  opacity: 0.45 !important;
+  cursor: not-allowed !important;
+}
+.fbs-batch-cancel-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: rgba(255, 255, 255, 0.7) !important;
+  cursor: pointer !important;
+  font-size: 14px !important;
+  line-height: 1 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+.fbs-batch-cancel-btn:hover {
+  background: rgba(255, 255, 255, 0.12) !important;
+  color: #fff !important;
+}
+.fbs-batch-mode article:hover,
+.fbs-batch-mode [role="article"]:hover,
+.fbs-batch-mode [data-virtualized]:hover {
+  outline: 2px solid rgba(168, 85, 247, 0.35);
+  outline-offset: -2px;
+  border-radius: 8px;
+}
+.fbs-batch-checkbox {
+  width: 20px !important;
+  height: 20px !important;
+  top: 12px !important;
+  left: 12px !important;
+  accent-color: #a855f7 !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+/* ── Panel chrome ── */
+.fbs-panel {
+  background: var(--fbs-panel-bg) !important;
+  border: 1px solid rgba(168, 85, 247, 0.38) !important;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.04) inset !important;
+}
+.fbs-panel-head {
+  padding: 14px 18px !important;
+  background: linear-gradient(180deg, rgba(168, 85, 247, 0.08), transparent) !important;
+}
+.fbs-close, .fbs-min {
+  width: 30px !important;
+  height: 30px !important;
+  border-radius: 10px !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+.fbs-close:hover, .fbs-min:hover {
+  background: rgba(255, 255, 255, 0.14) !important;
+}
+
+/* Loading skeleton state */
+.fbs-loading-wrap {
+  padding: 4px 2px 8px;
+}
+.fbs-loading-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.fbs-loading-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #e9d5ff;
+}
+.fbs-loading-hint {
+  margin-top: 12px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  line-height: 1.4;
+}
+.fbs-skeleton-short {
+  width: 55% !important;
+}
+.fbs-loading-wrap .fbs-spinner {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
+}
+
+/* Progress during stream */
+.fbs-progress-container {
+  margin-bottom: 12px !important;
+  padding: 10px 12px !important;
+  border-radius: 12px !important;
+  background: rgba(168, 85, 247, 0.08) !important;
+  border: 1px solid rgba(168, 85, 247, 0.18) !important;
+}
+.fbs-progress-bar {
+  background: linear-gradient(90deg, #6c5ce7, #a855f7, #c084fc) !important;
+  background-size: 200% 100% !important;
+  animation: fbsProgressShine 1.4s linear infinite !important;
+}
+@keyframes fbsProgressShine {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+/* ── Composer status preview ── */
+.fbs-status-preview {
+  margin-top: 10px !important;
+  border: 1px solid rgba(168, 85, 247, 0.28) !important;
+  border-radius: 14px !important;
+  background: rgba(255, 255, 255, 0.02) !important;
+  overflow: hidden !important;
+}
+.fbs-sp-step-header {
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: linear-gradient(135deg, rgba(0, 206, 201, 0.08), rgba(168, 85, 247, 0.08));
+}
+.fbs-sp-step-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: #f0e6ff;
+  letter-spacing: 0.01em;
+}
+.fbs-sp-step-desc {
+  margin-top: 4px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  line-height: 1.4;
+}
+.fbs-sp-actions {
+  display: flex !important;
+  gap: 8px !important;
+  padding: 12px 14px !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.06) !important;
+  background: rgba(0, 0, 0, 0.15) !important;
+}
+.fbs-sp-open-fb {
+  flex: 1 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  padding: 10px 16px !important;
+  border: none !important;
+  border-radius: 10px !important;
+  background: linear-gradient(135deg, #00b894, #00cec9) !important;
+  color: #fff !important;
+  font-size: 13px !important;
+  font-weight: 800 !important;
+  cursor: pointer !important;
+  box-shadow: 0 4px 16px rgba(0, 184, 148, 0.3) !important;
+  transition: filter 0.15s ease, transform 0.15s ease !important;
+}
+.fbs-sp-open-fb:hover {
+  filter: brightness(1.05);
+  transform: translateY(-1px);
+}
+.fbs-sp-back {
+  flex: 0 0 auto !important;
+  border-radius: 10px !important;
+  padding: 10px 12px !important;
+}
+
+/* Affiliate collapse indicator */
+.fbs-affiliate-indicator {
+  margin: 8px 12px !important;
+  padding: 10px 12px !important;
+  border-radius: 12px !important;
+  border: 1px dashed rgba(255, 107, 107, 0.35) !important;
+  background: rgba(255, 107, 107, 0.06) !important;
+  display: flex !important;
+  align-items: center !important;
+  flex-wrap: wrap !important;
+  gap: 6px !important;
+}
+
+/* Toast above FB chrome */
+.fbs-toast {
+  bottom: 36px !important;
+  padding: 11px 18px !important;
+  font-size: 13px !important;
+  letter-spacing: 0.01em;
+}
+
+/* Light theme: floating toolbar stays dark for contrast on FB light feed */
+html:not([data-fbs-theme]) .fbs-floating-toolbar {
+  /* keep dark glass */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fbs-floating-toolbar,
+  .fbs-allpost-btn,
+  .fbs-batch-bar,
+  .fbs-progress-bar {
+    animation: none !important;
+    transition: none !important;
+  }
+}
