@@ -41,7 +41,37 @@ let globalCustomSourceLink = "";
 let globalRelatedSourceLinks = [];
 let pendingSourceDiscovery = null;
 let scanTimer = null;
-const injected = new WeakSet();
+// Unified per-post state (replaces scattered WeakSets + dataset flags)
+// Keys are post/article DOM nodes; values are plain state objects.
+const postStateMap = new WeakMap();
+function getPostState(el) {
+  if (!el) return null;
+  let s = postStateMap.get(el);
+  if (!s) {
+    s = {
+      seeMoreInjected: false,
+      allPostInjected: false,
+      commentInjected: false,
+      affiliateHidden: false,
+      observed: false,
+      evalFingerprint: "",
+    };
+    postStateMap.set(el, s);
+  }
+  return s;
+}
+/** @deprecated use getPostState(el).seeMoreInjected — kept as thin adapter */
+const injected = {
+  has(el) {
+    return !!(el && getPostState(el).seeMoreInjected);
+  },
+  add(el) {
+    if (el) getPostState(el).seeMoreInjected = true;
+  },
+  delete(el) {
+    if (el) getPostState(el).seeMoreInjected = false;
+  },
+};
 const summaryCache = new LRUCache(50);
 const observers = []; // Store observers for cleanup
 const listeners = []; // Store event listeners for cleanup
@@ -189,7 +219,18 @@ themeObserver.observe(document.body, {
 observers.push(themeObserver);
 
 // === AFFILIATE LINK DETECTION (uses unified engine from content-dom.js) ===
-const affiliatePostsHidden = new WeakSet();
+/** @deprecated use getPostState(el).affiliateHidden */
+const affiliatePostsHidden = {
+  has(el) {
+    return !!(el && getPostState(el).affiliateHidden);
+  },
+  add(el) {
+    if (el) getPostState(el).affiliateHidden = true;
+  },
+  delete(el) {
+    if (el) getPostState(el).affiliateHidden = false;
+  },
+};
 
 // Telemetry counters
 let telemetry = {
@@ -330,26 +371,22 @@ function scanAffiliatePosts() {
   let evaluated = 0;
 
   for (const article of candidates) {
-    if (affiliatePostsHidden.has(article)) continue;
+    const st = getPostState(article);
+    if (st.affiliateHidden) continue;
 
-    const isNew = !article.dataset.fbsObserved;
+    const isNew = !st.observed;
     if (postObserver && isNew) {
-      article.dataset.fbsObserved = "1";
+      st.observed = true;
       postObserver.observe(article);
     }
 
     // IO-gate: skip expensive evaluatePostSignals for off-screen, already-evaluated posts
-    if (
-      useIO &&
-      !isNew &&
-      !visiblePosts.has(article) &&
-      article.dataset.fbsEvalFingerprint
-    ) {
+    if (useIO && !isNew && !visiblePosts.has(article) && st.evalFingerprint) {
       continue;
     }
 
     const evalFingerprint = hashText((article.innerText || article.textContent || "").trim());
-    if (article.dataset.fbsEvalFingerprint === evalFingerprint) continue;
+    if (st.evalFingerprint === evalFingerprint) continue;
 
     // Skip nested articles (comments)
     let depth = 0;
@@ -366,7 +403,7 @@ function scanAffiliatePosts() {
     }
     if (depth >= 1) continue;
 
-    article.dataset.fbsEvalFingerprint = evalFingerprint;
+    st.evalFingerprint = evalFingerprint;
     telemetry.postsScanned++;
     evaluated++;
 
@@ -412,7 +449,7 @@ function findNewSeeMoreElements() {
     if (rootEl && SITE === "facebook") {
       const candidates = rootEl.querySelectorAll('article[role="article"], [data-virtualized], div[data-pagelet^="FeedUnit"]');
       for (const c of candidates) {
-        if (!c.dataset.fbsObserved) {
+        if (!getPostState(c).observed) {
           roots.push(c);
         }
       }
@@ -2608,21 +2645,22 @@ function scanFBAllPosts() {
   let skippedOffscreen = 0;
 
   for (const article of candidates) {
-    const isNew = !article.dataset.fbsObserved;
+    const st = getPostState(article);
+    const isNew = !st.observed;
     if (postObserver && isNew) {
-      article.dataset.fbsObserved = "1";
+      st.observed = true;
       postObserver.observe(article);
     }
 
     // IO-gate: skip re-query for off-screen posts already processed
-    if (useIO && !isNew && !visiblePosts.has(article) && fbAllPostInjected.has(article)) {
+    if (useIO && !isNew && !visiblePosts.has(article) && st.allPostInjected) {
       skippedOffscreen++;
       continue;
     }
 
-    if (fbAllPostInjected.has(article)) {
+    if (st.allPostInjected) {
       if (article.querySelector(".fbs-allpost-btn")) continue;
-      fbAllPostInjected.delete(article);
+      st.allPostInjected = false;
     }
     // Skip if already has a regular fbs button
     if (article.querySelector(".fbs-wrap, .fbs-btn, .fbs-btn-inline, .fbs-allpost-btn")) continue;
@@ -2640,10 +2678,13 @@ function scanFBAllPosts() {
       anc = anc.parentElement;
     }
     if (depth >= 1) continue; // nested = comment/reply
-    if (isSponsored(article)) { fbAllPostInjected.add(article); continue; }
+    if (isSponsored(article)) {
+      st.allPostInjected = true;
+      continue;
+    }
     const text = (article.innerText || "").trim();
     if (text.length < MIN_LEN) continue;
-    fbAllPostInjected.add(article);
+    st.allPostInjected = true;
     processed++;
     const pos = getComputedStyle(article).position;
     if (pos === "static" || pos === "") article.style.position = "relative";
@@ -2668,7 +2709,6 @@ function scanFBAllPosts() {
 }
 
 // === COMMENT THREAD SUMMARY (Feature 11) ===
-const commentBtnInjected = new WeakSet();
 function scanCommentSections() {
   if (SITE !== "facebook") return;
   const root = document.querySelector('div[role="main"]') || document.querySelector('div[id^="mount_0_0"]') || document.body;
@@ -2681,14 +2721,15 @@ function scanCommentSections() {
   let skippedOffscreen = 0;
 
   for (const article of articles) {
-    const isNew = !article.dataset.fbsObserved;
+    const st = getPostState(article);
+    const isNew = !st.observed;
     if (postObserver && isNew) {
-      article.dataset.fbsObserved = "1";
+      st.observed = true;
       postObserver.observe(article);
     }
 
     // IO-gate: skip re-query for off-screen posts already processed
-    if (useIO && !isNew && !visiblePosts.has(article) && commentBtnInjected.has(article)) {
+    if (useIO && !isNew && !visiblePosts.has(article) && st.commentInjected) {
       skippedOffscreen++;
       continue;
     }
@@ -2702,9 +2743,9 @@ function scanCommentSections() {
       ancestor = ancestor.parentElement;
     }
     if (depth >= 1) continue; // nested = not a top-level post
-    if (commentBtnInjected.has(article)) {
+    if (st.commentInjected) {
       if (article.querySelector(".fbs-comment-summary-btn")) continue;
-      commentBtnInjected.delete(article);
+      st.commentInjected = false;
     }
     // Check for comment articles inside this post
     const commentArticles = article.querySelectorAll('article[role="article"]');
@@ -2716,7 +2757,7 @@ function scanCommentSections() {
       if (t.length > 10) commentTexts.push(t);
     }
     if (commentTexts.length < 2) continue;
-    commentBtnInjected.add(article);
+    st.commentInjected = true;
     const btn = document.createElement("button");
     btn.className = "fbs-comment-summary-btn";
     btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg> Tóm tắt ' + commentTexts.length + ' bình luận';
@@ -3086,11 +3127,36 @@ const scanObserver = new MutationObserver((mutations) => {
     scheduleScan();
   }
 });
-scanObserver.observe(document.body, {
+// Prefer feed/main root when present (smaller mutation surface than document.body)
+const scanRoot =
+  document.querySelector('div[role="main"]') ||
+  document.querySelector('div[role="feed"]') ||
+  document.querySelector('div[id^="mount_0_0"]') ||
+  document.body;
+scanObserver.observe(scanRoot, {
   childList: true,
   subtree: true,
 });
 observers.push(scanObserver);
+if (scanRoot !== document.body) {
+  // Also watch body for feed remounts (FB SPA navigations)
+  const bodyScanObserver = new MutationObserver((mutations) => {
+    for (const m of mutations) {
+      for (const node of m.addedNodes) {
+        if (node.nodeType !== 1) continue;
+        if (
+          node.getAttribute?.("role") === "main" ||
+          node.querySelector?.('div[role="main"], div[role="feed"]')
+        ) {
+          scheduleScan();
+          return;
+        }
+      }
+    }
+  });
+  bodyScanObserver.observe(document.body, { childList: true, subtree: false });
+  observers.push(bodyScanObserver);
+}
 window.buildCommentText = buildCommentText;
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {

@@ -310,6 +310,8 @@ Verification:
 
 Priority: P1
 
+Status: Implemented core (v2.5.1+). `postStateMap` WeakMap unifies seeMore/allPost/comment/affiliate/observed/evalFingerprint; IO-gate + 15s safety; MO prefers `role=main`/`feed` with light body remount watch. Full candidate-query reduction still optional.
+
 Why:
 
 - The app still performs repeated broad scans and observes `document.body`.
