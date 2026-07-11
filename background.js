@@ -3,7 +3,7 @@
 // Author: Le An (anlvdt)
 
 // MUST be static, top-level, and without try-catch in MV3 Service Workers
-importScripts("utils.js", "bg-prompts.js", "bg-api.js");
+importScripts("utils.js", "bg-prompts.js", "bg-api.js", "lib/message-schema.js");
 
 // MV3 lifecycle — claim clients immediately so messages aren't dropped
 self.addEventListener("install", () => self.skipWaiting());
@@ -72,7 +72,9 @@ const DEFAULT_SETTINGS = {
   autoGithubEnabled: false,               // master on/off for scheduled auto-post
   autoGithubTime: '09:00',                // HH:MM (local) daily run time
   autoGithubFocus: 'ai',                  // 'ai' = AI/tooling, 'all' = no topic filter
-  autoGithubMinStars: 30                  // minimum stars for a repo to qualify
+  autoGithubMinStars: 30,                 // minimum stars for a repo to qualify
+  // Heuristic feed filter profile (agent auto-filter)
+  scoringProfile: 'tech'                  // 'tech' | 'general' | 'affiliate'
 };
 
 // === STORAGE MIGRATION ===
@@ -991,28 +993,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return false;
   }
 
-  const sensitiveActions = new Set([
-    "summarize",
-    "fetch-image",
-    "run-github-autopost-now",
-    "enrich-related-source-links",
-    "unshorten-shopee-inline",
-  ]);
-  if (sensitiveActions.has(request.action) && !sender.id) {
-    console.warn("[FeedWriter] Rejected sensitive message without extension sender id");
-    sendResponse({ error: "Untrusted sender" });
-    return true;
-  }
-
-  // Extension-page only (popup/options): no content-script tab sender
-  function isExtensionPageSender(s) {
-    if (!s || s.id !== chrome.runtime.id) return false;
-    if (s.tab) return false; // content scripts / tabs have sender.tab
-    const url = s.url || "";
-    if (url && !url.startsWith("chrome-extension://") && !url.startsWith("moz-extension://")) {
-      return false;
+  // Central ACTION_SCHEMAS gate: action name, sender class, payload shape
+  // before any network / automation handlers run.
+  if (typeof FeedWriterMessageSchema !== "undefined" && FeedWriterMessageSchema.validate) {
+    const v = FeedWriterMessageSchema.validate(request, sender);
+    if (!v.ok) {
+      console.warn("[FeedWriter] Message schema rejected:", v.error, request?.action);
+      sendResponse({ error: v.error });
+      return true;
     }
-    return true;
   }
 
   if (request.action === "ping") {
@@ -1044,13 +1033,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   // === AUTO GITHUB → FACEBOOK ===
-  // Manual "Chạy ngay" trigger from the popup only (extension pages).
+  // Manual "Chạy ngay" trigger from the popup only (extension pages; schema-enforced).
   if (request.action === "run-github-autopost-now") {
-    if (!isExtensionPageSender(sender)) {
-      console.warn("[FeedWriter] Rejected run-github-autopost-now from non-extension page");
-      sendResponse({ ok: false, message: "Chỉ cho phép từ trang extension (popup)." });
-      return true;
-    }
     runGithubAutoPost("manual")
       .then((res) => sendResponse(res))
       .catch((e) => sendResponse({ ok: false, message: e?.message || String(e) }));
@@ -1073,6 +1057,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       pendingGithubPost.settle({
         ok: !!request.ok,
         message: request.message || (request.ok ? "Đã đăng" : "Đăng thất bại"),
+        stage: request.stage || (request.ok ? "done" : "error"),
       });
     }
     return false;
@@ -1219,18 +1204,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
   if (request.action === "unshorten-shopee-inline") {
-    if (typeof request.url !== "string" || !request.url || !sender.tab) {
-      sendResponse({ error: "Invalid unshorten request" });
-      return true;
-    }
+    // Schema ensures url + content_tab; tab.id required for processUnshorten
     processUnshorten(request.url, sender.tab.id);
     return true;
   }
   if (request.action === "summarize") {
-    if (typeof request.text !== "string" || !request.text.trim()) {
-      sendResponse({ error: "summarize requires a non-empty text string" });
-      return true;
-    }
+    // Schema ensures non-empty text string
     const fakePort = { postMessage: () => {} };
     const controller = new AbortController();
     handleStream(
@@ -1290,7 +1269,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
   // === TRANSLATE WORD ===
-  if (request.action === "translate-word" && request.word) {
+  if (request.action === "translate-word") {
     translateWord(request.word)
       .then((r) => sendResponse(r))
       .catch((e) => sendResponse({ error: e.message }));
@@ -1300,10 +1279,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // Used by fetchImageBlob() in content.js to bypass cross-origin canvas taint.
   // Timeout 20s (ảnh Facebook thường < 2MB, 20s đủ; 30s quá dài cho parallel fetch)
   if (request.action === "fetch-image") {
-    if (typeof request.url !== "string" || !request.url) {
-      sendResponse({ error: "fetch-image requires url string" });
-      return true;
-    }
+    // Schema ensures non-empty url string; still validate URL safety here
     const url = request.url;
     let parsedUrl;
     try {
@@ -1351,102 +1327,148 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     })();
     return true;
   }
+
+  // Known schemas that passed validation should have matched a handler above.
+  // Defensive fallback if a schema was added without a handler.
+  console.warn("[FeedWriter] No handler for action:", request?.action);
+  sendResponse({ error: "Unknown action" });
+  return true;
 });
 } // end if (chrome?.runtime?.onMessage)
 
 // === HEURISTIC SCORING (thay thế AI eval để tiết kiệm API call) ===
 // Đánh giá nhanh dựa trên keywords, patterns, độ dài — không cần gọi AI
 // Baseline thấp (default-reject): bài phải có tín hiệu dương rõ ràng mới qua ngưỡng >= 5
-function heuristicScore(text) {
+// SYNC: logic mirrors lib/scoring-profile.js scoreText — keep in sync when changing either.
+function heuristicScore(text, profile = "tech") {
   if (!text || text.length < 30) return 1;
 
+  const VALID = ["tech", "general", "affiliate"];
+  const p = VALID.includes(profile) ? profile : "tech";
   const lower = text.toLowerCase();
-  let score = 3; // Baseline thấp — default reject, cần tín hiệu dương để qua 5
 
-  // === TIER 1A: AI/LLM brands — ưu tiên cao nhất (+3/hit, tối đa +6) ===
+  // Baseline: tech=3, general=4, affiliate=3.5
+  let score = p === "general" ? 4 : p === "affiliate" ? 3.5 : 3;
+
+  // === TIER 1A: AI/LLM brands ===
+  // tech: +3/hit max +6 | general: +1.5/hit max +3 | affiliate: +1/hit max +2
   const aiBrands = [
-    'claude', 'anthropic', 'chatgpt', 'openai', 'gpt-4', 'gpt-3', 'gpt4',
-    'gemini', 'google deepmind', 'llama', 'mistral', 'deepseek', 'qwen',
-    'grok', 'copilot', 'perplexity', 'midjourney', 'sora', 'dall-e',
-    'stable diffusion', 'runway ml', 'large language model', 'trí tuệ nhân tạo',
-    'google ai studio', 'notebooklm', 'meta ai', 'microsoft ai', 'amazon bedrock',
+    "claude", "anthropic", "chatgpt", "openai", "gpt-4", "gpt-3", "gpt4",
+    "gemini", "google deepmind", "llama", "mistral", "deepseek", "qwen",
+    "grok", "copilot", "perplexity", "midjourney", "sora", "dall-e",
+    "stable diffusion", "runway ml", "large language model", "trí tuệ nhân tạo",
+    "google ai studio", "notebooklm", "meta ai", "microsoft ai", "amazon bedrock",
   ];
+  const aiPer = p === "tech" ? 3 : p === "general" ? 1.5 : 1;
+  const aiMax = p === "tech" ? 6 : p === "general" ? 3 : 2;
   let aiBoost = 0;
   for (const kw of aiBrands) {
-    if (lower.includes(kw)) aiBoost = Math.min(aiBoost + 3, 6);
+    if (lower.includes(kw)) aiBoost = Math.min(aiBoost + aiPer, aiMax);
   }
   score += aiBoost;
 
-  // === TIER 1B: AI subscription / free-tier deals (+2 bonus trên AI boost) ===
-  // "Claude Pro miễn phí", "ChatGPT Plus trial", "Gemini Advanced gói free"
-  const freeSignals = ['miễn phí', 'free tier', 'free plan', 'dùng thử', 'trial ', 'gói miễn', 'đăng ký miễn', 'tháng miễn phí', 'promo code'];
-  if (aiBoost > 0 && freeSignals.some((kw) => lower.includes(kw))) score += 2;
+  // === TIER 1B: AI subscription / free-tier deals ===
+  const freeSignals = [
+    "miễn phí", "free tier", "free plan", "dùng thử", "trial ",
+    "gói miễn", "đăng ký miễn", "tháng miễn phí", "promo code",
+  ];
+  if (aiBoost > 0 && freeSignals.some((kw) => lower.includes(kw))) {
+    score += p === "tech" ? 2 : 1;
+  }
 
-  // === TIER 1C: Security incidents — quan tâm cao (+2.5 nếu có 2+ tín hiệu, +1.5 nếu 1) ===
+  // === TIER 1C: Security incidents ===
   const securityKeywords = [
-    'data breach', 'rò rỉ dữ liệu', 'lộ dữ liệu', 'rò rỉ thông tin',
-    'tấn công mạng', 'tin tặc', 'hacker tấn',
-    'ransomware', 'malware', 'mã độc', 'phishing',
-    'lỗ hổng bảo mật', 'bảo mật nghiêm trọng', 'zero-day',
-    'vulnerability', 'exploit', 'an ninh mạng',
+    "data breach", "rò rỉ dữ liệu", "lộ dữ liệu", "rò rỉ thông tin",
+    "tấn công mạng", "tin tặc", "hacker attack",
+    "ransomware", "malware", "mã độc", "phishing",
+    "lỗ hổng bảo mật", "bảo mật nghiêm trọng", "zero-day",
+    "vulnerability", "exploit", "an ninh mạng",
   ];
   const secHits = securityKeywords.filter((kw) => lower.includes(kw)).length;
-  if (secHits >= 2) score += 2.5;
-  else if (secHits === 1) score += 1.5;
+  if (secHits >= 2) score += p === "tech" ? 2.5 : 1.5;
+  else if (secHits === 1) score += p === "tech" ? 1.5 : 1;
 
-  // === TIER 2: Tech companies / flagship hardware (+2/hit, tối đa +3) ===
+  // === TIER 2: Tech companies / flagship hardware ===
   const techBrands = [
-    'iphone', 'ipad', 'macbook', 'apple silicon', 'vision pro',
-    'samsung galaxy', 'pixel phone', 'oneplus',
-    'nvidia', 'rtx ', 'geforce', 'h100', 'a100',
-    'microsoft', 'windows 11', 'azure', 'google cloud',
-    'qualcomm', 'snapdragon', ' tsmc', 'intel core',
+    "iphone", "ipad", "macbook", "apple silicon", "vision pro",
+    "samsung galaxy", "pixel phone", "oneplus",
+    "nvidia", "rtx ", "geforce", "h100", "a100",
+    "microsoft", "windows 11", "azure", "google cloud",
+    "qualcomm", "snapdragon", " tsmc", "intel core",
   ];
+  const brandPer = p === "tech" ? 2 : 1;
+  const brandMax = p === "tech" ? 3 : 2;
   let brandBoost = 0;
   for (const kw of techBrands) {
-    if (lower.includes(kw)) brandBoost = Math.min(brandBoost + 2, 3);
+    if (lower.includes(kw)) brandBoost = Math.min(brandBoost + brandPer, brandMax);
   }
   score += brandBoost;
 
-  // === TIER 3: Tech topics (+1/hit, tối đa +2) ===
+  // === TIER 3: Tech topics ===
   const techTopics = [
-    'machine learning', 'deep learning', 'neural network', 'llm',
-    'github', 'open source', 'mã nguồn mở',
-    'lập trình', 'developer', 'kỹ sư phần mềm',
-    'bảo mật', 'cybersecurity',
-    'startup', 'unicorn', 'gọi vốn', 'funding', 'series a', 'series b',
-    'chip ', 'vi xử lý', 'bán dẫn', 'semiconductor',
-    'python', 'javascript', 'typescript', 'react', 'docker', 'kubernetes',
-    'aws ', 'devops', 'cicd', 'api ', 'framework',
+    "machine learning", "deep learning", "neural network", "llm",
+    "github", "open source", "mã nguồn mở",
+    "lập trình", "developer", "kỹ sư phần mềm",
+    "bảo mật", "cybersecurity",
+    "startup", "unicorn", "gọi vốn", "funding", "series a", "series b",
+    "chip ", "vi xử lý", "bán dẫn", "semiconductor",
+    "python", "javascript", "typescript", "react", "docker", "kubernetes",
+    "aws ", "devops", "cicd", "api ", "framework",
   ];
   const topicHits = techTopics.filter((kw) => lower.includes(kw)).length;
-  score += Math.min(topicHits, 2);
+  score += Math.min(topicHits, p === "tech" ? 2 : 1);
 
-  // === TIER 4: Tips/hướng dẫn (chỉ tính khi có tech anchor) ===
-  const tipKeywords = ['hướng dẫn', 'tutorial', 'tips', 'thủ thuật', 'mẹo hay', 'tối ưu', 'productivity'];
-  const techAnchors = ['điện thoại', 'máy tính', 'laptop', 'app ', 'phần mềm', 'chrome', 'android', 'ios '];
+  // === TIER 4: Tips/hướng dẫn ===
+  const tipKeywords = [
+    "hướng dẫn", "tutorial", "tips", "thủ thuật", "mẹo hay", "tối ưu", "productivity",
+  ];
+  const techAnchors = [
+    "điện thoại", "máy tính", "laptop", "app ", "phần mềm", "chrome", "android", "ios ",
+  ];
   const hasTip = tipKeywords.some((kw) => lower.includes(kw));
   const hasTechAnchor = techAnchors.some((kw) => lower.includes(kw));
-  if (hasTip && hasTechAnchor) score += 1.5;
-  else if (hasTip) score += 0.3;
+  if (hasTip && hasTechAnchor) score += p === "general" ? 1 : 1.5;
+  else if (hasTip) score += p === "general" ? 0.6 : 0.3;
 
-  // === News signals (+1 nếu bài có tín hiệu tin tức) ===
+  // === News signals ===
   const newsKeywords = [
-    'ra mắt', 'vừa ra mắt', 'chính thức ra', 'công bố', 'announce',
-    'phiên bản mới', 'cập nhật mới', 'billion', 'triệu usd', 'funding',
-    'nghiên cứu mới', 'research paper',
+    "ra mắt", "vừa ra mắt", "chính thức ra", "công bố", "announce",
+    "phiên bản mới", "cập nhật mới", "billion", "triệu usd", "funding",
+    "nghiên cứu mới", "research paper",
   ];
   if (newsKeywords.some((kw) => lower.includes(kw))) score += 1;
 
-  // === URL presence (+0.5): bài có link thường là chia sẻ tin ===
+  // === URL presence ===
   if (/https?:\/\//.test(text)) score += 0.5;
 
-  // === NEGATIVE: spam bán hàng (-3 mỗi hit, cap -5) ===
+  // === Affiliate-positive (product/review/deal) ===
+  const affiliatePositive = [
+    "review", "đánh giá", "trải nghiệm", "so sánh", "ưu nhược điểm",
+    "sản phẩm", "unboxing", "mở hộp", "giá bán", "có nên mua",
+    "worth buying", "deal ", "khuyến mãi", "giảm giá",
+    "shopee", "lazada", "tiki", "affiliate", "link mua", "mua ở đâu",
+    "best buy", "nên mua",
+  ];
+  if (p === "affiliate") {
+    let affBoost = 0;
+    for (const kw of affiliatePositive) {
+      if (lower.includes(kw)) affBoost = Math.min(affBoost + 1.5, 5);
+    }
+    score += affBoost;
+  } else if (p === "general") {
+    let affBoost = 0;
+    for (const kw of affiliatePositive) {
+      if (lower.includes(kw)) affBoost = Math.min(affBoost + 0.5, 1.5);
+    }
+    score += affBoost;
+  }
+
+  // === NEGATIVE: spam bán hàng (all profiles, hard penalty) ===
   const spamKeywords = [
-    'mua ngay', 'giá sốc', 'flash sale', 'voucher', 'mã giảm',
-    'shopee.vn', 'lazada.vn', 'tiki.vn',
-    'dm để', 'inbox để', 'liên hệ ngay', 'số lượng có hạn',
-    'free ship', 'miễn phí vận chuyển',
+    "mua ngay", "giá sốc", "flash sale", "voucher", "mã giảm",
+    "shopee.vn", "lazada.vn", "tiki.vn",
+    "dm để", "inbox để", "liên hệ ngay", "số lượng có hạn",
+    "free ship", "miễn phí vận chuyển",
   ];
   let spamHits = 0;
   for (const kw of spamKeywords) {
@@ -1454,18 +1476,39 @@ function heuristicScore(text) {
   }
   score -= Math.min(spamHits * 3, 5);
 
-  // === NEGATIVE: nội dung cá nhân/drama/off-topic (-2 mỗi hit, cap -4) ===
+  // === NEGATIVE: off-topic / drama ===
+  // general/affiliate: softer lifestyle penalty
   const offTopicKeywords = [
-    'chúc mừng sinh nhật', 'happy birthday', 'bóc phốt', 'drama',
-    'sao hàn', 'kpop', 'phim bộ', 'bóng đá', 'ngoại hạng anh',
-    'công thức nấu', 'cách nấu', 'tuyển dụng', 'cần tuyển',
-    'chiêm tinh', 'tarot', 'tử vi',
+    "chúc mừng sinh nhật", "happy birthday", "bóc phốt", "drama",
+    "sao hàn", "kpop", "phim bộ", "bóng đá", "ngoại hạng anh",
+    "công thức nấu", "cách nấu", "tuyển dụng", "cần tuyển",
+    "chiêm tinh", "tarot", "tử vi",
+  ];
+  const lifestyleKeywords = [
+    "công thức nấu", "cách nấu", "du lịch", "thời trang",
+    "làm đẹp", "skincare", "fitness", "workout",
   ];
   let offTopicHits = 0;
   for (const kw of offTopicKeywords) {
-    if (lower.includes(kw)) offTopicHits++;
+    if (!lower.includes(kw)) continue;
+    if (
+      (p === "general" || p === "affiliate") &&
+      lifestyleKeywords.includes(kw)
+    ) {
+      offTopicHits += 0.4;
+    } else {
+      offTopicHits += 1;
+    }
   }
-  score -= Math.min(offTopicHits * 2, 4);
+  if (p === "general" || p === "affiliate") {
+    for (const kw of lifestyleKeywords) {
+      if (offTopicKeywords.includes(kw)) continue;
+      if (lower.includes(kw)) offTopicHits += 0.3;
+    }
+  }
+  const offCap = p === "general" ? 2.5 : 4;
+  const offPer = p === "general" ? 1.2 : 2;
+  score -= Math.min(offTopicHits * offPer, offCap);
 
   // === LENGTH heuristic ===
   if (text.length < 100) score -= 1;
@@ -1476,6 +1519,20 @@ function heuristicScore(text) {
 
 // === AUTO-PILOT EVALUATE SUMMARY LOGIC ===
 async function evaluateSummaryForAgent(payload, tabId) {
+  // Profile-aware heuristic (no API) — primary path for summary agent filter
+  try {
+    const settings = await chrome.storage.sync.get(["scoringProfile"]);
+    const profile = settings.scoringProfile || "tech";
+    const score = heuristicScore(payload?.text || "", profile);
+    console.log("[Agent] Heuristic Summary Score:", score, "profile:", profile);
+    chrome.tabs
+      .sendMessage(tabId, { action: "agent_decision", score })
+      .catch(() => {});
+    return;
+  } catch (e) {
+    console.warn("[Agent] Heuristic summary eval failed, falling back to AI:", e);
+  }
+
   const prompt = `Bạn là biên tập viên tech. Đánh giá bài tóm tắt sau có xứng đáng chia sẻ lên trang công nghệ không.
 
 ĐĂNG (score 7-9) — ưu tiên cao nhất cho:
@@ -1591,6 +1648,22 @@ Trả về JSON: {"score": 7}`;
 
 // === AUTO-PILOT EVALUATION LOGIC ===
 async function evaluatePostForAgent(payload, tabId) {
+  // Pre-filter with profile-aware heuristic before spending API on rewrite
+  try {
+    const settings = await chrome.storage.sync.get(["scoringProfile"]);
+    const profile = settings.scoringProfile || "tech";
+    const hScore = heuristicScore(payload?.text || payload?.status || "", profile);
+    console.log("[Agent] Heuristic Post Score:", hScore, "profile:", profile);
+    if (hScore < 5) {
+      chrome.tabs
+        .sendMessage(tabId, { action: "agent_decision", score: hScore })
+        .catch(() => {});
+      return;
+    }
+  } catch (e) {
+    console.warn("[Agent] Heuristic post pre-filter failed:", e);
+  }
+
   const prompt = `Bạn là một AI phân tích nội dung mạng xã hội.
 Hãy đọc bài viết sau và chấm điểm độ thu hút từ 1-10 (ưu tiên bài có thông tin hữu ích, tin tức công nghệ, bài học).
 Nếu điểm >= 8, hãy tóm tắt và viết lại thành 1 status Facebook mang phong cách cá nhân của bạn, ngắn gọn, hấp dẫn.
@@ -2592,7 +2665,12 @@ async function postToFacebookViaTab(payload) {
       .catch(() => injectAndSend(tabId, message));
     // Posting + source comment can take ~60–90s; allow generous headroom.
     setTimeout(
-      () => settle({ ok: false, message: "Quá hạn chờ đăng (timeout)." }),
+      () =>
+        settle({
+          ok: false,
+          message: "Quá hạn chờ đăng (timeout).",
+          stage: "timeout",
+        }),
       150000,
     );
   });

@@ -636,3 +636,7 @@ const StatusFormatter = {
       .replace(/"/g, "&quot;");
   },
 };
+
+// ── FeedWriter.format namespace ───────────────────────────────────────
+window.FeedWriter = window.FeedWriter || {};
+window.FeedWriter.format = StatusFormatter;

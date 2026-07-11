@@ -1584,12 +1584,27 @@ const DISPLAY_MODES = {
   MARK: "mark",       // Just highlight, don't hide
 };
 
-window.fbsExtractPermalink = extractPostPermalink;
-window.fbsExtractAuthor = extractPostAuthor;
-window.fbsExtractImage = extractPostImage;
-window.fbsExtractImages = extractPostImages;
-window.fbsEvaluatePostSignals = evaluatePostSignals;
-window.fbsDiscoverRelatedSourceLinks = discoverRelatedSourceLinks;
-window.fbsCleanRelatedUrl = _cleanRelatedUrl;
-window.fbsClassifyRelatedUrl = _classifyRelatedUrl;
-window.fbsDisplayModes = DISPLAY_MODES;
+// ── FeedWriter.dom namespace ──────────────────────────────────────────
+window.FeedWriter = window.FeedWriter || {};
+window.FeedWriter.dom = window.FeedWriter.dom || {};
+
+FeedWriter.dom.extractPermalink = extractPostPermalink;
+FeedWriter.dom.extractAuthor = extractPostAuthor;
+FeedWriter.dom.extractImage = extractPostImage;
+FeedWriter.dom.extractImages = extractPostImages;
+FeedWriter.dom.evaluatePostSignals = evaluatePostSignals;
+FeedWriter.dom.discoverRelatedSourceLinks = discoverRelatedSourceLinks;
+FeedWriter.dom.cleanRelatedUrl = _cleanRelatedUrl;
+FeedWriter.dom.classifyRelatedUrl = _classifyRelatedUrl;
+FeedWriter.dom.displayModes = DISPLAY_MODES;
+
+// COMPAT aliases — remove after v3.0
+window.fbsExtractPermalink = FeedWriter.dom.extractPermalink;
+window.fbsExtractAuthor = FeedWriter.dom.extractAuthor;
+window.fbsExtractImage = FeedWriter.dom.extractImage;
+window.fbsExtractImages = FeedWriter.dom.extractImages;
+window.fbsEvaluatePostSignals = FeedWriter.dom.evaluatePostSignals;
+window.fbsDiscoverRelatedSourceLinks = FeedWriter.dom.discoverRelatedSourceLinks;
+window.fbsCleanRelatedUrl = FeedWriter.dom.cleanRelatedUrl;
+window.fbsClassifyRelatedUrl = FeedWriter.dom.classifyRelatedUrl;
+window.fbsDisplayModes = FeedWriter.dom.displayModes;

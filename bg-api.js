@@ -10,6 +10,113 @@ const PROVIDER_PRIORITY = [
   "openrouter",
 ];
 
+/**
+ * Pure key selection — keep in sync with lib/provider-rotation.js
+ * (SW cannot import CommonJS modules; this is the production copy).
+ */
+function selectAvailableKey(opts) {
+  const {
+    legacyApiKey = null,
+    legacyProvider = "groq",
+    preferredProvider = null,
+    now,
+  } = opts;
+
+  let apiKeys = opts.apiKeys;
+  let hasAnyKey = false;
+  if (apiKeys) {
+    for (const p in apiKeys) {
+      if (apiKeys[p] && apiKeys[p].length > 0) hasAnyKey = true;
+    }
+  }
+
+  if (!apiKeys) {
+    apiKeys = {
+      groq: [],
+      gemini: [],
+      cerebras: [],
+      sambanova: [],
+      openrouter: [],
+    };
+  } else {
+    apiKeys = { ...apiKeys };
+    for (const p of Object.keys(apiKeys)) {
+      if (Array.isArray(apiKeys[p])) apiKeys[p] = apiKeys[p].slice();
+    }
+  }
+
+  // Fallback to legacy single key when no multi-key entries
+  if (!hasAnyKey && legacyApiKey) {
+    const provider = legacyProvider || "groq";
+    if (!apiKeys[provider]) apiKeys[provider] = [];
+    if (!apiKeys[provider].includes(legacyApiKey)) {
+      apiKeys[provider].push(legacyApiKey);
+    }
+  }
+
+  const keyStatus = { ...(opts.keyStatus || {}) };
+  const rotationIndex = { ...(opts.rotationIndex || {}) };
+
+  const orderedProviders =
+    preferredProvider && PROVIDER_PRIORITY.includes(preferredProvider)
+      ? [
+          preferredProvider,
+          ...PROVIDER_PRIORITY.filter((p) => p !== preferredProvider),
+        ]
+      : PROVIDER_PRIORITY;
+
+  for (const provider of orderedProviders) {
+    const keys = apiKeys[provider] || [];
+    if (keys.length === 0) continue;
+
+    const startIdx = (rotationIndex[provider] || 0) % keys.length;
+    for (let i = 0; i < keys.length; i++) {
+      const idx = (startIdx + i) % keys.length;
+      const key = keys[idx];
+      const status = keyStatus[key] || {};
+
+      if (!status.rateLimitedUntil || now >= status.rateLimitedUntil) {
+        const newRotationIndex = {
+          ...rotationIndex,
+          [provider]: (idx + 1) % keys.length,
+        };
+        const newKeyStatus = {
+          ...keyStatus,
+          [key]: { ...(keyStatus[key] || {}), lastUsed: now },
+        };
+        return {
+          key,
+          provider,
+          index: idx,
+          newRotationIndex,
+          newKeyStatus,
+        };
+      }
+    }
+  }
+
+  let soonestTime = Infinity;
+  let totalKeys = 0;
+  for (const provider of PROVIDER_PRIORITY) {
+    const keys = apiKeys[provider] || [];
+    totalKeys += keys.length;
+    for (const key of keys) {
+      const until = (keyStatus[key] || {}).rateLimitedUntil || 0;
+      if (until < soonestTime) soonestTime = until;
+    }
+  }
+
+  if (totalKeys === 0) return { key: null, provider: null, noKeys: true };
+  const waitMinutes = Math.max(1, Math.ceil((soonestTime - now) / 60000));
+  return {
+    key: null,
+    provider: null,
+    allLimited: true,
+    waitMinutes,
+    total: totalKeys,
+  };
+}
+
 // Get the best available key across ALL providers
 async function getAvailableKey(preferredProvider = null) {
   const data = await chrome.storage.sync.get(["apiKeys", "apiKey", "provider"]);
@@ -34,78 +141,31 @@ async function getAvailableKey(preferredProvider = null) {
     chrome.storage.sync.set({ apiKeys });
   }
 
-  if (!apiKeys)
-    apiKeys = {
-      groq: [],
-      gemini: [],
-      cerebras: [],
-      sambanova: [],
-      openrouter: [],
-    };
+  const result = selectAvailableKey({
+    apiKeys,
+    legacyApiKey: hasAnyKey ? null : data.apiKey || null,
+    legacyProvider: data.provider || "groq",
+    keyStatus: localData.keyStatus || {},
+    rotationIndex: localData.keyRotationIndex || {},
+    preferredProvider,
+    now: Date.now(),
+  });
 
-  // 2. Fallback to legacy single key
-  if (!hasAnyKey && data.apiKey) {
-    const provider = data.provider || "groq";
-    if (!apiKeys[provider]) apiKeys[provider] = [];
-    if (!apiKeys[provider].includes(data.apiKey)) {
-      apiKeys[provider].push(data.apiKey);
-    }
+  if (result.key) {
+    await chrome.storage.local.set({
+      keyRotationIndex: result.newRotationIndex,
+      keyStatus: result.newKeyStatus,
+    });
+    return { key: result.key, provider: result.provider, index: result.index };
   }
 
-  const keyStatus = localData.keyStatus || {};
-  const rotationIndex = localData.keyRotationIndex || {};
-  const now = Date.now();
-
-  // Try each provider in priority order, hoisting preferredProvider to front
-  const orderedProviders = preferredProvider && PROVIDER_PRIORITY.includes(preferredProvider)
-    ? [preferredProvider, ...PROVIDER_PRIORITY.filter(p => p !== preferredProvider)]
-    : PROVIDER_PRIORITY;
-  for (const provider of orderedProviders) {
-    const keys = apiKeys[provider] || [];
-    if (keys.length === 0) continue;
-
-    const startIdx = (rotationIndex[provider] || 0) % keys.length;
-    for (let i = 0; i < keys.length; i++) {
-      const idx = (startIdx + i) % keys.length;
-      const key = keys[idx];
-      const status = keyStatus[key] || {};
-
-      if (!status.rateLimitedUntil || now >= status.rateLimitedUntil) {
-        // Found a usable key — update rotation
-        const newRotation = {
-          ...rotationIndex,
-          [provider]: (idx + 1) % keys.length,
-        };
-        keyStatus[key] = { ...(keyStatus[key] || {}), lastUsed: now };
-        await chrome.storage.local.set({
-          keyRotationIndex: newRotation,
-          keyStatus,
-        });
-        return { key, provider, index: idx };
-      }
-    }
-  }
-
-  // All keys across all providers are rate-limited
-  let soonestTime = Infinity;
-  let totalKeys = 0;
-  for (const provider of PROVIDER_PRIORITY) {
-    const keys = apiKeys[provider] || [];
-    totalKeys += keys.length;
-    for (const key of keys) {
-      const until = (keyStatus[key] || {}).rateLimitedUntil || 0;
-      if (until < soonestTime) soonestTime = until;
-    }
-  }
-
-  if (totalKeys === 0) return { key: null, provider: null, noKeys: true };
-  const waitMin = Math.max(1, Math.ceil((soonestTime - now) / 60000));
+  if (result.noKeys) return { key: null, provider: null, noKeys: true };
   return {
     key: null,
     provider: null,
     allLimited: true,
-    waitMinutes: waitMin,
-    total: totalKeys,
+    waitMinutes: result.waitMinutes,
+    total: result.total,
   };
 }
 

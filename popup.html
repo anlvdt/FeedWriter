@@ -178,6 +178,15 @@
         <div class="accordion-header" role="button" aria-expanded="false" tabindex="0">Nâng cao</div>
         <div class="accordion-content">
           <div class="field">
+            <label for="scoringProfile">Lọc nội dung feed (điểm heuristic)</label>
+            <select id="scoringProfile">
+              <option value="tech" selected>Thiên AI/Tech (mặc định)</option>
+              <option value="general">Tổng quát</option>
+              <option value="affiliate">Ưu tiên review/sản phẩm</option>
+            </select>
+            <div class="field-hint">Profile chấm điểm nhanh khi agent lọc bài đáng tóm tắt/đăng. Không tốn API call.</div>
+          </div>
+          <div class="field">
             <label for="adDisplayMode">Hiển thị bài quảng cáo</label>
             <select id="adDisplayMode">
               <option value="hide">Ẩn hoàn toàn</option>
@@ -331,6 +340,17 @@
 
       <button id="testBtn" class="btn btn-secondary" style="margin-top:10px">Test kết nối</button>
       <div id="keyStatus" class="status" role="status" aria-live="polite"></div>
+
+      <!-- Provider Health Panel -->
+      <div id="providerHealth" class="provider-health">
+        <div class="provider-health-header">
+          <span class="provider-health-title">Trạng thái provider / key</span>
+          <button type="button" id="refreshProviderHealthBtn" class="btn btn-secondary" style="padding:4px 10px;font-size:11px;">Làm mới trạng thái</button>
+        </div>
+        <div id="providerHealthList" class="provider-health-list">
+          <div class="field-hint">Chưa có dữ liệu. Thêm key và dùng thử, hoặc bấm làm mới.</div>
+        </div>
+      </div>
 
       <div class="provider-guide">
         <div class="provider-guide-title">Lấy API Key miễn phí</div>

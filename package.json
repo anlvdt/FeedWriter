@@ -3,6 +3,6 @@
   "private": true,
   "scripts": {
     "test": "node --test tests/**/*.test.mjs",
-    "check": "node --check background.js && node --check content.js && node --check popup.js && node --check content-composer.js && node --check status-formatter.js && node --check lib/pure-logic.js"
+    "check": "node --check background.js && node --check content.js && node --check popup.js && node --check content-composer.js && node --check status-formatter.js && node --check bg-api.js && node --check lib/pure-logic.js && node --check lib/message-schema.js && node --check lib/provider-rotation.js && node --check lib/scoring-profile.js"
   }
 }

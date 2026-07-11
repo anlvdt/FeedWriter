@@ -250,7 +250,10 @@ allTabs.forEach((tab) => {
     tab.setAttribute("aria-selected", "true");
     document.getElementById("tab-" + tab.dataset.tab).classList.add("active");
     if (tab.dataset.tab === "history") { loadHistory(); loadAgentStats(); }
-    if (tab.dataset.tab === "apikeys") loadKeyLists();
+    if (tab.dataset.tab === "apikeys") {
+      loadKeyLists();
+      loadProviderHealth();
+    }
   });
 });
 
@@ -266,6 +269,7 @@ const sourceTemplateEl = document.getElementById("sourceTemplate");
 const hideAffiliatePostsEl = document.getElementById("hideAffiliatePosts");
 const adDisplayModeEl = document.getElementById("adDisplayMode");
 const affiliateDisplayModeEl = document.getElementById("affiliateDisplayMode");
+const scoringProfileEl = document.getElementById("scoringProfile");
 const blockedDomainsEl = document.getElementById("blockedDomains");
 const enableUnicodeBoldEl = document.getElementById("enableUnicodeBold");
 const saveBtn = document.getElementById("saveBtn");
@@ -343,6 +347,7 @@ chrome.storage.sync.get(
     "hideAffiliatePosts",
     "adDisplayMode",
     "affiliateDisplayMode",
+    "scoringProfile",
     "blockedDomains",
     "enableUnicodeBold",
     "apiKeys",
@@ -367,6 +372,7 @@ chrome.storage.sync.get(
     if (d.hideAffiliatePosts) hideAffiliatePostsEl.checked = true;
     if (d.adDisplayMode) adDisplayModeEl.value = d.adDisplayMode;
     if (d.affiliateDisplayMode) affiliateDisplayModeEl.value = d.affiliateDisplayMode;
+    if (scoringProfileEl && d.scoringProfile) scoringProfileEl.value = d.scoringProfile;
     if (d.blockedDomains) blockedDomainsEl.value = d.blockedDomains;
     if (d.enableUnicodeBold !== false) enableUnicodeBoldEl.checked = true;
 
@@ -451,6 +457,7 @@ saveBtn.addEventListener("click", () => {
       hideAffiliatePosts: hideAffiliatePostsEl.checked,
       adDisplayMode: adDisplayModeEl.value,
       affiliateDisplayMode: affiliateDisplayModeEl.value,
+      scoringProfile: scoringProfileEl ? scoringProfileEl.value : "tech",
       blockedDomains: blockedDomainsEl.value.trim(),
       enableUnicodeBold: enableUnicodeBoldEl.checked,
       advancedModeEnabled: advancedModeToggle.checked,
@@ -664,9 +671,111 @@ document.addEventListener("click", async (e) => {
     await chrome.storage.sync.set({ apiKeys });
     await chrome.storage.local.set({ backupApiKeys: apiKeys });
     loadKeyLists();
+    loadProviderHealth();
     showKeyStatus("Đã xóa", "success");
   }
 });
+
+// === PROVIDER HEALTH PANEL ===
+// Reads chrome.storage.local keyStatus (rateLimitedUntil, lastUsed, lastRateLimited)
+function formatHealthTime(ts) {
+  if (!ts) return "—";
+  try {
+    return new Date(ts).toLocaleTimeString("vi-VN", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch (_) {
+    return "—";
+  }
+}
+
+function formatWaitUntil(until) {
+  const ms = until - Date.now();
+  if (ms <= 0) return "sẵn sàng";
+  const mins = Math.ceil(ms / 60000);
+  if (mins < 60) return "còn ~" + mins + "p";
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return "còn ~" + h + "h" + (m ? m + "p" : "");
+}
+
+async function loadProviderHealth() {
+  const listEl = document.getElementById("providerHealthList");
+  if (!listEl) return;
+
+  const data = await chrome.storage.sync.get(["apiKeys"]);
+  const apiKeys = data.apiKeys || {};
+  const localData = await chrome.storage.local.get(["keyStatus"]);
+  const ks = localData.keyStatus || {};
+  const now = Date.now();
+  const rows = [];
+
+  for (const provider of ALL_PROVIDERS) {
+    const keys = apiKeys[provider] || [];
+    for (const key of keys) {
+      const info = ks[key] || {};
+      const limited =
+        info.rateLimitedUntil && now < info.rateLimitedUntil;
+      let statusLabel;
+      let statusCls;
+      if (limited) {
+        statusLabel =
+          "Rate limited until " +
+          formatHealthTime(info.rateLimitedUntil) +
+          " (" +
+          formatWaitUntil(info.rateLimitedUntil) +
+          ")";
+        statusCls = "ph-limited";
+      } else {
+        statusLabel = "OK";
+        statusCls = "ph-ok";
+      }
+      const lastUsed = info.lastUsed
+        ? "Last used " + formatHealthTime(info.lastUsed)
+        : "Chưa dùng";
+      rows.push(
+        '<div class="provider-health-row">' +
+          '<div class="provider-health-main">' +
+          '<span class="provider-health-provider">' +
+          esc(provider) +
+          "</span>" +
+          '<span class="provider-health-key">' +
+          esc(maskKey(key)) +
+          "</span>" +
+          "</div>" +
+          '<div class="provider-health-meta">' +
+          '<span class="provider-health-badge ' +
+          statusCls +
+          '">' +
+          esc(statusLabel) +
+          "</span>" +
+          '<span class="provider-health-last">' +
+          esc(lastUsed) +
+          "</span>" +
+          "</div>" +
+          "</div>",
+      );
+    }
+  }
+
+  if (rows.length === 0) {
+    listEl.innerHTML =
+      '<div class="field-hint">Chưa có key. Thêm key ở trên để xem trạng thái.</div>';
+  } else {
+    listEl.innerHTML = rows.join("");
+  }
+}
+
+const refreshProviderHealthBtn = document.getElementById(
+  "refreshProviderHealthBtn",
+);
+if (refreshProviderHealthBtn) {
+  refreshProviderHealthBtn.addEventListener("click", () => {
+    loadProviderHealth();
+    loadKeyLists();
+  });
+}
 
 
 // Single in-flight guard shared by the button + paste auto-add, so a fast
@@ -699,6 +808,7 @@ async function addApiKey() {
     await chrome.storage.local.set({ backupApiKeys: apiKeys });
     newApiKeyInput.value = "";
     loadKeyLists();
+    loadProviderHealth();
     showKeyStatus(
       "Đã thêm — " + provider.charAt(0).toUpperCase() + provider.slice(1),
       "success",
@@ -1391,6 +1501,11 @@ function renderGithubLog() {
         const repo = e.repo
           ? ' · <span style="opacity:.85">' + escapeHtml(e.repo) + "</span>"
           : "";
+        const stage = e.stage
+          ? ' · <code style="font-size:10px;opacity:.75">' +
+            escapeHtml(String(e.stage)) +
+            "</code>"
+          : "";
         const msg = escapeHtml(e.message || "");
         return (
           '<div style="padding:6px 8px;border-bottom:1px solid rgba(127,127,127,.15);font-size:12px;line-height:1.4;">' +
@@ -1401,6 +1516,7 @@ function renderGithubLog() {
           trig +
           ")</span>" +
           repo +
+          stage +
           '<br><span style="opacity:.9">' +
           msg +
           "</span></div>"

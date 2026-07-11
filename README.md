@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.5.0-blue" alt="Version 2.5.0">
+  <img src="https://img.shields.io/badge/version-2.5.1-blue" alt="Version 2.5.1">
   <img src="https://img.shields.io/badge/manifest-v3-blue" alt="Manifest V3">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License">
   <img src="https://img.shields.io/badge/dependencies-zero-brightgreen" alt="Zero deps">
@@ -18,20 +18,21 @@
 
 ---
 
-## Tính năng mới v2.5.0
+## Tính năng mới v2.5.1
 
-### An toàn & Labs
+### Hardening & architecture
 
-- **Labs gate** cho auto-post GitHub → Facebook: phải gõ `TOI HIEU RUI RO` + tick xác nhận rủi ro.
-- **Optional permissions**: `cookies`, `clipboardRead`, `https://*/*` chỉ xin khi dùng.
-- **Phím tắt Mac**: panel Copy/Sửa nhận `⌘` (metaKey).
+- **ACTION_SCHEMAS** — validate mọi message background (sender + payload).
+- **FeedWriter namespace** — `FeedWriter.dom` / `.composer` / `.format` / `.runtime` (giữ alias `window.fbs*`).
+- **Scoring profile** — lọc feed: Tech / Tổng quát / Review-sản phẩm.
+- **Provider health** — xem rate-limit & last-used trên tab Keys.
+- **84 pure tests** (message schema, provider rotation, scoring, formatter…).
 
-### UX
+### v2.5.0 (trước đó)
 
-- Floating toolbar: **Tóm tắt · Status · Affiliate · Batch**.
-- Composer: nút **← Sửa lại** quay về chỉnh sửa kết quả.
-- Scan feed nhẹ hơn (IO-gated + interval 15s).
-- `npm test` — 28 pure-logic tests (zero deps).
+- Labs gate auto-post + optional permissions.
+- Floating toolbar multi-mode, Mac shortcuts, composer ← Sửa lại.
+- IO-gated scan, zero-dep `npm test`.
 
 ### Workflow đăng status và nguồn (v2.4+)
 

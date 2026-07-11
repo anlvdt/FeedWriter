@@ -187,8 +187,11 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
       .map((url) => url.trim())
       .filter((url) => /^https?:\/\//i.test(url))
       .map((url) => {
-        if (typeof window.fbsClassifyRelatedUrl === "function") {
-          return window.fbsClassifyRelatedUrl(url, "", "manual");
+        const classifyRelatedUrl =
+          (window.FeedWriter && window.FeedWriter.dom && window.FeedWriter.dom.classifyRelatedUrl) ||
+          window.fbsClassifyRelatedUrl;
+        if (typeof classifyRelatedUrl === "function") {
+          return classifyRelatedUrl(url, "", "manual");
         }
         return { url, type: "reference" };
       })
@@ -623,7 +626,8 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
             parseRelatedLinks(finalGithubUrl).some((item) => item.type === "github");
           textWithFooter = StatusFormatter.format(text, "facebook", { hasRepo });
         } else {
-          textWithFooter = applyUnicodeFormatting(text);
+          // Minimal fallback when StatusFormatter unavailable — strip markdown markers only
+          textWithFooter = String(text || "").replace(/\*\*(.*?)\*\*/g, "$1").replace(/\*(.*?)\*/g, "$1");
         }
         pasteToLexical(editor, textWithFooter, imgFiles.length > 0 ? imgFiles : null);
 
@@ -694,6 +698,7 @@ function toUnicodeItalic(str) {
 
 /**
  * Apply Unicode Bold and Italic formatting depending on configuration
+ * @deprecated Prefer StatusFormatter.format(text, platform, opts). Kept as last-resort fallback until v3.0.
  */
 function applyUnicodeFormatting(text) {
   const isUnicodeBoldEnabled = (window.enableUnicodeBold !== false);
@@ -708,6 +713,7 @@ function applyUnicodeFormatting(text) {
 
 /**
  * Convert raw AI response text into unified plain text status format
+ * @deprecated Prefer StatusFormatter.format(text, "facebook", opts). Kept as last-resort fallback until v3.0.
  */
 function buildUnifiedStatusText(rawText, options = {}) {
   // Normalize *** to **
@@ -778,6 +784,7 @@ function buildUnifiedStatusText(rawText, options = {}) {
  * Format AI-generated text for Facebook status posting
  * Transforms plain text into visually appealing Facebook format
  *
+ * @deprecated Prefer StatusFormatter.format(text, "facebook", opts). Kept as last-resort fallback until v3.0.
  * @param {string} text - AI-generated text with \n line breaks
  * @returns {string} - Facebook-optimized text
  */
@@ -926,15 +933,18 @@ function pasteToLexical(element, text, file = null) {
   }
 }
 
-window.fbsAgentPost = async function (summaryText, imageUrl, rawSourceUrl, postElement) {
+async function fbsAgentPost(summaryText, imageUrl, rawSourceUrl, postElement) {
   if (SITE !== "facebook") return { ok: false, reason: "not_facebook" };
 
   let postText = summaryText || "";
   const cleanUrl = cleanSourceUrl(rawSourceUrl);
   // Lấy author + source (group/page name) từ DOM
+  const extractAuthor =
+    (window.FeedWriter && window.FeedWriter.dom && window.FeedWriter.dom.extractAuthor) ||
+    window.fbsExtractAuthor;
   const postAuthor =
-    postElement && typeof window.fbsExtractAuthor === "function"
-      ? window.fbsExtractAuthor(postElement)
+    postElement && typeof extractAuthor === "function"
+      ? extractAuthor(postElement)
       : "";
   const postSource =
     postElement && typeof extractPostSource === "function"
@@ -990,19 +1000,17 @@ window.fbsAgentPost = async function (summaryText, imageUrl, rawSourceUrl, postE
   console.log("[Agent] Comment text prepared:", commentText);
   console.log("[Agent] Author:", postAuthor || "(unknown)", "| Source:", postSource || "(unknown)", "| URL:", cleanUrl || "(none)");
 
-  // Build final post text — use StatusFormatter (handles stripping + formatting + footer)
+  // Build final post text — StatusFormatter primary; minimal strip fallback only
   {
     const hasRepo = !!(typeof globalCustomSourceLink !== 'undefined' && globalCustomSourceLink);
     if (typeof StatusFormatter !== "undefined") {
       postText = StatusFormatter.format(postText, "facebook", { hasRepo });
     } else {
-      // Legacy fallback
-      postText = postText.replace(
-        /\s*(?:[—-]\s*\n\s*)?Nguồn\s+dưới\s+(?:cmt|bình\s+luận|binh\s+luan)\s+đầu(?:\s+tiên)?\s*$/gi,
-        ""
-      ).trim();
-      const formattedText = formatForFacebook(postText);
-      postText = formattedText + getFacebookFooter(hasRepo);
+      // Minimal fallback — strip markdown markers, no legacy formatForFacebook path
+      postText = String(postText || "")
+        .replace(/\*\*(.*?)\*\*/g, "$1")
+        .replace(/\*(.*?)\*/g, "$1")
+        .trim();
     }
   }
 
@@ -1077,8 +1085,11 @@ window.fbsAgentPost = async function (summaryText, imageUrl, rawSourceUrl, postE
   try {
     // Lấy danh sách tất cả ảnh từ postElement (bao gồm bài share gốc)
     let allImages = [];
-    if (postElement && typeof window.fbsExtractImages === "function") {
-      allImages = window.fbsExtractImages(postElement);
+    const extractImages =
+      (window.FeedWriter && window.FeedWriter.dom && window.FeedWriter.dom.extractImages) ||
+      window.fbsExtractImages;
+    if (postElement && typeof extractImages === "function") {
+      allImages = extractImages(postElement);
     } else if (imageUrl) {
       allImages = [imageUrl];
     }
@@ -1299,7 +1310,7 @@ window.fbsAgentPost = async function (summaryText, imageUrl, rawSourceUrl, postE
   } catch (_) {}
 
   return { ok: true };
-};
+}
 
 // === AUTO GITHUB → FACEBOOK (scheduled) ===
 // Lean, self-contained auto-post used by the background scheduler. Opens the FB
@@ -1307,7 +1318,7 @@ window.fbsAgentPost = async function (summaryText, imageUrl, rawSourceUrl, postE
 // repo link in the first comment. Reports the outcome back to background.js.
 // Manual composer "Đăng status" is separate and still requires an explicit user
 // click — this path only runs from the scheduled agent.
-window.fbsGithubAutoPost = async function (statusText, repoUrl, imageUrl) {
+async function fbsGithubAutoPost(statusText, repoUrl, imageUrl) {
   const report = (ok, message, stage) => {
     const full =
       stage && !ok
@@ -1334,12 +1345,11 @@ window.fbsGithubAutoPost = async function (statusText, repoUrl, imageUrl) {
   // profile uppercases the WHOLE title line (titleUppercase:true) and, with
   // hasRepo:true, appends the standard "👉 Link gốc & mã nguồn dưới bình luận
   // đầu tiên" footer. No more ad-hoc capitalization / footer hint here.
+  // StatusFormatter primary; minimal markdown-strip fallback (no legacy formatters)
   const postText =
     typeof StatusFormatter !== "undefined"
       ? StatusFormatter.format(bodyText, "facebook", { hasRepo: true })
-      : typeof applyUnicodeFormatting === "function"
-        ? applyUnicodeFormatting(bodyText)
-        : bodyText;
+      : bodyText.replace(/\*\*(.*?)\*\*/g, "$1").replace(/\*(.*?)\*/g, "$1");
 
   const commentText =
     "📦 Mã nguồn GitHub:\n" + (repoUrl || "") + "\n\n#opensource #github";
@@ -1554,4 +1564,16 @@ window.fbsGithubAutoPost = async function (statusText, repoUrl, imageUrl) {
       "error",
     );
   }
+}
+
+// ── FeedWriter.composer namespace ─────────────────────────────────────
+window.FeedWriter = window.FeedWriter || {};
+window.FeedWriter.composer = {
+  open: openFacebookComposer,
+  agentPost: fbsAgentPost,
+  githubAutoPost: fbsGithubAutoPost,
 };
+
+// COMPAT aliases — remove after v3.0
+window.fbsAgentPost = FeedWriter.composer.agentPost;
+window.fbsGithubAutoPost = FeedWriter.composer.githubAutoPost;

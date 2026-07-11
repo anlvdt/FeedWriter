@@ -196,7 +196,7 @@ Verification:
 
 Priority: P1
 
-Status: Partial (2026-07-11 light). sensitiveActions expanded; `run-github-autopost-now` extension-page only; light shape checks for summarize/fetch-image/unshorten/enrich. Full ACTION_SCHEMAS map still backlog.
+Status: Implemented (2026-07-11 v2.5.1). `lib/message-schema.js` + `FeedWriterMessageSchema.validate` gate in background onMessage; extension_page vs content_tab; tests in `tests/message-schema.test.mjs`.
 
 Why:
 
@@ -236,6 +236,8 @@ Verification:
 
 Priority: P1
 
+Status: Implemented (v2.5.0–2.5.1). `package.json` scripts `test`/`check`; 84 tests across pure-logic, message-schema, provider-rotation, scoring-profile, StatusFormatter.
+
 Why:
 
 - Syntax checks pass, but logic regressions are currently unprotected.
@@ -271,6 +273,8 @@ Verification:
 ### 8. Provider And Key Management Tests
 
 Priority: P1
+
+Status: Implemented (v2.5.1). `lib/provider-rotation.js` + `selectAvailableKey` in `bg-api.js` + `tests/provider-rotation.test.mjs`. Provider health panel in popup Keys tab.
 
 Why:
 
@@ -342,6 +346,8 @@ Verification:
 ### 10. Namespace Content Script Globals
 
 Priority: P2
+
+Status: Implemented compatibility phase (v2.5.1). `FeedWriter.dom|composer|format|runtime` with `window.fbs*` COMPAT aliases until v3.0. Full WeakMap PostState scanner still open (#9).
 
 Why:
 
@@ -451,6 +457,8 @@ Verification:
 ### 13. Provider Health Panel
 
 Priority: P2
+
+Status: Implemented (v2.5.1). Keys tab `#providerHealth` shows OK / rate-limited until / last used; refresh button. Clear rate-limit action still optional backlog.
 
 Why:
 

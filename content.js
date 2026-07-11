@@ -4,6 +4,18 @@
 // https://github.com/anlvdt/fb-post-summarizer
 // Author: Le An (anlvdt)
 
+// Prefer FeedWriter.dom.* with fallback to window.fbs* COMPAT aliases (remove after v3.0)
+window.FeedWriter = window.FeedWriter || {};
+window.FeedWriter.runtime = window.FeedWriter.runtime || {};
+function fwDom(name) {
+  const dom = window.FeedWriter && window.FeedWriter.dom;
+  if (dom && typeof dom[name] === "function") return dom[name];
+  // COMPAT: camelCase name → fbsExtractImages, fbsCleanRelatedUrl, etc.
+  const fbsKey =
+    "fbs" + name.charAt(0).toUpperCase() + name.slice(1);
+  return window[fbsKey];
+}
+
 let MIN_LEN = 400;
 /** Min chars for summarize / floating toolbar (feed injection still uses MIN_LEN). */
 const SUMMARIZE_MIN_CHARS = 50;
@@ -305,7 +317,8 @@ function hideFlaggedPost(postContainer, evalResult, type) {
 
 function scanAffiliatePosts() {
   if (SITE !== "facebook") return;
-  if (typeof window.fbsEvaluatePostSignals !== "function") return;
+  const evaluatePostSignals = fwDom("evaluatePostSignals");
+  if (typeof evaluatePostSignals !== "function") return;
 
   const root = document.querySelector('div[role="main"]') || document.querySelector('div[id^="mount_0_0"]') || document.body;
   const candidates = [
@@ -357,7 +370,7 @@ function scanAffiliatePosts() {
     telemetry.postsScanned++;
     evaluated++;
 
-    const evalResult = window.fbsEvaluatePostSignals(article);
+    const evalResult = evaluatePostSignals(article);
 
     if (evalResult.isCommentGate) {
       telemetry.postsFlaggedCommentGate++;
@@ -1017,27 +1030,30 @@ async function handlePostStatus() {
     const source = _element ? extractPostSource(_element) : "";
     const imageUrl = _element ? extractPostImage(_element) : "";
     // Lấy TẤT CẢ ảnh để user có thể chọn paste multi-image
-    const allImages = _element && typeof window.fbsExtractImages === "function"
-      ? window.fbsExtractImages(_element)
+    const extractImages = fwDom("extractImages");
+    const allImages = _element && typeof extractImages === "function"
+      ? extractImages(_element)
       : (imageUrl ? [imageUrl] : []);
     let relatedLinks = [];
-    if (_element && typeof window.fbsDiscoverRelatedSourceLinks === "function") {
+    const discoverRelatedSourceLinks = fwDom("discoverRelatedSourceLinks");
+    if (_element && typeof discoverRelatedSourceLinks === "function") {
       try {
         const discovered =
           pendingSourceDiscovery?.element === _element
             ? await pendingSourceDiscovery.promise
-            : await window.fbsDiscoverRelatedSourceLinks(_element, text);
+            : await discoverRelatedSourceLinks(_element, text);
         if (discovered?.sourceUrl) rawUrl = discovered.sourceUrl;
         relatedLinks = discovered?.relatedLinks || [];
       } catch (_) {}
     }
+    const extractPermalinkAsync = fwDom("extractPermalinkAsync");
     if (
       _element &&
-      typeof window.fbsExtractPermalinkAsync === "function" &&
+      typeof extractPermalinkAsync === "function" &&
       (!rawUrl || /^https:\/\/(?:www\.)?facebook\.com\/groups\/[^/]+\/?$/i.test(rawUrl))
     ) {
       try {
-        rawUrl = (await window.fbsExtractPermalinkAsync(_element)) || rawUrl;
+        rawUrl = (await extractPermalinkAsync(_element)) || rawUrl;
       } catch (_) {}
     }
 
@@ -1215,17 +1231,18 @@ function buildCommentText(cleanUrl, author, source, options = {}) {
     : Array.isArray(globalRelatedSourceLinks)
     ? globalRelatedSourceLinks
     : [];
-  const normalizedSourceUrl = typeof window.fbsCleanRelatedUrl === "function"
-    ? window.fbsCleanRelatedUrl(cleanUrl)
+  const cleanRelatedUrl = fwDom("cleanRelatedUrl");
+  const normalizedSourceUrl = typeof cleanRelatedUrl === "function"
+    ? cleanRelatedUrl(cleanUrl)
     : cleanUrl;
-  const normalizedCustomUrl = typeof window.fbsCleanRelatedUrl === "function"
-    ? window.fbsCleanRelatedUrl(globalCustomSourceLink)
+  const normalizedCustomUrl = typeof cleanRelatedUrl === "function"
+    ? cleanRelatedUrl(globalCustomSourceLink)
     : globalCustomSourceLink;
   const seenRelated = new Set();
   for (const item of relatedLinks) {
     const rawUrl = typeof item === "string" ? item : item?.url;
-    const url = typeof window.fbsCleanRelatedUrl === "function"
-      ? window.fbsCleanRelatedUrl(rawUrl)
+    const url = typeof cleanRelatedUrl === "function"
+      ? cleanRelatedUrl(rawUrl)
       : rawUrl;
     if (!url || seenRelated.has(url) || url === normalizedSourceUrl || url === normalizedCustomUrl) continue;
     seenRelated.add(url);
@@ -1254,15 +1271,19 @@ function buildCommentText(cleanUrl, author, source, options = {}) {
 // Plural: returns ALL images from the post (main + shared inner, deduped & sorted)
 // Must be called AFTER extractPostImage() for the same element since extractPostImage
 // populates the internal _lastExtractedImages cache.
-window.fbsExtractImages = function (element) {
+// Prefer FeedWriter.dom; keep window.fbs* COMPAT aliases — remove after v3.0
+window.FeedWriter = window.FeedWriter || {};
+window.FeedWriter.dom = window.FeedWriter.dom || {};
+window.FeedWriter.dom.extractImages = function (element) {
   // Always re-run extraction to get fresh data for this element
   extractPostImage(element);
   return _lastExtractedImages.slice();
 };
+window.fbsExtractImages = FeedWriter.dom.extractImages; // COMPAT alias — remove after v3.0
 
 // Async version: lấy permalink (sử dụng nút Share để copy link chính xác tuyệt đối, fallback sang DOM)
 // Nếu post là BÀI SHARE → ưu tiên tìm link bài GỐC trong nested article trước
-window.fbsExtractPermalinkAsync = async function (element) {
+window.FeedWriter.dom.extractPermalinkAsync = async function (element) {
   try {
     if (SITE === "facebook" && element) {
       const postContainer = _findPostContainer(element);
@@ -1326,6 +1347,7 @@ window.fbsExtractPermalinkAsync = async function (element) {
 
   return extractPostPermalink(element) || "";
 };
+window.fbsExtractPermalinkAsync = FeedWriter.dom.extractPermalinkAsync; // COMPAT alias — remove after v3.0
 
 // === HELPERS ===
 function esc(s) {
@@ -2149,10 +2171,11 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
       isSummarizing = false;
       summaryCache.set(cacheKey, msg.full);
       const discoveryElement = lastSummarizeParams?._element;
-      if (discoveryElement && typeof window.fbsDiscoverRelatedSourceLinks === "function") {
+      const discoverRelatedSourceLinks = fwDom("discoverRelatedSourceLinks");
+      if (discoveryElement && typeof discoverRelatedSourceLinks === "function") {
         pendingSourceDiscovery = {
           element: discoveryElement,
-          promise: window.fbsDiscoverRelatedSourceLinks(discoveryElement, msg.full).catch(() => ({
+          promise: discoverRelatedSourceLinks(discoveryElement, msg.full).catch(() => ({
             sourceUrl: "",
             relatedLinks: [],
           })),
@@ -2225,6 +2248,11 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
   });
 }
 
+// Register runtime API on FeedWriter namespace
+window.FeedWriter = window.FeedWriter || {};
+window.FeedWriter.runtime = window.FeedWriter.runtime || {};
+window.FeedWriter.runtime.summarizeText = summarizeText;
+
 // === MESSAGES (CONTEXT MENU, SHORTCUTS & UNSHORTEN) ===
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.action === "clear-cache") {
@@ -2255,14 +2283,18 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
   if (msg.action === "auto-github-post") {
     // Triggered by the background scheduler in a dedicated FB tab.
-    if (typeof window.fbsGithubAutoPost === "function") {
-      window.fbsGithubAutoPost(msg.text, msg.url, msg.image);
+    const githubAutoPost =
+      (window.FeedWriter && window.FeedWriter.composer && window.FeedWriter.composer.githubAutoPost) ||
+      window.fbsGithubAutoPost;
+    if (typeof githubAutoPost === "function") {
+      githubAutoPost(msg.text, msg.url, msg.image);
     } else {
       try {
         chrome.runtime.sendMessage({
           action: "github-autopost-done",
           ok: false,
-          message: "fbsGithubAutoPost chưa sẵn sàng.",
+          message: "githubAutoPost chưa sẵn sàng.",
+          stage: "not_ready",
         });
       } catch (_) {}
     }

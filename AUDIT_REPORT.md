@@ -1,15 +1,15 @@
 # FeedWriter Deep Audit
 
 Audit date: 2026-07-11 (supersedes 2026-06-12)  
-Implementation wave: **v2.5.0** — P0/P1 items from deep audit landed via parallel subagents.
+Implementation wave: **v2.5.1** (after v2.5.0) — message schemas, namespace, scoring profile, provider tests.
 
 Scope: Chrome Extension Manifest V3 — UI, UX, algorithms, performance, usability, security.
 
 Verification:
 
-- `npm test` → 28 pass, 0 fail
+- `npm test` → 84 pass, 0 fail
 - `npm run check` → syntax OK on core JS
-- `manifest.json` valid JSON
+- `manifest.json` valid JSON (v2.5.1)
 
 ---
 
@@ -54,10 +54,18 @@ v2.5.0 closes the largest **safety / discoverability / performance** gaps from t
 2. Skip expensive work on off-screen already-processed posts when IntersectionObserver is active.
 3. Debug: `localStorage.fbsDebugPerf = '1'`.
 
-### P2 Engineering
+### P2 Engineering (v2.5.0)
 
-1. **`npm test`** / `lib/pure-logic.js` / 28 tests (adapter, ngram, URL, Labs, StatusFormatter).
-2. Keep-alive alarm less aggressive (5 min, activity-gated).
+1. **`npm test`** / pure modules / keep-alive less aggressive.
+
+### v2.5.1 follow-up
+
+1. **ACTION_SCHEMAS** — `lib/message-schema.js` gate on every background message.
+2. **Provider rotation** pure + tests; popup provider health panel.
+3. **FeedWriter namespace** — dom/composer/format/runtime + COMPAT aliases.
+4. **Scoring profile** — tech | general | affiliate.
+5. Legacy formatter call sites StatusFormatter-first (`@deprecated` kept).
+6. **84 tests** total.
 
 ---
 
@@ -65,11 +73,11 @@ v2.5.0 closes the largest **safety / discoverability / performance** gaps from t
 
 | Priority | Item |
 |----------|------|
-| P1 | Full ACTION_SCHEMAS validation map |
-| P1 | Auto-post stage logs in popup log UI (content already reports stages) |
-| P2 | Delete legacy formatter paths in content-composer once StatusFormatter-only |
-| P2 | `window.FeedWriter` namespace; split god files |
-| P2 | Scoring profile selectable (tech vs general) |
+| P1 | Feed scanner PostState WeakMap refactor (#9) — partial IO-gate already |
+| P1 | Surface auto-post `stage` in popup log UI |
+| P2 | Remove COMPAT `window.fbs*` aliases (v3.0) |
+| P2 | Delete `@deprecated` formatter functions |
+| P2 | UI `el()` helper / reduce innerHTML templates |
 | P3 | Chrome Web Store packaging + privacy policy |
 
 See `UPGRADE_BACKLOG.md` for acceptance criteria detail.
