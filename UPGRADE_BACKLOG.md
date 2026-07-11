@@ -45,7 +45,7 @@ Verification:
 
 Priority: P0
 
-Status: Implemented. README now reflects version 2.4.0, current shortcuts, source workflow, Shopee manual affiliate flow, and current module layout.
+Status: Implemented. README tracks manifest version (2.5.1+), shortcuts, source workflow, Shopee manual affiliate, Labs risk note, tests.
 
 Why:
 
@@ -159,7 +159,7 @@ Verification:
 
 Priority: P0
 
-Status: Implemented (2026-07-11). Settings `labsAutomationEnabled` + `labsAutomationAcknowledgedAt`; popup Labs gate + confirm phrase `TOI HIEU RUI RO` + "Tắt Labs ngay"; schedule/manual require Labs; migration forces safe off. Stage-level logs still backlog.
+Status: Implemented (2026-07-11). Labs gate + confirm phrase `TOI HIEU RUI RO` + "Tắt Labs ngay"; schedule/manual require Labs; stage logs in popup GitHub log (`stage` field).
 
 Why:
 
@@ -349,7 +349,7 @@ Verification:
 
 Priority: P2
 
-Status: Implemented compatibility phase (v2.5.1). `FeedWriter.dom|composer|format|runtime` with `window.fbs*` COMPAT aliases until v3.0. Full WeakMap PostState scanner still open (#9).
+Status: Implemented compatibility phase (v2.5.1). `FeedWriter.dom|composer|format|runtime` with `window.fbs*` COMPAT aliases until v3.0. PostState WeakMap done in #9.
 
 Why:
 
@@ -387,6 +387,8 @@ Verification:
 ### 11. UI Rendering Helper
 
 Priority: P2
+
+Status: Implemented core (v2.5.1+). `lib/dom-el.js` + popup `el()`; provider health built with textContent nodes; escape tests for hostile fixtures. Full migration of every innerHTML template deferred (low risk where esc() already used).
 
 Why:
 
@@ -428,6 +430,8 @@ Verification:
 
 Priority: P1
 
+Status: Implemented. Composer auto-select source field, Paste (optional clipboardRead), click-to-select comment preview, Copy nguồn, no auto-overwrite clipboard with wrong source; README + SMOKE_TEST documented.
+
 Why:
 
 - The app's automatic source extraction can be wrong; users need fast manual correction.
@@ -460,7 +464,7 @@ Verification:
 
 Priority: P2
 
-Status: Implemented (v2.5.1). Keys tab `#providerHealth` shows OK / rate-limited until / last used; refresh button. Clear rate-limit action still optional backlog.
+Status: Implemented (v2.5.1). Keys tab `#providerHealth` + refresh + **Xóa rate-limit** (clears flags only, keeps keys).
 
 Why:
 
@@ -499,3 +503,5 @@ The audit-driven upgrade program should be considered complete when:
 4. README and smoke checklist match the current manifest and UI.
 5. Auto-post requires explicit Labs acknowledgement and logs stage-level failures.
 6. Content scanning has measured performance counters and no longer depends primarily on broad periodic scans.
+
+**Status (2026-07-11): COMPLETE.** All 13 backlog items have Implemented status (compat/deferred notes only for v3 alias removal and full innerHTML migration). Verified by `npm test` + `npm run check`.

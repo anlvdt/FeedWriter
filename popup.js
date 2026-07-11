@@ -700,6 +700,29 @@ function formatWaitUntil(until) {
   return "còn ~" + h + "h" + (m ? m + "p" : "");
 }
 
+/** Safe DOM helpers — prefer textContent over string HTML for user/API data. */
+function el(tag, attrs = {}, children = []) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (!k || /^on/i.test(k)) continue;
+    if (v == null || v === false) continue;
+    if (k === "className") node.className = String(v);
+    else if (k === "textContent") node.textContent = String(v);
+    else if (v === true) node.setAttribute(k, "");
+    else node.setAttribute(k, String(v));
+  }
+  const kids = Array.isArray(children) ? children : [children];
+  for (const child of kids) {
+    if (child == null || child === false) continue;
+    if (typeof child === "string" || typeof child === "number") {
+      node.appendChild(document.createTextNode(String(child)));
+    } else if (child && child.nodeType) {
+      node.appendChild(child);
+    }
+  }
+  return node;
+}
+
 async function loadProviderHealth() {
   const listEl = document.getElementById("providerHealthList");
   if (!listEl) return;
@@ -709,11 +732,15 @@ async function loadProviderHealth() {
   const localData = await chrome.storage.local.get(["keyStatus"]);
   const ks = localData.keyStatus || {};
   const now = Date.now();
-  const rows = [];
 
+  // Clear with DOM APIs (no innerHTML of user/key-derived strings)
+  while (listEl.firstChild) listEl.removeChild(listEl.firstChild);
+
+  let count = 0;
   for (const provider of ALL_PROVIDERS) {
     const keys = apiKeys[provider] || [];
     for (const key of keys) {
+      count++;
       const info = ks[key] || {};
       const limited =
         info.rateLimitedUntil && now < info.rateLimitedUntil;
@@ -734,37 +761,53 @@ async function loadProviderHealth() {
       const lastUsed = info.lastUsed
         ? "Last used " + formatHealthTime(info.lastUsed)
         : "Chưa dùng";
-      rows.push(
-        '<div class="provider-health-row">' +
-          '<div class="provider-health-main">' +
-          '<span class="provider-health-provider">' +
-          esc(provider) +
-          "</span>" +
-          '<span class="provider-health-key">' +
-          esc(maskKey(key)) +
-          "</span>" +
-          "</div>" +
-          '<div class="provider-health-meta">' +
-          '<span class="provider-health-badge ' +
-          statusCls +
-          '">' +
-          esc(statusLabel) +
-          "</span>" +
-          '<span class="provider-health-last">' +
-          esc(lastUsed) +
-          "</span>" +
-          "</div>" +
-          "</div>",
+
+      listEl.appendChild(
+        el("div", { className: "provider-health-row" }, [
+          el("div", { className: "provider-health-main" }, [
+            el("span", { className: "provider-health-provider" }, [provider]),
+            el("span", { className: "provider-health-key" }, [maskKey(key)]),
+          ]),
+          el("div", { className: "provider-health-meta" }, [
+            el("span", { className: "provider-health-badge " + statusCls }, [
+              statusLabel,
+            ]),
+            el("span", { className: "provider-health-last" }, [lastUsed]),
+          ]),
+        ]),
       );
     }
   }
 
-  if (rows.length === 0) {
-    listEl.innerHTML =
-      '<div class="field-hint">Chưa có key. Thêm key ở trên để xem trạng thái.</div>';
-  } else {
-    listEl.innerHTML = rows.join("");
+  if (count === 0) {
+    listEl.appendChild(
+      el("div", { className: "field-hint" }, [
+        "Chưa có key. Thêm key ở trên để xem trạng thái.",
+      ]),
+    );
   }
+}
+
+async function clearProviderRateLimits() {
+  if (
+    !confirm(
+      "Xóa trạng thái rate-limit của tất cả key?\n(Không xóa API key — chỉ cho phép retry ngay.)",
+    )
+  ) {
+    return;
+  }
+  const local = await chrome.storage.local.get(["keyStatus"]);
+  const ks = { ...(local.keyStatus || {}) };
+  for (const key of Object.keys(ks)) {
+    const entry = { ...(ks[key] || {}) };
+    delete entry.rateLimitedUntil;
+    delete entry.lastRateLimited;
+    ks[key] = entry;
+  }
+  await chrome.storage.local.set({ keyStatus: ks });
+  await loadProviderHealth();
+  if (typeof loadKeyLists === "function") loadKeyLists();
+  showKeyStatus("Đã xóa cờ rate-limit (key vẫn giữ).", "success");
 }
 
 const refreshProviderHealthBtn = document.getElementById(
@@ -775,6 +818,10 @@ if (refreshProviderHealthBtn) {
     loadProviderHealth();
     loadKeyLists();
   });
+}
+const clearRateLimitBtn = document.getElementById("clearRateLimitBtn");
+if (clearRateLimitBtn) {
+  clearRateLimitBtn.addEventListener("click", () => clearProviderRateLimits());
 }
 
 

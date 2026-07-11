@@ -69,15 +69,17 @@ v2.5.0 closes the largest **safety / discoverability / performance** gaps from t
 
 ---
 
-## Remaining backlog (not blocking)
+## Upgrade program status
+
+**COMPLETE** against `UPGRADE_BACKLOG.md` Definition of Done (all 13 items Implemented).
+
+### Post-program nice-to-haves (not required)
 
 | Priority | Item |
 |----------|------|
-| P1 | Feed scanner PostState WeakMap refactor (#9) — partial IO-gate already |
-| P1 | Surface auto-post `stage` in popup log UI |
-| P2 | Remove COMPAT `window.fbs*` aliases (v3.0) |
-| P2 | Delete `@deprecated` formatter functions |
-| P2 | UI `el()` helper / reduce innerHTML templates |
+| P3 | Remove COMPAT `window.fbs*` aliases (v3.0) |
+| P3 | Delete `@deprecated` formatter functions in composer |
+| P3 | Migrate remaining large `innerHTML` templates to `el()` |
 | P3 | Chrome Web Store packaging + privacy policy |
 
 See `UPGRADE_BACKLOG.md` for acceptance criteria detail.
