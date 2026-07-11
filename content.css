@@ -3173,3 +3173,157 @@ article:hover .fbs-allpost-btn,
   color: #6c5ce7;
   background: rgba(108, 92, 231, 0.06);
 }
+
+/* ── UI polish wave: mode badge, toast, toolbar, copy ── */
+.fbs-panel-head-left {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.fbs-mode-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: rgba(168, 85, 247, 0.18);
+  color: #d8b4fe;
+  border: 1px solid rgba(168, 85, 247, 0.35);
+  white-space: nowrap;
+  text-transform: uppercase;
+}
+.fbs-mode-badge[data-mode="status_share"] {
+  background: rgba(0, 206, 201, 0.15);
+  color: #5eead4;
+  border-color: rgba(0, 206, 201, 0.35);
+}
+.fbs-mode-badge[data-mode="affiliate"] {
+  background: rgba(255, 165, 2, 0.15);
+  color: #ffc078;
+  border-color: rgba(255, 165, 2, 0.4);
+}
+.fbs-mode-badge[data-mode="comment_summary"] {
+  background: rgba(95, 212, 255, 0.12);
+  color: #7dd3fc;
+  border-color: rgba(95, 212, 255, 0.35);
+}
+
+.fbs-panel[data-fbs-theme="light"] .fbs-mode-badge {
+  background: rgba(124, 58, 237, 0.1);
+  color: #7c3aed;
+  border-color: rgba(124, 58, 237, 0.25);
+}
+
+.fbs-copy-btn.fbs-copy-success {
+  background: linear-gradient(135deg, #10b981, #34d399) !important;
+  box-shadow: 0 2px 12px rgba(16, 185, 129, 0.4) !important;
+}
+
+/* Floating toast */
+.fbs-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%) translateY(12px);
+  z-index: 2147483647;
+  max-width: min(90vw, 360px);
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: rgba(24, 24, 40, 0.94);
+  color: #f3f4f6;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  border: 1px solid rgba(168, 85, 247, 0.35);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.fbs-toast.fbs-toast-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+.fbs-toast.fbs-toast-error {
+  border-color: rgba(255, 123, 123, 0.5);
+  color: #fecaca;
+}
+
+/* Tone pills polish */
+.fbs-tone-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+.fbs-tone-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.45);
+  margin-right: 2px;
+}
+.fbs-tone-btn {
+  border-radius: 999px !important;
+  padding: 4px 10px !important;
+  font-size: 11px !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  color: rgba(255, 255, 255, 0.75) !important;
+  transition: all 0.15s ease !important;
+}
+.fbs-tone-btn:hover {
+  border-color: rgba(168, 85, 247, 0.45) !important;
+  color: #fff !important;
+  background: rgba(168, 85, 247, 0.12) !important;
+}
+.fbs-tone-btn.active {
+  background: rgba(168, 85, 247, 0.28) !important;
+  border-color: rgba(168, 85, 247, 0.55) !important;
+  color: #fff !important;
+  box-shadow: 0 0 0 1px rgba(168, 85, 247, 0.2);
+}
+
+/* Floating toolbar polish */
+.fbs-floating-toolbar {
+  border-radius: 14px !important;
+  padding: 4px !important;
+  gap: 2px !important;
+  border: 1px solid rgba(168, 85, 247, 0.35) !important;
+  background: rgba(24, 24, 40, 0.92) !important;
+  backdrop-filter: blur(14px) !important;
+  -webkit-backdrop-filter: blur(14px) !important;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.04) !important;
+}
+.fbs-floating-btn {
+  border-radius: 10px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.01em;
+}
+.fbs-floating-btn.fbs-btn-highlight {
+  background: linear-gradient(135deg, #6c5ce7, #a855f7) !important;
+  color: #fff !important;
+}
+
+.fbs-panel[data-fbs-theme="light"] .fbs-tone-label {
+  color: rgba(0, 0, 0, 0.45);
+}
+.fbs-panel[data-fbs-theme="light"] .fbs-tone-btn {
+  border-color: rgba(0, 0, 0, 0.1) !important;
+  background: rgba(0, 0, 0, 0.03) !important;
+  color: rgba(0, 0, 0, 0.7) !important;
+}
+.fbs-panel[data-fbs-theme="light"] .fbs-tone-btn.active {
+  background: rgba(124, 58, 237, 0.12) !important;
+  border-color: rgba(124, 58, 237, 0.4) !important;
+  color: #6d28d9 !important;
+}

@@ -7,23 +7,48 @@
 <body>
   <!-- Main Application View -->
   <div id="main-view" class="popup">
-    <div class="header">
-      <span class="logo"><img src="icons/icon48.png" width="22" height="22" alt="Logo"></span>
-      <h1>FeedWriter</h1>
-    </div>
+    <header class="header">
+      <div class="header-brand">
+        <span class="logo" aria-hidden="true"><img src="icons/icon48.png" width="28" height="28" alt=""></span>
+        <div class="header-text">
+          <div class="header-title-row">
+            <h1>FeedWriter</h1>
+            <span class="version-badge" id="headerVersion">v2.5.1</span>
+          </div>
+          <p class="header-tagline">Tóm tắt · Status · Affiliate bằng AI</p>
+        </div>
+      </div>
+    </header>
 
-    <div class="tabs" role="tablist">
-      <button class="tab active" role="tab" aria-selected="true" data-tab="settings">Cài đặt</button>
-      <button class="tab" role="tab" aria-selected="false" data-tab="apikeys">Keys</button>
-      <button class="tab" role="tab" aria-selected="false" data-tab="history">Lịch sử</button>
-      <button class="tab" role="tab" aria-selected="false" data-tab="about">About</button>
+    <div class="tabs" role="tablist" aria-label="Mục chính">
+      <button class="tab active" role="tab" aria-selected="true" aria-controls="tab-settings" id="tabbtn-settings" data-tab="settings" title="Cài đặt">
+        <span class="tab-icon" aria-hidden="true">⚙️</span><span class="tab-label">Cài đặt</span>
+      </button>
+      <button class="tab" role="tab" aria-selected="false" aria-controls="tab-apikeys" id="tabbtn-apikeys" data-tab="apikeys" title="API Keys">
+        <span class="tab-icon" aria-hidden="true">🔑</span><span class="tab-label">Keys</span>
+      </button>
+      <button class="tab" role="tab" aria-selected="false" aria-controls="tab-history" id="tabbtn-history" data-tab="history" title="Lịch sử">
+        <span class="tab-icon" aria-hidden="true">📜</span><span class="tab-label">Lịch sử</span>
+      </button>
+      <button class="tab" role="tab" aria-selected="false" aria-controls="tab-about" id="tabbtn-about" data-tab="about" title="About">
+        <span class="tab-icon" aria-hidden="true">ℹ️</span><span class="tab-label">About</span>
+      </button>
     </div>
 
     
     <!-- Settings Tab -->
-    <div class="tab-content active" id="tab-settings">
+    <div class="tab-content active" id="tab-settings" role="tabpanel" aria-labelledby="tabbtn-settings">
+      <div class="quick-tip" id="quickTip">
+        <div class="quick-tip-icon" aria-hidden="true">💡</div>
+        <div class="quick-tip-body">
+          <strong>Bắt đầu nhanh</strong>
+          <span>Bôi đen văn bản trên Facebook → chọn Tóm tắt / Status / Affiliate. Thêm API key ở tab Keys nếu chưa có.</span>
+        </div>
+        <button type="button" class="quick-tip-dismiss" id="dismissQuickTip" title="Ẩn gợi ý" aria-label="Ẩn gợi ý">×</button>
+      </div>
+
       <div class="settings-mode-header">
-        <span class="settings-mode-title">⚙️ Cài đặt cơ bản</span>
+        <span class="settings-mode-title">Cài đặt cơ bản</span>
         <label class="switch-label">
           <input type="checkbox" id="advancedModeToggle">
           <span class="slider-round"></span>
@@ -265,8 +290,10 @@
         </div>
       </div>
 
-      <button id="saveBtn" class="btn btn-primary" style="margin-top:15px">Lưu cài đặt</button>
-      <div id="status" class="status" role="status" aria-live="polite"></div>
+      <div class="sticky-actions">
+        <button id="saveBtn" class="btn btn-primary btn-block">Lưu cài đặt</button>
+        <div id="status" class="status status-inline" role="status" aria-live="polite"></div>
+      </div>
 
       <!-- Settings Management -->
       <div class="accordion advanced-accordion" style="margin-top:15px">
@@ -297,9 +324,13 @@
       </div>
     </div>
     <!-- API Keys Tab -->
-    <div class="tab-content" id="tab-apikeys">
+    <div class="tab-content" id="tab-apikeys" role="tabpanel" aria-labelledby="tabbtn-apikeys">
+      <div class="section-intro">
+        <strong>API Keys</strong>
+        <span>Thêm ít nhất 1 key miễn phí (Groq khuyến nghị). Hệ thống tự xoay key khi bị rate limit.</span>
+      </div>
       <div class="field">
-        <label>Thêm API Key</label>
+        <label for="newApiKey">Thêm API Key</label>
         <div class="input-group">
           <input type="password" id="newApiKey" placeholder="Dán API key vào đây" autocomplete="off" autocapitalize="off" spellcheck="false">
           <button type="button" id="toggleNewApiKey" class="icon-btn" title="Hiện / ẩn key" aria-label="Hiện hoặc ẩn API key" aria-pressed="false">👁</button>
@@ -364,7 +395,7 @@
     </div>
 
     <!-- History Tab -->
-    <div class="tab-content" id="tab-history">
+    <div class="tab-content" id="tab-history" role="tabpanel" aria-labelledby="tabbtn-history">
       <!-- Agent Stats (Feature 7) - Redesigned -->
       <div id="agentStatsBox" class="agent-stats-widget">
         <div class="agent-stats-header">
@@ -408,7 +439,7 @@
     </div>
 
     <!-- About Tab -->
-    <div class="tab-content" id="tab-about">
+    <div class="tab-content" id="tab-about" role="tabpanel" aria-labelledby="tabbtn-about">
       <div class="about-section">
         <div class="about-section-title">Tác giả</div>
         <div class="about-card">
@@ -419,29 +450,30 @@
               <div class="about-author-bio">Developer / Content Creator</div>
             </div>
           </div>
-          <div style="margin-top:8px; font-size:11px;">
-            <a href="https://github.com/anlvdt" target="_blank">github.com/anlvdt</a>
+          <div class="about-links">
+            <a href="https://github.com/anlvdt" target="_blank" rel="noopener">github.com/anlvdt</a>
           </div>
         </div>
       </div>
 
       <div class="about-section">
         <div class="about-section-title">Phím tắt</div>
-        <div class="about-card">
+        <div class="about-card about-shortcuts">
           <div class="about-shortcut"><span>Tóm tắt</span><span class="about-shortcut-key">Ctrl/⌘+Shift+S</span></div>
           <div class="about-shortcut"><span>Affiliate</span><span class="about-shortcut-key">Ctrl/⌘+Shift+A</span></div>
           <div class="about-shortcut"><span>Copy kết quả</span><span class="about-shortcut-key">Ctrl/⌘+C</span></div>
           <div class="about-shortcut"><span>Sửa kết quả</span><span class="about-shortcut-key">Ctrl/⌘+E</span></div>
-          <div style="font-size:10px; color:var(--text-muted); margin-top:6px;">Đổi phím: chrome://extensions/shortcuts</div>
+          <div class="field-hint">Đổi phím tại <code>chrome://extensions/shortcuts</code></div>
         </div>
       </div>
 
       <div class="about-section">
         <div class="about-section-title">Hướng dẫn</div>
-        <div class="about-card">
-          Chuột phải bôi đen chữ → chọn tính năng.<br>
-          Tóm tắt xong → Sửa → Copy Status.<br>
-          Hỗ trợ: Facebook, Threads, X, LinkedIn, Reddit.
+        <div class="about-card howto-steps">
+          <div class="howto-step"><span class="howto-num">1</span><span>Bôi đen chữ hoặc bấm <strong>Tóm tắt</strong> trên feed</span></div>
+          <div class="howto-step"><span class="howto-num">2</span><span>Chỉnh sửa / đổi tone → <strong>Copy</strong> hoặc <strong>Đăng Status</strong></span></div>
+          <div class="howto-step"><span class="howto-num">3</span><span>Dán nguồn thủ công vào comment đầu (Paste link)</span></div>
+          <div class="field-hint">Nền tảng: Facebook (ổn định) · Threads / X / LinkedIn / Reddit (thử nghiệm)</div>
         </div>
       </div>
 

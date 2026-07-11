@@ -634,17 +634,17 @@ function ensureOverlay() {
   panel.setAttribute("aria-modal", "true");
   panel.setAttribute("aria-label", "FeedWriter");
   panel.innerHTML =
-    '<div class="fbs-panel-head"><span><img src="' +
+    '<div class="fbs-panel-head"><span class="fbs-panel-head-left"><img src="' +
     ICON_BASE64 +
-    '" width="16" height="16" style="vertical-align:-3px"> <span class="fbs-title-text">Tóm tắt AI</span></span>' +
-    '<div class="fbs-panel-actions"><div class="fbs-min" role="button" tabindex="0" title="Thu gọn/Mở rộng">_</div><div class="fbs-close" role="button" tabindex="0" title="Đóng">&#10005;</div></div></div>' +
+    '" width="16" height="16" alt=""> <span class="fbs-title-text">Tóm tắt AI</span><span class="fbs-mode-badge" data-mode="summary">Tóm tắt</span></span>' +
+    '<div class="fbs-panel-actions"><div class="fbs-min" role="button" tabindex="0" title="Thu gọn/Mở rộng" aria-label="Thu gọn">_</div><div class="fbs-close" role="button" tabindex="0" title="Đóng" aria-label="Đóng">&#10005;</div></div></div>' +
     '<div class="fbs-panel-body"></div>' +
-    '<div class="fbs-tone-row">' +
-    '<span class="fbs-tone-label">Tone:</span>' +
-    '<button class="fbs-tone-btn" data-tone="short">Ngắn hơn</button>' +
-    '<button class="fbs-tone-btn" data-tone="academic">Học thuật</button>' +
-    '<button class="fbs-tone-btn" data-tone="viral">Viral</button>' +
-    '<button class="fbs-tone-btn" data-tone="bullet">Bullet points</button>' +
+    '<div class="fbs-tone-row" role="group" aria-label="Đổi tone">' +
+    '<span class="fbs-tone-label">Tone</span>' +
+    '<button type="button" class="fbs-tone-btn" data-tone="short">Ngắn hơn</button>' +
+    '<button type="button" class="fbs-tone-btn" data-tone="academic">Học thuật</button>' +
+    '<button type="button" class="fbs-tone-btn" data-tone="viral">Viral</button>' +
+    '<button type="button" class="fbs-tone-btn" data-tone="bullet">Bullet</button>' +
     "</div>" +
     '<div class="fbs-panel-footer">' +
     '<div class="fbs-shortcuts-hint">' +
@@ -859,11 +859,28 @@ function openOverlay(html, streaming, type = "summary") {
   ensureOverlay();
   const newlyOpened = !panel.classList.contains("fbs-visible");
   const titleText = panel.querySelector(".fbs-title-text");
-  if (titleText) {
-    if (type === "affiliate") titleText.textContent = "Chế bài Affiliate";
-    else if (type === "status_share") titleText.textContent = "Viết Status";
-    else titleText.textContent = "Tóm tắt nội dung";
+  const modeBadge = panel.querySelector(".fbs-mode-badge");
+  let modeLabel = "Tóm tắt";
+  let titleLabel = "Tóm tắt nội dung";
+  if (type === "affiliate") {
+    modeLabel = "Affiliate";
+    titleLabel = "Chế bài Affiliate";
+  } else if (type === "status_share") {
+    modeLabel = "Status";
+    titleLabel = "Viết Status";
+  } else if (type === "comment_summary") {
+    modeLabel = "Comment";
+    titleLabel = "Tóm tắt bình luận";
+  } else if (type === "batch" || String(type).startsWith("batch")) {
+    modeLabel = "Batch";
+    titleLabel = "Xử lý hàng loạt";
   }
+  if (titleText) titleText.textContent = titleLabel;
+  if (modeBadge) {
+    modeBadge.textContent = modeLabel;
+    modeBadge.setAttribute("data-mode", type || "summary");
+  }
+  panel.setAttribute("data-fbs-mode", type || "summary");
 
   // Streaming: chỉ update nội dung result, không rebuild toàn bộ DOM
   if (streaming) {
@@ -1023,13 +1040,38 @@ function copyResult() {
 
   navigator.clipboard.writeText(text).then(() => {
     const btn = panel.querySelector(".fbs-copy-btn");
+    if (!btn) return;
     const orig = btn.innerHTML;
+    btn.classList.add("fbs-copy-success");
     btn.innerHTML =
-      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Copied';
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Đã copy';
+    showFbsToast("Đã copy vào clipboard");
     setTimeout(() => {
       btn.innerHTML = orig;
+      btn.classList.remove("fbs-copy-success");
     }, 1500);
+  }).catch(() => {
+    showFbsToast("Không copy được — thử lại hoặc copy thủ công", true);
   });
+}
+
+/** Lightweight toast near bottom of viewport (content page) */
+function showFbsToast(message, isError = false) {
+  let toast = document.querySelector(".fbs-toast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.className = "fbs-toast";
+    toast.setAttribute("role", "status");
+    toast.setAttribute("aria-live", "polite");
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.classList.toggle("fbs-toast-error", !!isError);
+  toast.classList.add("fbs-toast-visible");
+  clearTimeout(showFbsToast._timer);
+  showFbsToast._timer = setTimeout(() => {
+    toast.classList.remove("fbs-toast-visible");
+  }, 2200);
 }
 
 // === ĐĂNG STATUS ===

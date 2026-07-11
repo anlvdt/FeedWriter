@@ -239,23 +239,68 @@ checkWizardStatus();
 const allTabs = document.querySelectorAll(".tab");
 const allTabContents = document.querySelectorAll(".tab-content");
 
-allTabs.forEach((tab) => {
-  tab.addEventListener("click", () => {
-    allTabs.forEach((t) => {
-      t.classList.remove("active");
-      t.setAttribute("aria-selected", "false");
-    });
-    allTabContents.forEach((c) => c.classList.remove("active"));
-    tab.classList.add("active");
-    tab.setAttribute("aria-selected", "true");
-    document.getElementById("tab-" + tab.dataset.tab).classList.add("active");
-    if (tab.dataset.tab === "history") { loadHistory(); loadAgentStats(); }
-    if (tab.dataset.tab === "apikeys") {
-      loadKeyLists();
-      loadProviderHealth();
+function activateTab(tab) {
+  if (!tab) return;
+  allTabs.forEach((t) => {
+    t.classList.remove("active");
+    t.setAttribute("aria-selected", "false");
+    t.setAttribute("tabindex", "-1");
+  });
+  allTabContents.forEach((c) => c.classList.remove("active"));
+  tab.classList.add("active");
+  tab.setAttribute("aria-selected", "true");
+  tab.setAttribute("tabindex", "0");
+  const panel = document.getElementById("tab-" + tab.dataset.tab);
+  if (panel) panel.classList.add("active");
+  if (tab.dataset.tab === "history") {
+    loadHistory();
+    loadAgentStats();
+  }
+  if (tab.dataset.tab === "apikeys") {
+    loadKeyLists();
+    loadProviderHealth();
+  }
+}
+
+allTabs.forEach((tab, index) => {
+  tab.setAttribute("tabindex", tab.classList.contains("active") ? "0" : "-1");
+  tab.addEventListener("click", () => activateTab(tab));
+  tab.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft" && e.key !== "Home" && e.key !== "End") {
+      return;
     }
+    e.preventDefault();
+    const tabs = Array.from(allTabs);
+    let next = index;
+    if (e.key === "ArrowRight") next = (index + 1) % tabs.length;
+    else if (e.key === "ArrowLeft") next = (index - 1 + tabs.length) % tabs.length;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = tabs.length - 1;
+    activateTab(tabs[next]);
+    tabs[next].focus();
   });
 });
+
+// Header version badge + dismissible quick tip
+(function initUiChrome() {
+  const verBadge = document.getElementById("headerVersion");
+  if (verBadge && chrome?.runtime?.getManifest) {
+    try {
+      verBadge.textContent = "v" + chrome.runtime.getManifest().version;
+    } catch (_) {}
+  }
+  const tip = document.getElementById("quickTip");
+  const dismiss = document.getElementById("dismissQuickTip");
+  if (tip && dismiss) {
+    chrome.storage.local.get(["hideQuickTip"], (d) => {
+      if (d && d.hideQuickTip) tip.classList.add("is-hidden");
+    });
+    dismiss.addEventListener("click", () => {
+      tip.classList.add("is-hidden");
+      chrome.storage.local.set({ hideQuickTip: true });
+    });
+  }
+})();
 
 // === SETTINGS ===
 const minLengthInput = document.getElementById("minLength");
