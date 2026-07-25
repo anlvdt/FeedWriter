@@ -151,59 +151,6 @@ QUY TẮC CHÍNH TẢ:
 - Viết hoa: tên người, tên công ty, địa danh, chức danh.
 - KHÔNG viết tắt địa danh ngắn: Việt Nam, Hà Nội (không viết VN, HN).`;
 
-// AFFILIATE - Review sản phẩm chân thật + Quy tắc VnReview
-const AFFILIATE_PROMPT =
-  `Bạn là người dùng thật, viết review sản phẩm tự nhiên.
-
-NHIỆM VỤ: Viết bài affiliate từ thông tin sản phẩm, như đã dùng thử.
-
-QUY TRÌNH:
-1. XÁC ĐỊNH: Sản phẩm giải quyết vấn đề gì? Điểm nổi bật nhất?
-2. XÂY DỰNG: Tạo câu chuyện trải nghiệm chân thật (vấn đề → tìm kiếm → thử dùng → kết quả)
-3. VIẾT: Xưng "mình", giọng kể bạn bè, chi tiết cụ thể
-
-YÊU CẦU:
-- 2-3 đoạn ngắn, tổng 100-200 từ
-- Mở bằng vấn đề thực tế, KHÔNG mở bằng tên sản phẩm
-- Điểm mạnh viết như phát hiện, không quảng cáo
-- Cuối bài: "Link: [LINK]" hoặc "Mua ở đây: [LINK]"
-- KHÔNG hô hào "MUA NGAY", "GIÁ SỐC"
-- Giọng chân thật, không phóng đại
-` + VNREVIEW_RULES;
-
-// AFFILIATE NHẸ NHÀNG - Soft sell
-const AFFILIATE_SOFT_PROMPT =
-  `Viết chia sẻ trải nghiệm sản phẩm nhẹ nhàng, không giống quảng cáo.
-
-QUY TRÌNH:
-1. Tìm 1 vấn đề thực tế mà sản phẩm giải quyết
-2. Viết như đang kể chuyện, phát hiện sản phẩm một cách tự nhiên
-3. Để link ở cuối, không kêu gọi mua
-
-YÊU CẦU:
-- 80-150 từ, giọng nhẹ nhàng
-- Mở bằng câu chuyện/vấn đề, KHÔNG mở bằng tên sản phẩm
-- Điểm mạnh viết như phát hiện ra, không PR
-- Link ở cuối tự nhiên, không kêu gọi
-` + VNREVIEW_RULES;
-
-// AFFILIATE CÂU CHUYỆN - Storytelling format
-const AFFILIATE_STORY_PROMPT =
-  `Viết bài affiliate theo format câu chuyện hấp dẫn.
-
-QUY TRÌNH:
-1. TÌNH HUỐNG: Mình đang gặp vấn đề gì cụ thể?
-2. HÀNH TRÌNH: Đã thử những gì? Tại sao chưa ổn?
-3. PHÁT HIỆN: Tìm ra sản phẩm này, dùng thử thấy sao?
-4. KẾT QUẢ: Điều mình thích nhất + chia sẻ link cho ai cần
-
-YÊU CẦU:
-- 100-200 từ, giọng kể chuyện tự nhiên
-- Xưng "mình", chi tiết cụ thể (bao lâu, kết quả gì)
-- Không PR cứng, không hô hào
-- Link cuối bài tự nhiên
-` + VNREVIEW_RULES;
-
 // TÓM TẮT GIỮ CẤU TRÚC - Preserve original structure
 const SUMMARY_STRUCTURED_PROMPT = `Bạn là chuyên gia tóm tắt có cấu trúc.
 
@@ -265,9 +212,4 @@ const PROMPT_TEMPLATES = {
 
   // Status share uses detailed prompt
   status_share: SUMMARY_DETAILED_PROMPT,
-
-  // Affiliate variants
-  affiliate: AFFILIATE_PROMPT,
-  affiliate_soft: AFFILIATE_SOFT_PROMPT,
-  affiliate_story: AFFILIATE_STORY_PROMPT,
 };

@@ -1,28 +1,26 @@
 {
   "manifest_version": 3,
   "name": "FeedWriter",
-  "version": "2.5.1",
-  "description": "Tóm tắt bài viết bằng AI với tiêu đề hook mạnh, chỉnh sửa & copy thành status. Viết Status tối ưu reach. Chế bài affiliate. Tự động lấy repo hot GitHub, viết tóm tắt & đăng status Facebook theo lịch. Dịch từ Anh-Việt.",
+  "version": "2.4.0",
+  "description": "Tóm tắt bài viết bằng AI, chỉnh sửa & copy thành status. Dịch EN→VI: từ, đoạn văn, slang, collocations, shadowing.",
   "author": "Le An (anlvdt)",
   "homepage_url": "https://github.com/anlvdt/fb-post-summarizer",
   "permissions": [
     "storage",
     "contextMenus",
     "activeTab",
-    "scripting",
-    "alarms"
-  ],
-  "optional_permissions": [
     "cookies",
+    "scripting",
+    "alarms",
     "clipboardRead"
   ],
   "host_permissions": [
     "https://generativelanguage.googleapis.com/*",
-    "https://api.github.com/*",
     "https://api.groq.com/*",
     "https://api.cerebras.ai/*",
     "https://api.sambanova.ai/*",
     "https://openrouter.ai/*",
+    "https://*/*",
     "*://*.shope.ee/*",
     "*://*.shopee.vn/*",
     "https://tinyurl.com/*",
@@ -30,11 +28,8 @@
     "https://v.gd/*",
     "https://da.gd/*"
   ],
-  "optional_host_permissions": [
-    "https://*/*"
-  ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "service-worker.js"
   },
   "content_scripts": [
     {
@@ -48,23 +43,43 @@
         "https://www.linkedin.com/*",
         "https://www.reddit.com/*"
       ],
-      "js": ["errors.js", "utils.js", "dom-helpers.js", "post-data.js", "status-formatter.js", "content-dom.js", "poster-facebook.js", "poster-threads.js", "poster-x.js", "poster-linkedin.js", "poster-reddit.js", "cross-poster.js", "content-composer.js", "content.js"],
-      "css": ["content.css"],
+      "js": [
+        "errors.js",
+        "utils.js",
+        "dom-helpers.js",
+        "post-data.js",
+        "status-formatter.js",
+        "content-dom.js",
+        "poster-facebook.js",
+        "poster-threads.js",
+        "poster-x.js",
+        "poster-linkedin.js",
+        "poster-reddit.js",
+        "cross-poster.js",
+        "content-composer.js",
+        "content.js"
+      ],
+      "css": [
+        "content.css",
+        "ui.css"
+      ],
       "run_at": "document_end"
     },
     {
       "matches": [
-        "https://www.facebook.com/*",
-        "https://web.facebook.com/*",
-        "https://m.facebook.com/*",
-        "https://*.threads.net/*",
-        "https://x.com/*",
-        "https://twitter.com/*",
-        "https://www.linkedin.com/*",
-        "https://www.reddit.com/*"
+        "https://*/*",
+        "http://*/*"
       ],
-      "js": ["translate.js"],
-      "css": ["translate.css"],
+      "exclude_matches": [
+        "https://chrome.google.com/*",
+        "https://chromewebstore.google.com/*"
+      ],
+      "js": [
+        "translate.js"
+      ],
+      "css": [
+        "translate.css"
+      ],
       "run_at": "document_end"
     }
   ],
@@ -72,14 +87,18 @@
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
-    }
+    },
+    "default_title": "FeedWriter"
   },
   "icons": {
     "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
     "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
+    "128": "icons/icon128.png",
+    "256": "icons/icon256.png"
   },
   "commands": {
     "summarize-shortcut": {
@@ -89,12 +108,12 @@
       },
       "description": "Tóm tắt nội dung văn bản bôi đen"
     },
-    "affiliate-shortcut": {
+    "translate-shortcut": {
       "suggested_key": {
-        "default": "Ctrl+Shift+A",
-        "mac": "Command+Shift+A"
+        "default": "Ctrl+Shift+T",
+        "mac": "Command+Shift+T"
       },
-      "description": "Chế bài Affiliate từ văn bản bôi đen"
+      "description": "Dịch văn bản bôi đen (EN → VI)"
     }
   }
 }

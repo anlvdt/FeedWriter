@@ -2,7 +2,7 @@
 
 // --- COMPOSER & AUTO-POST ---
 
-function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImages, discoveredLinks = []) {
+function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImages, discoveredLinks = [], options = {}) {
   const preview = document.createElement("div");
   preview.className = "fbs-status-preview";
 
@@ -21,10 +21,39 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
     !/[a-f0-9]{10,}/i.test(n) &&
     !/\d{8,}/.test(n) &&
     n.split(/\s+/).length <= 10;
-  const cleanAuthor = isValidName(author) ? author : "";
-  const cleanSource = isValidName(source) ? source : "";
+  let cleanAuthor = isValidName(author) ? author : "";
+  let cleanSource = isValidName(source) ? source : "";
+  let linkQuality = options.linkQuality || "";
+  const postElement = options.postElement || null;
   const initialRelatedLinks = Array.isArray(discoveredLinks) ? discoveredLinks : [];
   const initialRelatedText = initialRelatedLinks.map((item) => item.url).filter(Boolean).join("\n");
+
+  function qualityLabel(q, url) {
+    const barePhoto =
+      typeof window.fbsIsBareFbPhotoShell === "function" &&
+      window.fbsIsBareFbPhotoShell(url);
+    if (barePhoto) {
+      return { cls: "is-weak", text: "Sai dạng /photo/ — bấm Tìm lại hoặc Paste" };
+    }
+    const family =
+      typeof window.fbsPermalinkFamilyRank === "function"
+        ? window.fbsPermalinkFamilyRank(url)
+        : 0;
+    const strong = typeof window.fbsIsStrongFbPermalink === "function"
+      ? window.fbsIsStrongFbPermalink(url)
+      : false;
+    if ((strong && family >= 80) || q === "exact") {
+      return { cls: "is-exact", text: "Link chính xác" };
+    }
+    if (q === "constructed" || (strong && family >= 40)) {
+      return { cls: "is-ok", text: "Link dựng / media — nên kiểm tra" };
+    }
+    if (url && (q === "shell" || (typeof window.fbsIsWeakFbShellUrl === "function" && window.fbsIsWeakFbShellUrl(url)))) {
+      return { cls: "is-weak", text: "Chỉ trang group/page — dán link bài" };
+    }
+    if (!url) return { cls: "is-missing", text: "Chưa có link — Paste hoặc Tìm lại" };
+    return { cls: "is-ok", text: "Đã có link — nên kiểm tra" };
+  }
 
   // Ảnh preview: nếu có nhiều ảnh → gallery lưới; nếu 1 ảnh → single preview
   let imgHtml = "";
@@ -45,48 +74,49 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
       '" crossorigin="anonymous" onerror="this.parentElement.style.display=\'none\'"><button class="fbs-sp-copy-img"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg> Copy ảnh</button></div>';
   }
 
+  const q0 = qualityLabel(linkQuality, sourceUrl || "");
   preview.innerHTML =
-    '<div class="fbs-sp-step-header">' +
-    '<div class="fbs-sp-step-title">Chuẩn bị đăng status</div>' +
-    '<div class="fbs-sp-step-desc">Kiểm tra ảnh &amp; nguồn → Copy nguồn → dán vào comment đầu trên Facebook.</div>' +
-    "</div>" +
     imgHtml +
+    '<div class="fbs-sp-source-card">' +
+    '<div class="fbs-sp-source-card-head">' +
+    '<span class="fbs-sp-source-card-title">Nguồn bài viết</span>' +
+    '<span class="fbs-sp-link-quality ' + q0.cls + '" data-role="link-quality">' + esc(q0.text) + "</span>" +
+    "</div>" +
+    '<div class="fbs-sp-author-row">' +
+    '<label class="fbs-sp-mini-label" for="fbs-sp-author-field">Tác giả</label>' +
+    '<input type="text" id="fbs-sp-author-field" class="fbs-sp-author-field" placeholder="Tên tác giả / page" value="' +
+    esc(cleanAuthor || "") +
+    '" autocomplete="off" spellcheck="false">' +
+    (cleanSource && cleanSource !== cleanAuthor
+      ? '<span class="fbs-sp-source-group" title="Group / page">' + esc(cleanSource) + "</span>"
+      : "") +
+    "</div>" +
     '<div class="fbs-sp-link-input">' +
     '<div class="fbs-sp-link-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> Link bài gốc</div>' +
     '<div class="fbs-sp-link-row">' +
-    '<input type="text" class="fbs-sp-link-field" placeholder="Dán link bài gốc — sẽ ghi nguồn ở comment đầu" value="' +
+    '<input type="text" class="fbs-sp-link-field" placeholder="Dán link bài gốc (permalink)" value="' +
     esc(sourceUrl || "") +
-    '">' +
-    '<button type="button" class="fbs-sp-paste-link" title="Dán link nguồn từ clipboard" aria-label="Dán link nguồn từ clipboard">Paste</button>' +
+    '" autocomplete="off" spellcheck="false">' +
+    '<button type="button" class="fbs-sp-paste-link" title="Dán link từ clipboard" aria-label="Dán link nguồn">Paste</button>' +
+    '<button type="button" class="fbs-sp-redetect-link" title="Tìm lại link từ bài Facebook" aria-label="Tìm lại link">Tìm lại</button>' +
     '<button type="button" class="fbs-sp-open-link" title="Mở link trong tab mới" aria-label="Mở link bài gốc"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></button>' +
     "</div>" +
     "</div>" +
-    '<div class="fbs-sp-link-input" style="margin-top:6px">' +
-    '<div class="fbs-sp-link-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg> Link Github / Download / Tham khảo</div>' +
-    '<textarea class="fbs-sp-github-field" rows="2" placeholder="Mỗi dòng một link — tự nhận diện Repo / Download / Tham khảo">' +
+    "</div>" +
+    '<div class="fbs-sp-link-input fbs-sp-related-block">' +
+    '<div class="fbs-sp-link-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg> Github / Download / Tham khảo</div>' +
+    '<textarea class="fbs-sp-github-field" rows="2" placeholder="Mỗi dòng một link (tuỳ chọn)">' +
     esc(initialRelatedText) +
     "</textarea>" +
     '<div class="fbs-sp-link-chips"></div>' +
     "</div>" +
-    '<div class="fbs-sp-link-status">' +
-    "</div>" +
-    (cleanAuthor
-      ? '<div class="fbs-sp-detected-source"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> ' +
-        esc(cleanAuthor) +
-        (cleanSource && cleanSource !== cleanAuthor
-          ? ' <span class="fbs-sp-source-group">(' +
-            esc(cleanSource) +
-            ")</span>"
-          : "") +
-        "</div>"
-      : "") +
+    '<div class="fbs-sp-link-status"></div>' +
     '<div class="fbs-sp-comment" style="display:none">' +
-    '<div class="fbs-sp-comment-label">Comment đầu tiên — ghi nguồn (xem trước):</div>' +
-    '<div class="fbs-sp-comment-text" tabindex="0" title="Bấm vào để bôi đen nội dung nguồn khi cần copy thủ công"></div>' +
-    '<button type="button" class="fbs-sp-copy-comment" title="Copy nội dung nguồn để dán vào comment đầu tiên"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy nguồn</button>' +
+    '<div class="fbs-sp-comment-label">Comment nguồn (xem trước)</div>' +
+    '<div class="fbs-sp-comment-text" tabindex="0" title="Bấm để bôi đen khi cần copy thủ công"></div>' +
+    '<button type="button" class="fbs-sp-copy-comment" title="Copy nội dung nguồn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy nguồn</button>' +
     "</div>" +
     '<div class="fbs-sp-actions">' +
-    '<button type="button" class="fbs-sp-back" title="Quay lại chỉnh sửa tóm tắt">← Sửa lại</button>' +
     '<button class="fbs-sp-open-fb"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg> Đăng status</button>' +
     "</div>";
 
@@ -96,39 +126,55 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
 
   const footer = panel.querySelector(".fbs-panel-footer");
   if (footer) footer.style.display = "none";
+  const toneRow = panel.querySelector(".fbs-tone-row");
+  if (toneRow) {
+    toneRow.hidden = true;
+    toneRow.classList.remove("fbs-tone-visible");
+  }
+  panel.classList.add("is-composer");
+  const subtitle = panel.querySelector('[data-role="panel-subtitle"]');
+  if (subtitle) subtitle.textContent = "Nguồn & đăng bài";
 
   const linkField = preview.querySelector(".fbs-sp-link-field");
+  const authorField = preview.querySelector(".fbs-sp-author-field");
+  const qualityEl = preview.querySelector('[data-role="link-quality"]');
   const githubField = preview.querySelector(".fbs-sp-github-field");
   const chipsBox = preview.querySelector(".fbs-sp-link-chips");
   const linkStatus = preview.querySelector(".fbs-sp-link-status");
   const pasteLinkBtn = preview.querySelector(".fbs-sp-paste-link");
+  const redetectBtn = preview.querySelector(".fbs-sp-redetect-link");
   const openLinkBtn = preview.querySelector(".fbs-sp-open-link");
-  const backBtn = preview.querySelector(".fbs-sp-back");
   const commentSection = preview.querySelector(".fbs-sp-comment");
   const commentText = preview.querySelector(".fbs-sp-comment-text");
   const copyCommentBtn = preview.querySelector(".fbs-sp-copy-comment");
 
-  // ← Sửa lại: đóng composer preview, quay về màn tóm tắt/edit (giữ nguyên .fbs-result + textarea)
-  if (backBtn) {
-    backBtn.addEventListener("click", () => {
-      if (preview && preview.parentNode) preview.remove();
-      if (footer) footer.style.display = "";
-      if (panel) panel.classList.remove("fbs-panel-left");
-      if (typeof backdrop !== "undefined" && backdrop) {
-        backdrop.classList.add("fbs-visible");
-      }
-      // Không đụng .fbs-result / .fbs-edit-textarea — nội dung tóm tắt được giữ nguyên
-      if (panelBody) panelBody.scrollTop = 0;
-    });
-  }
-
   const LINK_TYPE_LABEL = { github: "Repo", download: "Tải về", reference: "Tham khảo" };
+
+  function refreshQualityBadge(url, q) {
+    if (!qualityEl) return;
+    const info = qualityLabel(q || linkQuality, url || "");
+    qualityEl.className = "fbs-sp-link-quality " + info.cls;
+    qualityEl.textContent = info.text;
+  }
 
   // Reflect whether the source-link field has a usable value (green border + open btn)
   function refreshLinkFieldState() {
-    const has = /^https?:\/\//i.test(linkField.value.trim());
+    const url = linkField.value.trim();
+    const has = /^https?:\/\//i.test(url);
+    const strong = typeof window.fbsIsStrongFbPermalink === "function" && window.fbsIsStrongFbPermalink(url);
     linkField.classList.toggle("has-value", has);
+    linkField.classList.toggle("is-strong", !!strong);
+    linkField.classList.toggle("is-weak", has && !strong && (typeof window.fbsIsWeakFbShellUrl === "function" ? window.fbsIsWeakFbShellUrl(url) : false));
     if (openLinkBtn) openLinkBtn.disabled = !has;
+    if (has && strong) linkQuality = "exact";
+    refreshQualityBadge(url, linkQuality);
+  }
+
+  if (authorField) {
+    authorField.addEventListener("input", () => {
+      cleanAuthor = isValidName(authorField.value.trim()) ? authorField.value.trim() : authorField.value.trim();
+      updateComment(linkField.value.trim(), githubField.value.trim());
+    });
   }
 
   function selectSourceField() {
@@ -179,7 +225,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
       // redundant with the textarea placeholder, so we drop the noise.
       linkStatus.style.display = hasLinks ? "" : "none";
       linkStatus.textContent = hasLinks
-        ? "✓ " + links.length + " link sẽ ghi vào comment nguồn — kiểm tra lại trước khi đăng."
+        ? "" + links.length + " link sẽ ghi vào comment nguồn — kiểm tra lại trước khi đăng."
         : "";
     }
   }
@@ -191,11 +237,8 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
       .map((url) => url.trim())
       .filter((url) => /^https?:\/\//i.test(url))
       .map((url) => {
-        const classifyRelatedUrl =
-          (window.FeedWriter && window.FeedWriter.dom && window.FeedWriter.dom.classifyRelatedUrl) ||
-          window.fbsClassifyRelatedUrl;
-        if (typeof classifyRelatedUrl === "function") {
-          return classifyRelatedUrl(url, "", "manual");
+        if (typeof window.fbsClassifyRelatedUrl === "function") {
+          return window.fbsClassifyRelatedUrl(url, "", "manual");
         }
         return { url, type: "reference" };
       })
@@ -219,12 +262,17 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
     if (typeof globalRelatedSourceLinks !== "undefined") {
       globalRelatedSourceLinks = relatedLinks;
     }
+    // Prefer live author field so edits flow into comment preview
+    const authorNow = authorField
+      ? authorField.value.trim()
+      : cleanAuthor;
     if (window.buildCommentText) {
-      const commentContent = window.buildCommentText(url, cleanAuthor, cleanSource, { relatedLinks });
+      const commentContent = window.buildCommentText(url, authorNow, cleanSource, { relatedLinks });
       commentText.style.whiteSpace = "pre-line";
       commentText.textContent = commentContent;
     } else {
-      let fallbackContent = `📌 NGUỒN THAM KHẢO:\n· Link gốc: ${url || "(chưa có link bài gốc)"}`;
+      let fallbackContent = `NGUỒN THAM KHẢO:\n· Link gốc: ${url || "(chưa có link bài gốc)"}`;
+      if (authorNow) fallbackContent += `\n· Tác giả: ${authorNow}`;
       for (const item of relatedLinks) {
         const label = item.type === "github" ? "Repo/Mã nguồn" : item.type === "download" ? "Download" : "Tham khảo";
         fallbackContent += `\n· ${label}: ${item.url}`;
@@ -315,23 +363,10 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
   });
 
   // Paste link bài gốc — app hay đoán sai nguồn, nên ưu tiên link user vừa copy thủ công.
-  // clipboardRead là optional_permission: request once on click, then readText.
   if (pasteLinkBtn) {
     pasteLinkBtn.addEventListener("click", async () => {
       selectSourceField();
       try {
-        // Ask for optional clipboardRead while we still have the user gesture
-        try {
-          await new Promise((resolve) => {
-            chrome.runtime.sendMessage(
-              { action: "request-optional-permission", permissions: ["clipboardRead"] },
-              () => resolve(),
-            );
-          });
-        } catch (_) {}
-        if (!navigator.clipboard || typeof navigator.clipboard.readText !== "function") {
-          throw new Error("clipboard_unavailable");
-        }
         const pasted = (await navigator.clipboard.readText()).trim();
         if (!pasted) {
           setPasteLinkButtonState("Clipboard trống", "is-error");
@@ -346,29 +381,11 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
         setPasteLinkButtonState("Đã dán", "is-done");
         setTimeout(() => setPasteLinkButtonState("Paste"), 1600);
       } catch (_) {
-        // Quyền clipboard bị chặn / không hỗ trợ — hướng dẫn dán tay (Mac: Cmd+V, Win/Linux: Ctrl+V)
-        selectSourceField();
-        setPasteLinkButtonState("Ctrl/Cmd+V", "is-error");
-        if (linkStatus) {
-          linkStatus.style.display = "";
-          linkStatus.classList.remove("has-link");
-          linkStatus.classList.add("no-link");
-          linkStatus.textContent = "Hãy dùng Ctrl/Cmd+V dán vào ô link";
-        }
+        setPasteLinkButtonState("Ctrl+V", "is-error");
         setTimeout(() => {
           setPasteLinkButtonState("Paste");
           selectSourceField();
-          // Chỉ clear status nếu vẫn là thông báo lỗi clipboard (tránh xoá trạng thái link hợp lệ)
-          if (
-            linkStatus &&
-            linkStatus.classList.contains("no-link") &&
-            /Ctrl\/Cmd\+V/.test(linkStatus.textContent || "")
-          ) {
-            linkStatus.style.display = "none";
-            linkStatus.textContent = "";
-            linkStatus.classList.remove("no-link");
-          }
-        }, 2800);
+        }, 1600);
       }
     });
   }
@@ -376,6 +393,52 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
     openLinkBtn.addEventListener("click", () => {
       const url = linkField.value.trim();
       if (/^https?:\/\//i.test(url)) window.open(url, "_blank", "noopener");
+    });
+  }
+
+  // Re-detect permalink (+ author) from the original Facebook post DOM / Share menu
+  if (redetectBtn) {
+    redetectBtn.addEventListener("click", async () => {
+      if (!postElement) {
+        redetectBtn.textContent = "Không có bài";
+        setTimeout(() => { redetectBtn.textContent = "Tìm lại"; }, 1600);
+        return;
+      }
+      const prev = redetectBtn.textContent;
+      redetectBtn.disabled = true;
+      redetectBtn.textContent = "…";
+      try {
+        let found = "";
+        if (typeof window.fbsExtractPermalinkAsync === "function") {
+          // forceShare: always try Share → Copy link if timestamp DOM is weak
+          found = (await window.fbsExtractPermalinkAsync(postElement, { forceShare: true })) || "";
+        } else if (typeof window.fbsExtractPermalink === "function") {
+          found = window.fbsExtractPermalink(postElement) || "";
+        }
+        if (found) {
+          const clean = normalizeFbUrl(found);
+          linkField.value = clean;
+          linkQuality = typeof window.fbsIsStrongFbPermalink === "function" && window.fbsIsStrongFbPermalink(clean)
+            ? "exact"
+            : "constructed";
+          updateComment(clean, githubField.value.trim());
+          refreshLinkFieldState();
+        }
+        // Refresh author if empty or still default
+        if (authorField && typeof window.fbsExtractAuthor === "function") {
+          const a = window.fbsExtractAuthor(postElement) || "";
+          if (a && (!authorField.value.trim() || authorField.value.trim() === cleanAuthor)) {
+            authorField.value = a;
+            cleanAuthor = a;
+            updateComment(linkField.value.trim(), githubField.value.trim());
+          }
+        }
+        redetectBtn.textContent = found ? "Đã tìm" : "Không thấy";
+      } catch (_) {
+        redetectBtn.textContent = "Lỗi";
+      }
+      redetectBtn.disabled = false;
+      setTimeout(() => { redetectBtn.textContent = prev || "Tìm lại"; }, 1600);
     });
   }
 
@@ -539,7 +602,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
           sourceLine = window.buildCommentText(finalUrl, cleanAuthor, cleanSource, { relatedLinks: finalRelatedLinks });
           if (typeof globalRelatedSourceLinks !== "undefined") globalRelatedSourceLinks = oldRelatedLinks;
         } else {
-          let fallbackContent = `📌 NGUỒN THAM KHẢO:\n· Link gốc: ${finalUrl || "(chưa có link bài gốc)"}`;
+          let fallbackContent = `NGUỒN THAM KHẢO:\n· Link gốc: ${finalUrl || "(chưa có link bài gốc)"}`;
           for (const item of finalRelatedLinks) {
             const label = item.type === "github" ? "Repo/Mã nguồn" : item.type === "download" ? "Download" : "Tham khảo";
             fallbackContent += `\n· ${label}: ${item.url}`;
@@ -630,8 +693,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
             parseRelatedLinks(finalGithubUrl).some((item) => item.type === "github");
           textWithFooter = StatusFormatter.format(text, "facebook", { hasRepo });
         } else {
-          // Minimal fallback when StatusFormatter unavailable — strip markdown markers only
-          textWithFooter = String(text || "").replace(/\*\*(.*?)\*\*/g, "$1").replace(/\*(.*?)\*/g, "$1");
+          textWithFooter = applyUnicodeFormatting(text);
         }
         pasteToLexical(editor, textWithFooter, imgFiles.length > 0 ? imgFiles : null);
 
@@ -654,9 +716,9 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
  */
 function getFacebookFooter(hasRepo) {
   if (hasRepo) {
-    return "\n━━━━━━━━━━\n👉 Link gốc & mã nguồn dưới bình luận đầu tiên";
+    return "\n━━━━━━━━━━\nLink gốc & mã nguồn dưới bình luận đầu tiên";
   } else {
-    return "\n━━━━━━━━━━\n👉 Chi tiết & nguồn dưới bình luận đầu tiên";
+    return "\n━━━━━━━━━━\nChi tiết & nguồn dưới bình luận đầu tiên";
   }
 }
 
@@ -702,7 +764,6 @@ function toUnicodeItalic(str) {
 
 /**
  * Apply Unicode Bold and Italic formatting depending on configuration
- * @deprecated Prefer StatusFormatter.format(text, platform, opts). Kept as last-resort fallback until v3.0.
  */
 function applyUnicodeFormatting(text) {
   const isUnicodeBoldEnabled = (window.enableUnicodeBold !== false);
@@ -717,7 +778,6 @@ function applyUnicodeFormatting(text) {
 
 /**
  * Convert raw AI response text into unified plain text status format
- * @deprecated Prefer StatusFormatter.format(text, "facebook", opts). Kept as last-resort fallback until v3.0.
  */
 function buildUnifiedStatusText(rawText, options = {}) {
   // Normalize *** to **
@@ -727,9 +787,9 @@ function buildUnifiedStatusText(rawText, options = {}) {
   const footerRegex = /\s*(?:[—-]\s*\n\s*)?Nguồn\s+dưới\s+(?:cmt|bình\s+luận|binh\s+luan)\s+đầu(?:\s+tiên)?\s*$/i;
   cleaned = cleaned.replace(footerRegex, "");
   cleaned = cleaned.replace(/━━━━━━━━━━\s*/g, "");
-  cleaned = cleaned.replace(/👉 (?:Link gốc & mã nguồn|Chi tiết & nguồn) dưới bình luận đầu tiên\s*$/i, "");
-  // Strip any broken/truncated footer remnants (e.g. from AI token limit cuts like "_________________\n👉 Chi tiết &")
-  cleaned = cleaned.replace(/(?:_{5,}|━━━━━━━━━━)\s*(?:👉|•)?\s*(?:Chi\s+tiết|Link\s+gốc|Nguồn)?.*$/gi, "");
+  cleaned = cleaned.replace(/ (?:Link gốc & mã nguồn|Chi tiết & nguồn) dưới bình luận đầu tiên\s*$/i, "");
+  // Strip any broken/truncated footer remnants (e.g. from AI token limit cuts like "_________________\nChi tiết &")
+  cleaned = cleaned.replace(/(?:_{5,}|━━━━━━━━━━)\s*(?:|•)?\s*(?:Chi\s+tiết|Link\s+gốc|Nguồn)?.*$/gi, "");
   cleaned = cleaned.trim();
 
   let lines = cleaned.split('\n');
@@ -766,7 +826,7 @@ function buildUnifiedStatusText(rawText, options = {}) {
         inBulletSection = true;
       }
       const bulletText = line.replace(/^[·•\-*✓]\s*/, '');
-      formatted.push('✓ ' + bulletText);
+      formatted.push('· ' + bulletText);
       continue;
     }
 
@@ -788,7 +848,6 @@ function buildUnifiedStatusText(rawText, options = {}) {
  * Format AI-generated text for Facebook status posting
  * Transforms plain text into visually appealing Facebook format
  *
- * @deprecated Prefer StatusFormatter.format(text, "facebook", opts). Kept as last-resort fallback until v3.0.
  * @param {string} text - AI-generated text with \n line breaks
  * @returns {string} - Facebook-optimized text
  */
@@ -815,7 +874,7 @@ function formatForFacebook(text) {
       const titleEmoji = detectTitleEmoji(line);
       // Remove any existing emojis at the start to avoid doubling
       const cleanLine = line.replace(/^[\p{Emoji}\s]+/u, '');
-      formatted.push(titleEmoji + ' ' + cleanLine.toUpperCase());
+      formatted.push((titleEmoji ? titleEmoji + ' ' : '') + cleanLine.toUpperCase());
       formatted.push('');
       continue;
     }
@@ -829,7 +888,7 @@ function formatForFacebook(text) {
         inBulletSection = true;
       }
       const bulletText = line.replace(/^[·•\-*✓]\s*/, '');
-      formatted.push('✓ ' + bulletText);
+      formatted.push('· ' + bulletText);
       continue;
     }
 
@@ -850,55 +909,8 @@ function detectTitleEmoji(title) {
   const lower = title.toLowerCase();
 
   // Code / Frameworks / Git / Dev
-  if (lower.match(/github|gitlab|git|repo|code|coding|lập trình|react|typescript|javascript|python|c\+\+|rust|go|java|sql|postgres|database|mã nguồn/)) return '💻';
-
-  // UI/UX / Design / Aesthetics
-  if (lower.match(/ui|ux|design|giao diện|css|tailwind|color|typography|font|figma|thẩm mỹ|phối màu/)) return '🎨';
-
-  // Performance / Speed / Optimize
-  if (lower.match(/performance|speed|optimization|fast|lcp|cwv|memory|leak|tốc độ|tối ưu/)) return '⚡';
-
-  // Security / Privacy / Secure
-  if (lower.match(/security|privacy|auth|encryption|secure|hack|leak|bảo mật|quyền riêng tư/)) return '🔒';
-
-  // Mobile / iOS / Android
-  if (lower.match(/ios|android|mobile|swift|kotlin|flutter|react native|di động/)) return '📱';
-
-  // Web / Chrome / Browser / Extension
-  if (lower.match(/web|chrome|extension|browser|firefox|edge|manifest|trình duyệt|tiện ích/)) return '🌐';
-
-  // DevOps / Build / Deploy
-  if (lower.match(/docker|ci|cd|devops|deploy|build|setup|npm|yarn|pip|triển khai/)) return '🔧';
-
-  // Analytics / SEO / Growth
-  if (lower.match(/analytics|chart|graph|growth|seo|traffic|thống kê|biểu đồ/)) return '📈';
-
-  // Deep Learning / Research / Cognitive / Science
-  if (lower.match(/paper|research|science|brain|cognitive|deep learning|neural|nghiên cứu|khoa học|trí não/)) return '🧠';
-
-  // Technology/AI (generic)
-  if (lower.match(/ai|công nghệ|tech|phần mềm|app|tool|software|digital|chatgpt|claude|gemini/)) return '🤖';
-
-  // Business/Money
-  if (lower.match(/kinh doanh|tiền|thu nhập|doanh thu|marketing|bán hàng|business|money|revenue/)) return '💰';
-
-  // Education/Learning
-  if (lower.match(/học|giáo dục|khóa học|kiến thức|kỹ năng|education|learning|course|skill/)) return '📚';
-
-  // News/Update
-  if (lower.match(/tin tức|cập nhật|thông báo|mới|news|update|announcement/)) return '📰';
-
-  // Tips/Guide
-  if (lower.match(/tips|hướng dẫn|cách|bí quyết|mẹo|guide|how to|tutorial/)) return '💡';
-
-  // Warning/Important
-  if (lower.match(/cảnh báo|quan trọng|chú ý|lưu ý|warning|important|alert/)) return '⚠️';
-
-  // Success/Achievement
-  if (lower.match(/thành công|đạt được|chiến thắng|kỷ lục|success|achievement|win/)) return '🎉';
-
-  // Default
-  return '📌';
+  // Title prefix icons removed for a cleaner professional look
+  return '';
 }
 
 function pasteToLexical(element, text, file = null) {
@@ -937,36 +949,56 @@ function pasteToLexical(element, text, file = null) {
   }
 }
 
-async function fbsAgentPost(summaryText, imageUrl, rawSourceUrl, postElement) {
+window.fbsAgentPost = async function (summaryText, imageUrl, rawSourceUrl, postElement) {
   if (SITE !== "facebook") return { ok: false, reason: "not_facebook" };
 
   let postText = summaryText || "";
-  const cleanUrl = cleanSourceUrl(rawSourceUrl);
-  // Lấy author + source (group/page name) từ DOM
-  const extractAuthor =
-    (window.FeedWriter && window.FeedWriter.dom && window.FeedWriter.dom.extractAuthor) ||
-    window.fbsExtractAuthor;
+  // Prefer multi-strategy meta when a post element is available
+  let meta = null;
+  if (postElement && typeof window.fbsExtractMeta === "function") {
+    try { meta = window.fbsExtractMeta(postElement); } catch (_) {}
+  }
+  let cleanUrl = cleanSourceUrl(rawSourceUrl || meta?.permalink || "");
+  const weak =
+    !cleanUrl ||
+    (typeof window.fbsIsWeakFbShellUrl === "function" && window.fbsIsWeakFbShellUrl(cleanUrl)) ||
+    (typeof window.fbsIsStrongFbPermalink === "function" && !window.fbsIsStrongFbPermalink(cleanUrl));
+  if (postElement && weak && typeof window.fbsExtractPermalinkAsync === "function") {
+    try {
+      const asyncUrl = await window.fbsExtractPermalinkAsync(postElement);
+      if (asyncUrl) cleanUrl = cleanSourceUrl(asyncUrl);
+    } catch (_) {}
+  }
+
   const postAuthor =
-    postElement && typeof extractAuthor === "function"
-      ? extractAuthor(postElement)
-      : "";
+    (meta && meta.author) ||
+    (postElement && typeof window.fbsExtractAuthor === "function"
+      ? window.fbsExtractAuthor(postElement)
+      : "");
   const postSource =
-    postElement && typeof extractPostSource === "function"
+    (meta && meta.source) ||
+    (postElement && typeof extractPostSource === "function"
       ? extractPostSource(postElement)
-      : "";
+      : "");
 
   // LUÔN tạo commentText — bắt buộc comment nguồn
   let commentText = "";
   // URL hữu ích: phải có permalink pattern (không chỉ là homepage FB hoặc URL ngắn)
-  // Giảm threshold từ 30 → 25 để bắt được group URL có slug ngắn
-  const hasPostPattern = cleanUrl && (
+  // Reject bare https://www.facebook.com/photo/ (no fbid) as "useful"
+  const barePhoto =
+    typeof window.fbsIsBareFbPhotoShell === "function" &&
+    window.fbsIsBareFbPhotoShell(cleanUrl);
+  const hasPostPattern = !barePhoto && cleanUrl && (
+    (typeof window.fbsIsStrongFbPermalink === "function" && window.fbsIsStrongFbPermalink(cleanUrl)) ||
     cleanUrl.includes("/posts/") ||
     cleanUrl.includes("/permalink") ||
     cleanUrl.includes("story_fbid") ||
     cleanUrl.includes("pfbid") ||
     cleanUrl.includes("multi_permalinks") ||
     cleanUrl.includes("/videos/") ||
-    cleanUrl.includes("/photos/")
+    /\/photos\/[^/?#]+\/\d+/i.test(cleanUrl) ||
+    (/[?&]fbid=\d{6,}/i.test(cleanUrl)) ||
+    cleanUrl.includes("/reel/")
   );
   const isUsefulUrl = cleanUrl &&
     cleanUrl !== "https://www.facebook.com" &&
@@ -997,24 +1029,26 @@ async function fbsAgentPost(summaryText, imageUrl, rawSourceUrl, postElement) {
       if (window.buildCommentText) {
         commentText = window.buildCommentText("", postAuthor, postSource);
       } else {
-        commentText = "📌 NGUỒN THAM KHẢO:\n· Link gốc: (chưa có link bài gốc)";
+        commentText = "NGUỒN THAM KHẢO:\n· Link gốc: (chưa có link bài gốc)";
       }
     }
   }
   console.log("[Agent] Comment text prepared:", commentText);
   console.log("[Agent] Author:", postAuthor || "(unknown)", "| Source:", postSource || "(unknown)", "| URL:", cleanUrl || "(none)");
 
-  // Build final post text — StatusFormatter primary; minimal strip fallback only
+  // Build final post text — use StatusFormatter (handles stripping + formatting + footer)
   {
     const hasRepo = !!(typeof globalCustomSourceLink !== 'undefined' && globalCustomSourceLink);
     if (typeof StatusFormatter !== "undefined") {
       postText = StatusFormatter.format(postText, "facebook", { hasRepo });
     } else {
-      // Minimal fallback — strip markdown markers, no legacy formatForFacebook path
-      postText = String(postText || "")
-        .replace(/\*\*(.*?)\*\*/g, "$1")
-        .replace(/\*(.*?)\*/g, "$1")
-        .trim();
+      // Legacy fallback
+      postText = postText.replace(
+        /\s*(?:[—-]\s*\n\s*)?Nguồn\s+dưới\s+(?:cmt|bình\s+luận|binh\s+luan)\s+đầu(?:\s+tiên)?\s*$/gi,
+        ""
+      ).trim();
+      const formattedText = formatForFacebook(postText);
+      postText = formattedText + getFacebookFooter(hasRepo);
     }
   }
 
@@ -1089,11 +1123,8 @@ async function fbsAgentPost(summaryText, imageUrl, rawSourceUrl, postElement) {
   try {
     // Lấy danh sách tất cả ảnh từ postElement (bao gồm bài share gốc)
     let allImages = [];
-    const extractImages =
-      (window.FeedWriter && window.FeedWriter.dom && window.FeedWriter.dom.extractImages) ||
-      window.fbsExtractImages;
-    if (postElement && typeof extractImages === "function") {
-      allImages = extractImages(postElement);
+    if (postElement && typeof window.fbsExtractImages === "function") {
+      allImages = window.fbsExtractImages(postElement);
     } else if (imageUrl) {
       allImages = [imageUrl];
     }
@@ -1230,8 +1261,8 @@ async function fbsAgentPost(summaryText, imageUrl, rawSourceUrl, postElement) {
           if (!commentBox) await new Promise((r) => setTimeout(r, 500));
         }
       } else {
-        console.warn("[Agent] ✗ Không tìm thấy nút 'Viết bình luận' sau 20s");
-        console.warn("[Agent] ✗ Comment NGUỒN KHÔNG ĐƯỢC ĐĂNG — copy thủ công:", commentText);
+        console.warn("[Agent] Không tìm thấy nút 'Viết bình luận' sau 20s");
+        console.warn("[Agent] Comment NGUỒN KHÔNG ĐƯỢC ĐĂNG — copy thủ công:", commentText);
         // Copy comment text vào clipboard để user có thể paste thủ công
         try {
           await navigator.clipboard.writeText(commentText);
@@ -1240,7 +1271,7 @@ async function fbsAgentPost(summaryText, imageUrl, rawSourceUrl, postElement) {
       }
 
       if (commentBox) {
-        console.log("[Agent] ✓ Comment box found! Pasting...");
+        console.log("[Agent] Comment box found! Pasting...");
         commentBox.click();
         commentBox.focus();
         await new Promise((r) => setTimeout(r, 1000));
@@ -1266,14 +1297,14 @@ async function fbsAgentPost(summaryText, imageUrl, rawSourceUrl, postElement) {
             new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true }),
           );
           await new Promise((r) => setTimeout(r, 2000));
-          console.log("[Agent] ✓ Comment nguồn đã gửi!");
+          console.log("[Agent] Comment nguồn đã gửi!");
         } else {
-          console.error("[Agent] ✗ Paste commentText failed sau 2 lần retry");
-          console.error("[Agent] ✗ Comment NGUỒN KHÔNG ĐƯỢC ĐĂNG — copy thủ công:", commentText);
+          console.error("[Agent] Paste commentText failed sau 2 lần retry");
+          console.error("[Agent] Comment NGUỒN KHÔNG ĐƯỢC ĐĂNG — copy thủ công:", commentText);
           try { await navigator.clipboard.writeText(commentText); } catch (_) {}
         }
       } else {
-        console.warn("[Agent] ✗ Không tìm thấy ô comment");
+        console.warn("[Agent] Không tìm thấy ô comment");
       }
     } catch (commentErr) {
       console.error("[Agent] Lỗi khi comment:", commentErr.message);
@@ -1314,270 +1345,5 @@ async function fbsAgentPost(summaryText, imageUrl, rawSourceUrl, postElement) {
   } catch (_) {}
 
   return { ok: true };
-}
-
-// === AUTO GITHUB → FACEBOOK (scheduled) ===
-// Lean, self-contained auto-post used by the background scheduler. Opens the FB
-// composer, pastes a ready-made status (text-only), publishes it, then drops the
-// repo link in the first comment. Reports the outcome back to background.js.
-// Manual composer "Đăng status" is separate and still requires an explicit user
-// click — this path only runs from the scheduled agent.
-async function fbsGithubAutoPost(statusText, repoUrl, imageUrl) {
-  const report = (ok, message, stage) => {
-    const full =
-      stage && !ok
-        ? "[" + stage + "] " + message
-        : message;
-    try {
-      chrome.runtime.sendMessage({
-        action: "github-autopost-done",
-        ok,
-        message: full,
-        stage: stage || (ok ? "done" : "error"),
-      });
-    } catch (_) {}
-    return { ok, message: full, stage: stage || (ok ? "done" : "error") };
-  };
-
-  if (SITE !== "facebook") {
-    return report(false, "Không phải tab Facebook.", "site");
-  }
-
-  const bodyText = (statusText || "").trim();
-  if (!bodyText) return report(false, "Nội dung status rỗng.", "input");
-  // Use the SAME unified formatting engine as manual posts. The facebook
-  // profile uppercases the WHOLE title line (titleUppercase:true) and, with
-  // hasRepo:true, appends the standard "👉 Link gốc & mã nguồn dưới bình luận
-  // đầu tiên" footer. No more ad-hoc capitalization / footer hint here.
-  // StatusFormatter primary; minimal markdown-strip fallback (no legacy formatters)
-  const postText =
-    typeof StatusFormatter !== "undefined"
-      ? StatusFormatter.format(bodyText, "facebook", { hasRepo: true })
-      : bodyText.replace(/\*\*(.*?)\*\*/g, "$1").replace(/\*(.*?)\*/g, "$1");
-
-  const commentText =
-    "📦 Mã nguồn GitHub:\n" + (repoUrl || "") + "\n\n#opensource #github";
-
-  try {
-    // Step 1: Open composer ("Bạn đang nghĩ gì?").
-    const mainArea = document.querySelector('div[role="main"]');
-    if (!mainArea) {
-      return report(
-        false,
-        "Composer not found — không tìm thấy vùng feed (no_main_area).",
-        "composer_not_found",
-      );
-    }
-
-    let composerBtn = null;
-    for (const b of mainArea.querySelectorAll('div[role="button"]')) {
-      const t = (b.textContent || "").toLowerCase();
-      if (
-        t.includes("bạn đang nghĩ gì") ||
-        t.includes("what's on your mind") ||
-        t.includes("write something") ||
-        t.includes("viết gì đó") ||
-        t.includes("chia sẻ điều gì") ||
-        t.includes("say something")
-      ) {
-        composerBtn = b;
-        break;
-      }
-    }
-    if (!composerBtn) {
-      return report(
-        false,
-        "Composer not found — không tìm thấy ô 'Bạn đang nghĩ gì?'.",
-        "composer_not_found",
-      );
-    }
-
-    const existingDialogs = new Set(document.querySelectorAll('div[role="dialog"]'));
-    composerBtn.click();
-
-    // Step 2: Wait for the NEW create-post dialog editor.
-    let editor = null;
-    for (let i = 0; i < 25; i++) {
-      for (const dlg of document.querySelectorAll('div[role="dialog"]')) {
-        if (existingDialogs.has(dlg)) continue;
-        const tb = dlg.querySelector('div[role="textbox"][contenteditable="true"]');
-        if (tb) { editor = tb; break; }
-      }
-      if (editor) break;
-      await new Promise((r) => setTimeout(r, 200));
-    }
-    if (!editor) {
-      return report(
-        false,
-        "Composer not found — dialog soạn thảo không mở được.",
-        "composer_not_found",
-      );
-    }
-
-    editor.click();
-    editor.focus();
-    await new Promise((r) => setTimeout(r, 800));
-
-    // Step 3: Fetch the GitHub social-preview card (repo "screenshot") and
-    // paste it together with the text. Falls back to text-only if the image
-    // can't be fetched, so a failed image never blocks the post.
-    let imgFiles = [];
-    if (imageUrl && typeof fetchImageBlobs === "function") {
-      try {
-        imgFiles = (await fetchImageBlobs([imageUrl], 1)) || [];
-      } catch (_) {
-        imgFiles = [];
-      }
-    }
-    try {
-      pasteToLexical(editor, postText, imgFiles.length > 0 ? imgFiles : null);
-    } catch (pasteErr) {
-      return report(
-        false,
-        "Paste failed — lỗi khi dán nội dung: " +
-          (pasteErr && pasteErr.message ? pasteErr.message : String(pasteErr)),
-        "paste_failed",
-      );
-    }
-    // Image upload needs more time than text-only.
-    await new Promise((r) => setTimeout(r, imgFiles.length > 0 ? 5000 : 2500));
-
-    // Verify paste landed in the editor (Lexical may swallow events)
-    {
-      const editorText = (editor.innerText || editor.textContent || "").trim();
-      if (editorText.length < 8) {
-        return report(
-          false,
-          "Paste failed — editor vẫn trống sau khi dán status.",
-          "paste_failed",
-        );
-      }
-    }
-
-    // Step 4: Click Đăng (or Tiếp → Đăng).
-    // Auto-agent path only — manual "Đăng status" never auto-clicks Post.
-    let postBtn = null;
-    let isNextBtn = false;
-    for (let i = 0; i < 20; i++) {
-      postBtn = document.querySelector(
-        'div[aria-label="Tiếp"][role="button"], div[aria-label="Next"][role="button"], div[aria-label="Đăng"][role="button"], div[aria-label="Post"][role="button"]',
-      );
-      if (postBtn && postBtn.getAttribute("aria-disabled") !== "true") {
-        const label = postBtn.getAttribute("aria-label");
-        isNextBtn = label === "Tiếp" || label === "Next";
-        break;
-      }
-      await new Promise((r) => setTimeout(r, 800));
-    }
-    if (!postBtn) {
-      return report(
-        false,
-        "Post button not found — không tìm thấy nút Đăng/Post/Tiếp.",
-        "post_button_not_found",
-      );
-    }
-
-    await new Promise((r) => setTimeout(r, 1500));
-    postBtn.click();
-
-    if (isNextBtn) {
-      await new Promise((r) => setTimeout(r, 1200));
-      let finalBtn = null;
-      for (let i = 0; i < 15; i++) {
-        finalBtn = document.querySelector(
-          'div[aria-label="Đăng"][role="button"], div[aria-label="Post"][role="button"]',
-        );
-        if (finalBtn && finalBtn.getAttribute("aria-disabled") !== "true") break;
-        await new Promise((r) => setTimeout(r, 500));
-      }
-      if (!finalBtn) {
-        return report(
-          false,
-          "Post button not found — mắc kẹt sau bước Tiếp, không thấy nút Đăng.",
-          "post_button_not_found",
-        );
-      }
-      finalBtn.click();
-    }
-
-    // Step 5: Wait for the post to land in the feed.
-    await new Promise((r) => setTimeout(r, 9000));
-
-    // Step 6: Comment the repo link (best-effort — failure here is non-fatal).
-    if (repoUrl) {
-      try {
-        let commentBtn = null;
-        let commentBox = null;
-        for (let poll = 0; poll < 40 && !commentBtn && !commentBox; poll++) {
-          commentBtn =
-            document.querySelector('[aria-label="Viết bình luận"][role="button"]') ||
-            document.querySelector('[aria-label="Write a comment"][role="button"]') ||
-            document.querySelector('[aria-label="Comment"][role="button"]');
-          if (!commentBtn) {
-            commentBox =
-              document.querySelector('[data-lexical-editor="true"][role="textbox"][contenteditable="true"]');
-          }
-          if (!commentBtn && !commentBox) await new Promise((r) => setTimeout(r, 500));
-        }
-        if (commentBtn && !commentBox) {
-          commentBtn.scrollIntoView({ behavior: "smooth", block: "center" });
-          await new Promise((r) => setTimeout(r, 800));
-          commentBtn.click();
-          await new Promise((r) => setTimeout(r, 2500));
-          for (let poll = 0; poll < 30 && !commentBox; poll++) {
-            commentBox =
-              document.querySelector('[data-lexical-editor="true"][role="textbox"][contenteditable="true"]') ||
-              document.querySelector('div[role="dialog"] div[contenteditable="true"][role="textbox"]');
-            if (!commentBox) {
-              const boxes = document.querySelectorAll('div[contenteditable="true"][role="textbox"]');
-              if (boxes.length) commentBox = boxes[boxes.length - 1];
-            }
-            if (!commentBox) await new Promise((r) => setTimeout(r, 500));
-          }
-        }
-        if (commentBox) {
-          commentBox.click();
-          commentBox.focus();
-          await new Promise((r) => setTimeout(r, 800));
-          pasteToLexical(commentBox, commentText);
-          await new Promise((r) => setTimeout(r, 2000));
-          const pasted = (commentBox.innerText || commentBox.textContent || "").trim();
-          if (pasted.length >= 5) {
-            commentBox.dispatchEvent(
-              new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true }),
-            );
-            await new Promise((r) => setTimeout(r, 1500));
-          }
-        }
-      } catch (_) {}
-    }
-
-    // Step 7: Close any post dialog FB auto-opens.
-    try {
-      const closeBtn =
-        document.querySelector('div[role="dialog"] [aria-label="Đóng"][role="button"]') ||
-        document.querySelector('div[role="dialog"] [aria-label="Close"][role="button"]');
-      if (closeBtn) closeBtn.click();
-    } catch (_) {}
-
-    return report(true, "Đã đăng repo lên Facebook.", "done");
-  } catch (e) {
-    return report(
-      false,
-      "Lỗi khi đăng: " + (e && e.message ? e.message : String(e)),
-      "error",
-    );
-  }
-}
-
-// ── FeedWriter.composer namespace ─────────────────────────────────────
-window.FeedWriter = window.FeedWriter || {};
-window.FeedWriter.composer = {
-  open: openFacebookComposer,
-  agentPost: fbsAgentPost,
-  githubAutoPost: fbsGithubAutoPost,
 };
 
-// COMPAT aliases — remove after v3.0
-window.fbsAgentPost = FeedWriter.composer.agentPost;
-window.fbsGithubAutoPost = FeedWriter.composer.githubAutoPost;

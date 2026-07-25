@@ -1,300 +1,347 @@
 // === THEME ===
 async function initTheme() {
-  const { theme } = await chrome.storage.sync.get({ theme: 'auto' });
-  applyTheme(theme);
-
-  // Update select value
-  const themeSelect = document.getElementById("themeSelect");
-  themeSelect.value = theme;
+  try {
+    const { theme } = await chrome.storage.sync.get({ theme: "auto" });
+    applyTheme(theme);
+    const themeSelect = document.getElementById("themeSelect");
+    if (themeSelect) themeSelect.value = theme;
+  } catch (e) {
+    console.warn("[FeedWriter] initTheme failed", e);
+    applyTheme("auto");
+  }
 }
 
 function applyTheme(theme) {
-  if (theme === 'auto') {
-    // Detect from system preference
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    document.body.classList.toggle('light', !prefersDark);
-  } else if (theme === 'light') {
-    document.body.classList.add('light');
+  if (theme === "auto") {
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    document.body.classList.toggle("light", !prefersDark);
+  } else if (theme === "light") {
+    document.body.classList.add("light");
   } else {
-    document.body.classList.remove('light');
+    document.body.classList.remove("light");
   }
 }
 
 const themeSelect = document.getElementById("themeSelect");
-themeSelect.addEventListener("change", async () => {
-  const theme = themeSelect.value;
-  await chrome.storage.sync.set({ theme });
-  applyTheme(theme);
-});
+if (themeSelect) {
+  themeSelect.addEventListener("change", async () => {
+    const theme = themeSelect.value;
+    try {
+      await chrome.storage.sync.set({ theme });
+    } catch (_) {}
+    applyTheme(theme);
+  });
+}
 
-// Listen to system theme changes
-window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', async () => {
-  const { theme } = await chrome.storage.sync.get({ theme: 'auto' });
-  if (theme === 'auto') {
-    applyTheme('auto');
-  }
-});
+try {
+  window
+    .matchMedia("(prefers-color-scheme: dark)")
+    .addEventListener("change", async () => {
+      try {
+        const { theme } = await chrome.storage.sync.get({ theme: "auto" });
+        if (theme === "auto") applyTheme("auto");
+      } catch (_) {}
+    });
+} catch (_) {}
 
-// Initialize theme on load
 initTheme();
 
-// === SETUP WIZARD CHECK ===
-// Check if wizard has been completed, if not, show inline wizard
-async function checkWizardStatus() {
-  const data = await chrome.storage.local.get('wizardCompleted');
-  const mainView = document.getElementById('main-view');
-  const wizardView = document.getElementById('wizard-view');
+// === SETUP WIZARD ===
+function showMainApp() {
+  const mainView = document.getElementById("main-view");
+  const wizardView = document.getElementById("wizard-view");
+  if (wizardView) {
+    wizardView.style.display = "none";
+    wizardView.hidden = true;
+  }
+  if (mainView) {
+    mainView.style.display = "block";
+    mainView.hidden = false;
+  }
+  try {
+    if (typeof loadKeyLists === "function") loadKeyLists();
+  } catch (_) {}
+}
 
-  if (!data.wizardCompleted) {
-    if (mainView) mainView.style.display = 'none';
-    if (wizardView) {
-      wizardView.style.display = 'block';
-      initWizard();
+async function finishWizard() {
+  try {
+    await chrome.storage.local.set({ wizardCompleted: true });
+  } catch (e) {
+    console.warn("[FeedWriter] could not persist wizardCompleted", e);
+  }
+  showMainApp();
+}
+
+async function checkWizardStatus() {
+  const mainView = document.getElementById("main-view");
+  const wizardView = document.getElementById("wizard-view");
+  let completed = false;
+  try {
+    const data = await chrome.storage.local.get("wizardCompleted");
+    completed = !!data.wizardCompleted;
+  } catch (e) {
+    // Storage/SW broken → don't trap user on wizard forever
+    console.warn("[FeedWriter] wizard storage read failed — show main app", e);
+    completed = true;
+  }
+
+  if (!completed && wizardView) {
+    if (mainView) {
+      mainView.style.display = "none";
+      mainView.hidden = true;
     }
+    wizardView.style.display = "block";
+    wizardView.hidden = false;
+    initWizard();
   } else {
-    if (mainView) mainView.style.display = 'block';
-    if (wizardView) wizardView.style.display = 'none';
+    showMainApp();
   }
 }
 
 function initWizard() {
+  const wizardView = document.getElementById("wizard-view");
+  if (!wizardView || wizardView.dataset.wizardReady === "1") return;
+  wizardView.dataset.wizardReady = "1";
+
   let currentStep = 0;
   const totalSteps = 4;
-
-  const progressDots = document.querySelectorAll('#wizard-view .wizard-progress-dot');
-  const steps = document.querySelectorAll('#wizard-view .wizard-step');
+  const progressDots = wizardView.querySelectorAll(".wizard-progress-dot");
+  const steps = wizardView.querySelectorAll(".wizard-step");
 
   function goToStep(stepIndex) {
     if (stepIndex < 0 || stepIndex >= totalSteps) return;
-
     currentStep = stepIndex;
 
-    // Update progress dots
     progressDots.forEach((dot, index) => {
-      dot.classList.remove('active', 'completed');
+      dot.classList.remove("active", "completed");
       if (index < currentStep) {
-        dot.classList.add('completed');
-        dot.style.background = 'var(--success, #00b894)';
-        dot.style.width = '8px';
-        dot.style.borderRadius = '50%';
+        dot.classList.add("completed");
+        dot.style.background = "var(--success)";
+        dot.style.width = "8px";
+        dot.style.borderRadius = "50%";
       } else if (index === currentStep) {
-        dot.classList.add('active');
-        dot.style.background = 'var(--accent, #6c5ce7)';
-        dot.style.width = '24px';
-        dot.style.borderRadius = '4px';
+        dot.classList.add("active");
+        dot.style.background = "var(--accent)";
+        dot.style.width = "24px";
+        dot.style.borderRadius = "4px";
       } else {
-        dot.style.background = 'var(--border, #2d3748)';
-        dot.style.width = '8px';
-        dot.style.borderRadius = '50%';
+        dot.style.background = "var(--border)";
+        dot.style.width = "8px";
+        dot.style.borderRadius = "50%";
       }
     });
 
-    // Update step visibility
     steps.forEach((step, index) => {
-      if (index === currentStep) {
-        step.style.display = 'block';
-        step.classList.add('active');
-      } else {
-        step.style.display = 'none';
-        step.classList.remove('active');
-      }
+      const on = index === currentStep;
+      step.style.display = on ? "block" : "none";
+      step.classList.toggle("active", on);
+      step.hidden = !on;
     });
   }
 
-  // Bind navigation handlers
-  const step0Next = document.getElementById('wizardStep0Next');
-  const step1Back = document.getElementById('wizardStep1Back');
-  const step1Next = document.getElementById('wizardStep1Next');
-  const step1Skip = document.getElementById('wizardStep1Skip');
-  const step2Back = document.getElementById('wizardStep2Back');
-  const step2Next = document.getElementById('wizardStep2Next');
-  const step3Finish = document.getElementById('wizardStep3Finish');
-
-  if (step0Next) step0Next.onclick = () => goToStep(1);
-  if (step1Back) step1Back.onclick = () => goToStep(0);
-  if (step2Back) step2Back.onclick = () => goToStep(1);
-
-  const wizardApiKey = document.getElementById('wizardApiKey');
-  const wizardKeyStatus = document.getElementById('wizardKeyStatus');
+  const wizardApiKey = document.getElementById("wizardApiKey");
+  const wizardKeyStatus = document.getElementById("wizardKeyStatus");
 
   function showWizardStatus(msg, type) {
     if (!wizardKeyStatus) return;
     wizardKeyStatus.textContent = msg;
-    wizardKeyStatus.className = 'status ' + type;
-    wizardKeyStatus.style.display = 'block';
-  }
-
-  if (wizardApiKey) {
-    wizardApiKey.oninput = () => {
-      if (wizardKeyStatus) wizardKeyStatus.style.display = 'none';
-    };
-  }
-
-  if (step1Next) {
-    step1Next.onclick = async () => {
-      const key = wizardApiKey ? wizardApiKey.value.trim() : '';
-      if (!key) {
-        showWizardStatus('⚠️ Vui lòng nhập API key', 'info');
-        return;
-      }
-
-      const saved = await saveWizardApiKey(key);
-      if (saved) {
-        setTimeout(() => {
-          goToStep(2);
-        }, 1000);
-      }
-    };
-  }
-
-  if (step1Skip) {
-    step1Skip.onclick = () => {
-      goToStep(2);
-    };
-  }
-
-  if (step2Next) {
-    step2Next.onclick = async () => {
-      const saved = await saveWizardSettings();
-      if (saved) {
-        goToStep(3);
-      }
-    };
-  }
-
-  if (step3Finish) {
-    step3Finish.onclick = async () => {
-      await chrome.storage.local.set({ wizardCompleted: true });
-      const wizardView = document.getElementById('wizard-view');
-      const mainView = document.getElementById('main-view');
-      if (wizardView) wizardView.style.display = 'none';
-      if (mainView) mainView.style.display = 'block';
-
-      // Load configurations and reload page
-      loadKeyLists();
-      location.reload();
-    };
+    wizardKeyStatus.className = "status " + (type || "info");
+    wizardKeyStatus.style.display = "block";
+    wizardKeyStatus.hidden = false;
   }
 
   async function saveWizardApiKey(key) {
-    const provider = detectProvider(key);
-    const data = await chrome.storage.sync.get(['apiKeys']);
-    const apiKeys = data.apiKeys || {};
-    for (const p of ALL_PROVIDERS) {
-      if (!apiKeys[p]) apiKeys[p] = [];
-    }
-    if (apiKeys[provider].includes(key)) {
-      showWizardStatus('⚠️ Key đã tồn tại', 'info');
-      return true;
-    }
-    apiKeys[provider].push(key);
-    await chrome.storage.sync.set({ apiKeys });
-    await chrome.storage.local.set({ backupApiKeys: apiKeys });
-    showWizardStatus(`✓ Đã thêm ${provider.toUpperCase()} key`, 'success');
-    return true;
-  }
-
-  async function saveWizardSettings() {
-    const wizardOutputLanguage = document.getElementById('wizardOutputLanguage');
-    const wizardSummaryLength = document.getElementById('wizardSummaryLength');
-    const wizardHideAffiliate = document.getElementById('wizardHideAffiliate');
-
-    const outputLanguage = wizardOutputLanguage ? wizardOutputLanguage.value : 'vi';
-    const summaryLength = wizardSummaryLength ? wizardSummaryLength.value : 'medium';
-    const hideAffiliatePosts = wizardHideAffiliate ? wizardHideAffiliate.checked : false;
-
     try {
-      await chrome.storage.sync.set({
-        outputLanguage,
-        summaryLength,
-        hideAffiliatePosts,
-        languageAutoDetected: false
-      });
+      const providers =
+        typeof ALL_PROVIDERS !== "undefined"
+          ? ALL_PROVIDERS
+          : ["groq", "gemini", "cerebras", "sambanova", "openrouter"];
+      const provider =
+        typeof detectProvider === "function" ? detectProvider(key) : "groq";
+      const data = await chrome.storage.sync.get(["apiKeys"]);
+      const apiKeys = data.apiKeys || {};
+      for (const p of providers) {
+        if (!apiKeys[p]) apiKeys[p] = [];
+      }
+      if (apiKeys[provider].includes(key)) {
+        showWizardStatus("Key đã tồn tại", "info");
+        return true;
+      }
+      apiKeys[provider].push(key);
+      await chrome.storage.sync.set({ apiKeys });
+      await chrome.storage.local.set({ backupApiKeys: apiKeys });
+      showWizardStatus("Đã thêm " + provider.toUpperCase() + " key", "success");
       return true;
     } catch (e) {
       console.error(e);
+      showWizardStatus("Không lưu được key — thử lại hoặc Bỏ qua", "error");
       return false;
     }
   }
 
-  // Load current values if they exist
-  chrome.storage.sync.get(['outputLanguage', 'summaryLength', 'hideAffiliatePosts'], (d) => {
-    const wizardOutputLanguage = document.getElementById('wizardOutputLanguage');
-    const wizardSummaryLength = document.getElementById('wizardSummaryLength');
-    const wizardHideAffiliate = document.getElementById('wizardHideAffiliate');
+  async function saveWizardSettings() {
+    try {
+      const outputLanguage =
+        document.getElementById("wizardOutputLanguage")?.value || "vi";
+      const summaryLength =
+        document.getElementById("wizardSummaryLength")?.value || "medium";
+      const hideAffiliatePosts = !!(
+        document.getElementById("wizardHideAffiliate")?.checked
+      );
+      await chrome.storage.sync.set({
+        outputLanguage,
+        summaryLength,
+        hideAffiliatePosts,
+        languageAutoDetected: false,
+      });
+      return true;
+    } catch (e) {
+      console.error(e);
+      return true; // still allow finish
+    }
+  }
 
-    if (d.outputLanguage && wizardOutputLanguage) wizardOutputLanguage.value = d.outputLanguage;
-    if (d.summaryLength && wizardSummaryLength) wizardSummaryLength.value = d.summaryLength;
-    if (d.hideAffiliatePosts !== undefined && wizardHideAffiliate) wizardHideAffiliate.checked = d.hideAffiliatePosts;
+  // Event delegation — survives re-renders / density CSS issues
+  wizardView.addEventListener("click", async (e) => {
+    const btn = e.target.closest("button, a.wizard-skip-link, [data-wizard-action]");
+    if (!btn || !wizardView.contains(btn)) return;
+    const id = btn.id || btn.getAttribute("data-wizard-action") || "";
+
+    if (id === "wizardStep0Next" || id === "wizardStep0Skip") {
+      e.preventDefault();
+      if (id === "wizardStep0Skip") {
+        await finishWizard();
+        return;
+      }
+      goToStep(1);
+      return;
+    }
+    if (id === "wizardStep1Back") {
+      e.preventDefault();
+      goToStep(0);
+      return;
+    }
+    if (id === "wizardStep1Skip") {
+      e.preventDefault();
+      goToStep(2);
+      return;
+    }
+    if (id === "wizardStep1Next") {
+      e.preventDefault();
+      const key = wizardApiKey ? wizardApiKey.value.trim() : "";
+      if (!key) {
+        showWizardStatus("Vui lòng nhập API key hoặc bấm Bỏ qua", "info");
+        return;
+      }
+      const saved = await saveWizardApiKey(key);
+      if (saved) goToStep(2);
+      return;
+    }
+    if (id === "wizardStep2Back") {
+      e.preventDefault();
+      goToStep(1);
+      return;
+    }
+    if (id === "wizardStep2Next") {
+      e.preventDefault();
+      await saveWizardSettings();
+      goToStep(3);
+      return;
+    }
+    if (id === "wizardStep3Finish") {
+      e.preventDefault();
+      await finishWizard();
+      return;
+    }
   });
+
+  if (wizardApiKey) {
+    wizardApiKey.addEventListener("input", () => {
+      if (wizardKeyStatus) {
+        wizardKeyStatus.style.display = "none";
+        wizardKeyStatus.hidden = true;
+      }
+    });
+  }
+
+  // Prefill settings (non-blocking)
+  try {
+    chrome.storage.sync.get(
+      ["outputLanguage", "summaryLength", "hideAffiliatePosts"],
+      (d) => {
+        if (chrome.runtime.lastError) return;
+        const lang = document.getElementById("wizardOutputLanguage");
+        const len = document.getElementById("wizardSummaryLength");
+        const hide = document.getElementById("wizardHideAffiliate");
+        if (d.outputLanguage && lang) lang.value = d.outputLanguage;
+        if (d.summaryLength && len) len.value = d.summaryLength;
+        if (d.hideAffiliatePosts !== undefined && hide)
+          hide.checked = d.hideAffiliatePosts;
+      },
+    );
+  } catch (_) {}
 
   goToStep(0);
 }
 
-// Run wizard check on popup load
-checkWizardStatus();
+// Run wizard check on popup load (never leave user stranded)
+checkWizardStatus().catch((e) => {
+  console.warn("[FeedWriter] wizard check failed", e);
+  showMainApp();
+});
 
 // === TABS ===
 // Cache selectors for better performance
 const allTabs = document.querySelectorAll(".tab");
 const allTabContents = document.querySelectorAll(".tab-content");
 
-function activateTab(tab) {
-  if (!tab) return;
-  allTabs.forEach((t) => {
-    t.classList.remove("active");
-    t.setAttribute("aria-selected", "false");
-    t.setAttribute("tabindex", "-1");
-  });
-  allTabContents.forEach((c) => c.classList.remove("active"));
-  tab.classList.add("active");
-  tab.setAttribute("aria-selected", "true");
-  tab.setAttribute("tabindex", "0");
-  const panel = document.getElementById("tab-" + tab.dataset.tab);
-  if (panel) panel.classList.add("active");
-  if (tab.dataset.tab === "history") {
-    loadHistory();
-    loadAgentStats();
-  }
-  if (tab.dataset.tab === "apikeys") {
-    loadKeyLists();
-    loadProviderHealth();
-  }
-}
+// Initial roving tabindex for tabs
+allTabs.forEach((t) => {
+  t.setAttribute("tabindex", t.classList.contains("active") ? "0" : "-1");
+});
 
-allTabs.forEach((tab, index) => {
-  tab.setAttribute("tabindex", tab.classList.contains("active") ? "0" : "-1");
-  tab.addEventListener("click", () => activateTab(tab));
-  tab.addEventListener("keydown", (e) => {
-    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft" && e.key !== "Home" && e.key !== "End") {
-      return;
+allTabs.forEach((tab) => {
+  tab.addEventListener("click", () => {
+    allTabs.forEach((t) => {
+      t.classList.remove("active");
+      t.setAttribute("aria-selected", "false");
+      t.setAttribute("tabindex", "-1");
+    });
+    allTabContents.forEach((c) => {
+      c.classList.remove("active");
+      c.hidden = true;
+    });
+    tab.classList.add("active");
+    tab.setAttribute("aria-selected", "true");
+    tab.setAttribute("tabindex", "0");
+    const panel = document.getElementById("tab-" + tab.dataset.tab);
+    if (panel) {
+      panel.classList.add("active");
+      panel.hidden = false;
     }
-    e.preventDefault();
-    const tabs = Array.from(allTabs);
-    let next = index;
-    if (e.key === "ArrowRight") next = (index + 1) % tabs.length;
-    else if (e.key === "ArrowLeft") next = (index - 1 + tabs.length) % tabs.length;
-    else if (e.key === "Home") next = 0;
-    else if (e.key === "End") next = tabs.length - 1;
-    activateTab(tabs[next]);
-    tabs[next].focus();
+    if (tab.dataset.tab === "history") {
+      loadHistory();
+      loadAgentStats();
+    }
+    if (tab.dataset.tab === "apikeys") loadKeyLists();
   });
 });
 
-// Dismissible quick tip + about version string
-(function initUiChrome() {
-  const tip = document.getElementById("quickTip");
-  const dismiss = document.getElementById("dismissQuickTip");
-  if (tip && dismiss) {
-    chrome.storage.local.get(["hideQuickTip"], (d) => {
-      if (d && d.hideQuickTip) tip.classList.add("is-hidden");
-    });
-    dismiss.addEventListener("click", () => {
-      tip.classList.add("is-hidden");
-      chrome.storage.local.set({ hideQuickTip: true });
-    });
-  }
-})();
+// Arrow-key tab navigation (a11y)
+document.querySelector(".tabs")?.addEventListener("keydown", (e) => {
+  if (e.key !== "ArrowRight" && e.key !== "ArrowLeft" && e.key !== "Home" && e.key !== "End") return;
+  const tabs = Array.from(allTabs);
+  const i = tabs.indexOf(document.activeElement);
+  if (i < 0) return;
+  e.preventDefault();
+  let next = i;
+  if (e.key === "ArrowRight") next = (i + 1) % tabs.length;
+  if (e.key === "ArrowLeft") next = (i - 1 + tabs.length) % tabs.length;
+  if (e.key === "Home") next = 0;
+  if (e.key === "End") next = tabs.length - 1;
+  tabs[next].focus();
+  tabs[next].click();
+});
 
 // === SETTINGS ===
 const minLengthInput = document.getElementById("minLength");
@@ -303,54 +350,15 @@ const summaryLengthSel = document.getElementById("summaryLength");
 const promptStyleSel = document.getElementById("promptStyle");
 const customInstructionsEl = document.getElementById("customInstructions");
 const customSummaryPromptEl = document.getElementById("customSummaryPrompt");
-const customAffPromptEl = document.getElementById("customAffPrompt");
 const sourceTemplateEl = document.getElementById("sourceTemplate");
 const hideAffiliatePostsEl = document.getElementById("hideAffiliatePosts");
 const adDisplayModeEl = document.getElementById("adDisplayMode");
 const affiliateDisplayModeEl = document.getElementById("affiliateDisplayMode");
-const scoringProfileEl = document.getElementById("scoringProfile");
 const blockedDomainsEl = document.getElementById("blockedDomains");
 const enableUnicodeBoldEl = document.getElementById("enableUnicodeBold");
 const saveBtn = document.getElementById("saveBtn");
 const status = document.getElementById("status");
 
-// Auto-GitHub → Facebook controls (+ Labs risk gate)
-const LABS_CONFIRM_PHRASE = "TOI HIEU RUI RO";
-const labsAutomationEnabledEl = document.getElementById("labsAutomationEnabled");
-const labsConfirmInputEl = document.getElementById("labsConfirmInput");
-const disableLabsBtn = document.getElementById("disableLabsBtn");
-const autoGithubEnabledEl = document.getElementById("autoGithubEnabled");
-const autoGithubTimeEl = document.getElementById("autoGithubTime");
-const autoGithubFocusEl = document.getElementById("autoGithubFocus");
-const autoGithubMinStarsEl = document.getElementById("autoGithubMinStars");
-const runGithubNowBtn = document.getElementById("runGithubNowBtn");
-const githubAutopostStatus = document.getElementById("githubAutopostStatus");
-const githubAutopostLog = document.getElementById("githubAutopostLog");
-
-function isLabsConfirmTextValid() {
-  const typed = labsConfirmInputEl ? labsConfirmInputEl.value.trim() : "";
-  return typed === LABS_CONFIRM_PHRASE;
-}
-
-/** Labs is armed only when checkbox is on AND confirm phrase matches. */
-function isLabsArmed() {
-  return !!(labsAutomationEnabledEl && labsAutomationEnabledEl.checked && isLabsConfirmTextValid());
-}
-
-/** Enable/disable schedule + run controls based on Labs gate. */
-function updateGithubLabsGateUI() {
-  const armed = isLabsArmed();
-  if (autoGithubEnabledEl) {
-    autoGithubEnabledEl.disabled = !armed;
-    if (!armed) autoGithubEnabledEl.checked = false;
-  }
-  if (runGithubNowBtn) {
-    // Keep disabled only for labs gate; run handler may re-disable while in-flight
-    if (!runGithubNowBtn.dataset.running) {
-      runGithubNowBtn.disabled = !armed;
-    }
-  }
-}
 
 // Advanced Mode Controls
 const advancedModeToggle = document.getElementById("advancedModeToggle");
@@ -358,20 +366,20 @@ const tabSettings = document.getElementById("tab-settings");
 const settingsModeTitle = document.querySelector(".settings-mode-title");
 
 function updateAdvancedModeView(enabled) {
-  if (enabled) {
-    tabSettings.classList.remove("hide-advanced");
-    if (settingsModeTitle) settingsModeTitle.textContent = "⚙️ Cài đặt nâng cao";
-  } else {
-    tabSettings.classList.add("hide-advanced");
-    if (settingsModeTitle) settingsModeTitle.textContent = "⚙️ Cài đặt cơ bản";
-  }
+  if (!tabSettings) return;
+  tabSettings.classList.toggle("hide-advanced", !enabled);
+  tabSettings.classList.toggle("is-advanced", !!enabled);
 }
 
-advancedModeToggle.addEventListener("change", async () => {
-  const enabled = advancedModeToggle.checked;
-  await chrome.storage.sync.set({ advancedModeEnabled: enabled });
-  updateAdvancedModeView(enabled);
-});
+if (advancedModeToggle) {
+  advancedModeToggle.addEventListener("change", async () => {
+    const enabled = advancedModeToggle.checked;
+    try {
+      await chrome.storage.sync.set({ advancedModeEnabled: enabled });
+    } catch (_) {}
+    updateAdvancedModeView(enabled);
+  });
+}
 
 chrome.storage.sync.get(
   [
@@ -381,22 +389,14 @@ chrome.storage.sync.get(
     "promptStyle",
     "customInstructions",
     "customSummaryPrompt",
-    "customAffPrompt",
     "sourceTemplate",
     "hideAffiliatePosts",
     "adDisplayMode",
     "affiliateDisplayMode",
-    "scoringProfile",
     "blockedDomains",
     "enableUnicodeBold",
     "apiKeys",
     "advancedModeEnabled",
-    "labsAutomationEnabled",
-    "labsAutomationAcknowledgedAt",
-    "autoGithubEnabled",
-    "autoGithubTime",
-    "autoGithubFocus",
-    "autoGithubMinStars",
   ],
   (d) => {
     if (d.minLength) minLengthInput.value = d.minLength;
@@ -406,35 +406,16 @@ chrome.storage.sync.get(
     if (d.customInstructions) customInstructionsEl.value = d.customInstructions;
     if (d.customSummaryPrompt)
       customSummaryPromptEl.value = d.customSummaryPrompt;
-    if (d.customAffPrompt) customAffPromptEl.value = d.customAffPrompt;
     if (d.sourceTemplate) sourceTemplateEl.value = d.sourceTemplate;
     if (d.hideAffiliatePosts) hideAffiliatePostsEl.checked = true;
     if (d.adDisplayMode) adDisplayModeEl.value = d.adDisplayMode;
     if (d.affiliateDisplayMode) affiliateDisplayModeEl.value = d.affiliateDisplayMode;
-    if (scoringProfileEl && d.scoringProfile) scoringProfileEl.value = d.scoringProfile;
     if (d.blockedDomains) blockedDomainsEl.value = d.blockedDomains;
     if (d.enableUnicodeBold !== false) enableUnicodeBoldEl.checked = true;
 
-    // Labs + Auto-GitHub settings
-    const labsOn = !!d.labsAutomationEnabled;
-    if (labsAutomationEnabledEl) labsAutomationEnabledEl.checked = labsOn;
-    // Pre-fill confirm phrase only when Labs was previously acknowledged
-    if (labsConfirmInputEl && labsOn && d.labsAutomationAcknowledgedAt) {
-      labsConfirmInputEl.value = LABS_CONFIRM_PHRASE;
-    }
-    if (autoGithubEnabledEl) {
-      // Force off in UI if Labs not on (safe default)
-      autoGithubEnabledEl.checked = !!(d.autoGithubEnabled && labsOn);
-    }
-    if (autoGithubTimeEl && d.autoGithubTime) autoGithubTimeEl.value = d.autoGithubTime;
-    if (autoGithubFocusEl && d.autoGithubFocus) autoGithubFocusEl.value = d.autoGithubFocus;
-    if (autoGithubMinStarsEl && d.autoGithubMinStars != null)
-      autoGithubMinStarsEl.value = d.autoGithubMinStars;
-    updateGithubLabsGateUI();
-
     // Set advanced mode toggle state
     const advancedEnabled = !!d.advancedModeEnabled;
-    advancedModeToggle.checked = advancedEnabled;
+    if (advancedModeToggle) advancedModeToggle.checked = advancedEnabled;
     updateAdvancedModeView(advancedEnabled);
 
     const total = Object.values(d.apiKeys || {}).reduce(
@@ -446,9 +427,9 @@ chrome.storage.sync.get(
   },
 );
 
-saveBtn.addEventListener("click", () => {
+if (saveBtn) saveBtn.addEventListener("click", () => {
   // Input validation
-  const minLen = parseInt(minLengthInput.value);
+  const minLen = parseInt(minLengthInput?.value, 10);
   if (isNaN(minLen) || minLen < 100 || minLen > 5000) {
     showStatus("Độ dài tối thiểu phải từ 100-5000 ký tự", "error");
     return;
@@ -464,25 +445,6 @@ saveBtn.addEventListener("click", () => {
     saveBtn.textContent = saveBtnLabel;
   };
 
-  // Labs gate: auto-post cannot stay on without Labs + confirm phrase
-  const labsArmed = isLabsArmed();
-  let labsEnabled = labsArmed;
-  let autoGithubEnabled = autoGithubEnabledEl ? autoGithubEnabledEl.checked : false;
-  if (autoGithubEnabled && !labsEnabled) {
-    autoGithubEnabled = false;
-    if (autoGithubEnabledEl) autoGithubEnabledEl.checked = false;
-  }
-  // If checkbox checked but phrase wrong, treat Labs as off
-  if (labsAutomationEnabledEl && labsAutomationEnabledEl.checked && !isLabsConfirmTextValid()) {
-    labsEnabled = false;
-    autoGithubEnabled = false;
-    if (autoGithubEnabledEl) autoGithubEnabledEl.checked = false;
-    showStatus("Labs: gõ đúng «TOI HIEU RUI RO» để xác nhận rủi ro.", "error");
-    // Still allow saving other settings, but force labs/auto off
-  }
-
-  const labsAcknowledgedAt = labsEnabled ? Date.now() : null;
-
   chrome.storage.sync.set(
     {
       minLength: minLen,
@@ -491,23 +453,19 @@ saveBtn.addEventListener("click", () => {
       promptStyle: promptStyleSel.value,
       customInstructions: customInstructionsEl.value.trim(),
       customSummaryPrompt: customSummaryPromptEl.value.trim(),
-      customAffPrompt: customAffPromptEl.value.trim(),
       sourceTemplate: sourceTemplateEl.value.trim(),
-      hideAffiliatePosts: hideAffiliatePostsEl.checked,
-      adDisplayMode: adDisplayModeEl.value,
-      affiliateDisplayMode: affiliateDisplayModeEl.value,
-      scoringProfile: scoringProfileEl ? scoringProfileEl.value : "tech",
-      blockedDomains: blockedDomainsEl.value.trim(),
-      enableUnicodeBold: enableUnicodeBoldEl.checked,
-      advancedModeEnabled: advancedModeToggle.checked,
-      labsAutomationEnabled: labsEnabled,
-      labsAutomationAcknowledgedAt: labsAcknowledgedAt,
-      autoGithubEnabled: autoGithubEnabled,
-      autoGithubTime: autoGithubTimeEl ? (autoGithubTimeEl.value || "09:00") : "09:00",
-      autoGithubFocus: autoGithubFocusEl ? autoGithubFocusEl.value : "ai",
-      autoGithubMinStars: autoGithubMinStarsEl
-        ? Math.max(1, parseInt(autoGithubMinStarsEl.value, 10) || 30)
-        : 30,
+      hideAffiliatePosts: !!(hideAffiliatePostsEl && hideAffiliatePostsEl.checked),
+      adDisplayMode: adDisplayModeEl ? adDisplayModeEl.value : "collapse",
+      affiliateDisplayMode: affiliateDisplayModeEl
+        ? affiliateDisplayModeEl.value
+        : "collapse",
+      blockedDomains: blockedDomainsEl ? blockedDomainsEl.value.trim() : "",
+      enableUnicodeBold: enableUnicodeBoldEl
+        ? enableUnicodeBoldEl.checked !== false
+        : true,
+      advancedModeEnabled: !!(advancedModeToggle && advancedModeToggle.checked),
+      // Force-disable legacy auto-GitHub feature if still in storage
+      autoGithubEnabled: false,
       languageAutoDetected: false, // User manually changed settings
     },
     () => {
@@ -516,13 +474,10 @@ saveBtn.addEventListener("click", () => {
         showStatus("Lưu thất bại — thử lại", "error");
         return;
       }
-      updateGithubLabsGateUI();
-      if (!(labsAutomationEnabledEl && labsAutomationEnabledEl.checked && !isLabsConfirmTextValid())) {
-        showStatus("Đã lưu", "success");
-      }
-      // Re-arm (or clear) the daily auto-GitHub alarm to match new settings.
+      showStatus("Đã lưu", "success");
+      // Clear legacy auto-GitHub alarm if any
       try {
-        chrome.runtime.sendMessage({ action: "reschedule-github" });
+        chrome.runtime.sendMessage({ action: "disable-github-autopost" });
       } catch (_) {}
 
       // Create backup after saving
@@ -553,22 +508,28 @@ function updateDebugInfo() {
     const telemetry = data.telemetry || {};
     const now = Date.now();
     debugInfo.innerHTML = `
-      <div>📊 History items: ${historyCount}</div>
-      <div>📈 Sessions: ${telemetry.sessions || 0}</div>
-      <div>📝 Summaries: ${telemetry.summaries || 0}</div>
-      <div>❌ Errors: ${telemetry.errors || 0}</div>
-      <div>🔧 Test Mode: Enabled</div>
-      <div>⏰ Last active: ${new Date(now).toLocaleTimeString()}</div>
+      <div>History items: ${historyCount}</div>
+      <div>Sessions: ${telemetry.sessions || 0}</div>
+      <div>Summaries: ${telemetry.summaries || 0}</div>
+      <div>Errors: ${telemetry.errors || 0}</div>
+      <div>Test Mode: Enabled</div>
+      <div>Last active: ${new Date(now).toLocaleTimeString()}</div>
     `;
   });
 }
 
 function showStatus(msg, type) {
+  if (!status) return;
   status.textContent = msg;
-  status.className = "status " + type;
+  status.className = "status " + (type || "info");
+  status.hidden = false;
   status.style.display = "block";
-  setTimeout(() => {
+  clearTimeout(showStatus._t);
+  showStatus._t = setTimeout(() => {
+    status.hidden = true;
     status.style.display = "none";
+    status.textContent = "";
+    status.className = "status";
   }, 4000);
 }
 
@@ -600,11 +561,14 @@ const newApiKeyInput = document.getElementById("newApiKey");
 const addKeyBtn = document.getElementById("addKeyBtn");
 const toggleNewApiKey = document.getElementById("toggleNewApiKey");
 if (toggleNewApiKey) {
+  const eyeOn = toggleNewApiKey.querySelector(".icon-eye");
+  const eyeOff = toggleNewApiKey.querySelector(".icon-eye-off");
   toggleNewApiKey.addEventListener("click", () => {
     const show = newApiKeyInput.type === "password";
     newApiKeyInput.type = show ? "text" : "password";
     toggleNewApiKey.setAttribute("aria-pressed", String(show));
-    toggleNewApiKey.style.opacity = show ? "1" : "";
+    if (eyeOn) eyeOn.hidden = show;
+    if (eyeOff) eyeOff.hidden = !show;
     newApiKeyInput.focus();
   });
 }
@@ -612,17 +576,26 @@ const keyStatus = document.getElementById("keyStatus");
 const testBtn = document.getElementById("testBtn");
 const keyEmptyState = document.getElementById("keyEmptyState");
 function showKeyStatus(msg, type) {
+  if (!keyStatus) return;
   keyStatus.textContent = msg;
-  keyStatus.className = "status " + type;
+  keyStatus.className = "status " + (type || "info");
+  keyStatus.hidden = false;
   keyStatus.style.display = "block";
-  setTimeout(() => {
+  clearTimeout(showKeyStatus._t);
+  showKeyStatus._t = setTimeout(() => {
+    keyStatus.hidden = true;
     keyStatus.style.display = "none";
+    keyStatus.textContent = "";
+    keyStatus.className = "status";
   }, 3500);
 }
 
 function maskKey(key) {
-  if (key.length <= 8) return "****";
-  return key.substring(0, 6) + "..." + key.substring(key.length - 4);
+  if (!key || key.length <= 10) return "••••••••";
+  // Show more prefix/suffix so list is readable (was too aggressive → looked “cut”)
+  const head = key.length > 24 ? 10 : 8;
+  const tail = 5;
+  return key.substring(0, head) + "…" + key.substring(key.length - tail);
 }
 
 function detectProvider(key) {
@@ -635,9 +608,88 @@ function detectProvider(key) {
 
 const ALL_PROVIDERS = ["groq", "gemini", "cerebras", "sambanova", "openrouter"];
 
+/** Count keys in an apiKeys map. */
+function _countApiKeys(apiKeys) {
+  if (!apiKeys || typeof apiKeys !== "object") return 0;
+  return Object.values(apiKeys).reduce(
+    (n, arr) => n + (Array.isArray(arr) ? arr.length : 0),
+    0,
+  );
+}
+
+/**
+ * Load apiKeys from sync; if empty, restore from local backupApiKeys
+ * (same recovery path as the service worker).
+ * Returns { apiKeys, restoredFromBackup }.
+ */
+async function ensureApiKeysLoaded() {
+  const data = await chrome.storage.sync.get(["apiKeys", "apiKey", "provider"]);
+  let apiKeys = data.apiKeys || {};
+  for (const p of ALL_PROVIDERS) {
+    if (!Array.isArray(apiKeys[p])) apiKeys[p] = [];
+  }
+
+  // Legacy single-key migration
+  if (data.apiKey) {
+    const provider = data.provider || detectProvider(data.apiKey);
+    if (!apiKeys[provider]) apiKeys[provider] = [];
+    if (!apiKeys[provider].includes(data.apiKey)) {
+      apiKeys[provider].push(data.apiKey);
+      await chrome.storage.sync.set({ apiKeys });
+      await chrome.storage.local.set({ backupApiKeys: apiKeys });
+    }
+  }
+
+  let restoredFromBackup = false;
+  if (_countApiKeys(apiKeys) === 0) {
+    const local = await chrome.storage.local.get(["backupApiKeys"]);
+    const backup = local.backupApiKeys;
+    if (backup && _countApiKeys(backup) > 0) {
+      apiKeys = backup;
+      for (const p of ALL_PROVIDERS) {
+        if (!Array.isArray(apiKeys[p])) apiKeys[p] = [];
+      }
+      try {
+        await chrome.storage.sync.set({ apiKeys });
+        restoredFromBackup = true;
+        console.info(
+          "[FeedWriter] Restored",
+          _countApiKeys(apiKeys),
+          "API key(s) from local backup",
+        );
+      } catch (e) {
+        console.warn("[FeedWriter] Could not write restored keys to sync", e);
+      }
+    }
+  } else {
+    // Keep local backup in sync with live keys (cheap insurance)
+    try {
+      await chrome.storage.local.set({ backupApiKeys: apiKeys });
+    } catch (_) {}
+  }
+
+  return { apiKeys, restoredFromBackup };
+}
+
+function _updateKeysTabBadge(total) {
+  const tab = document.getElementById("tabbtn-apikeys");
+  if (!tab) return;
+  let badge = tab.querySelector(".tab-count");
+  if (total > 0) {
+    if (!badge) {
+      badge = document.createElement("span");
+      badge.className = "tab-count";
+      tab.appendChild(badge);
+    }
+    badge.textContent = String(total);
+    badge.hidden = false;
+  } else if (badge) {
+    badge.hidden = true;
+  }
+}
+
 async function loadKeyLists() {
-  const data = await chrome.storage.sync.get(["apiKeys"]);
-  const apiKeys = data.apiKeys || {};
+  const { apiKeys, restoredFromBackup } = await ensureApiKeysLoaded();
   const localData = await chrome.storage.local.get(["keyStatus"]);
   const ks = localData.keyStatus || {};
   let totalKeys = 0;
@@ -649,8 +701,128 @@ async function loadKeyLists() {
     if (wrapper) wrapper.style.display = keys.length > 0 ? "block" : "none";
     renderKeyList(p, keys, ks);
   }
-  if (keyEmptyState)
-    keyEmptyState.style.display = totalKeys === 0 ? "block" : "none";
+  if (keyEmptyState) {
+    const empty = totalKeys === 0;
+    keyEmptyState.style.display = empty ? "block" : "none";
+    keyEmptyState.hidden = !empty;
+  }
+  _updateKeysTabBadge(totalKeys);
+  if (restoredFromBackup && totalKeys > 0) {
+    showKeyStatus(
+      "Đã khôi phục " + totalKeys + " key từ backup local",
+      "success",
+    );
+  }
+}
+
+/** Normalize various import shapes into { provider: string[] }. */
+function _normalizeImportedApiKeys(raw) {
+  let obj = raw;
+  if (raw && raw.apiKeys && typeof raw.apiKeys === "object") obj = raw.apiKeys;
+  if (!obj || typeof obj !== "object") return null;
+  const out = {};
+  for (const p of ALL_PROVIDERS) out[p] = [];
+  // Shape A: { groq: ["gsk_…"], … }
+  let matched = false;
+  for (const p of ALL_PROVIDERS) {
+    if (Array.isArray(obj[p])) {
+      matched = true;
+      for (const k of obj[p]) {
+        if (typeof k === "string" && k.trim()) out[p].push(k.trim());
+      }
+    }
+  }
+  // Shape B: flat array of key strings
+  if (!matched && Array.isArray(obj)) {
+    matched = true;
+    for (const k of obj) {
+      if (typeof k === "string" && k.trim()) {
+        const provider = detectProvider(k.trim());
+        out[provider].push(k.trim());
+      }
+    }
+  }
+  // Shape C: { keys: ["…"] }
+  if (!matched && Array.isArray(obj.keys)) {
+    matched = true;
+    for (const k of obj.keys) {
+      if (typeof k === "string" && k.trim()) {
+        out[detectProvider(k.trim())].push(k.trim());
+      }
+    }
+  }
+  if (!matched) return null;
+  // de-dupe
+  for (const p of ALL_PROVIDERS) {
+    out[p] = [...new Set(out[p])];
+  }
+  return out;
+}
+
+async function mergeAndSaveApiKeys(incoming, { replace = false } = {}) {
+  const data = await chrome.storage.sync.get(["apiKeys"]);
+  const base = replace ? {} : data.apiKeys || {};
+  const apiKeys = {};
+  for (const p of ALL_PROVIDERS) {
+    const a = Array.isArray(base[p]) ? base[p].slice() : [];
+    const b = Array.isArray(incoming[p]) ? incoming[p] : [];
+    apiKeys[p] = [...new Set([...a, ...b])];
+  }
+  await chrome.storage.sync.set({ apiKeys });
+  await chrome.storage.local.set({
+    backupApiKeys: apiKeys,
+    backupApiKeysAt: Date.now(),
+  });
+  return _countApiKeys(apiKeys);
+}
+
+async function exportApiKeys() {
+  const { apiKeys } = await ensureApiKeysLoaded();
+  const total = _countApiKeys(apiKeys);
+  if (total === 0) {
+    showKeyStatus("Chưa có key để export", "error");
+    return;
+  }
+  const payload = {
+    version: 1,
+    type: "feedwriter-api-keys",
+    exportedAt: new Date().toISOString(),
+    apiKeys,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download =
+    "feedwriter-keys-" + new Date().toISOString().slice(0, 10) + ".json";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  showKeyStatus("Đã export " + total + " key", "success");
+}
+
+async function importApiKeysFromFile(file) {
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const raw = JSON.parse(text);
+    const incoming = _normalizeImportedApiKeys(raw);
+    if (!incoming || _countApiKeys(incoming) === 0) {
+      showKeyStatus("File JSON không có API key hợp lệ", "error");
+      return;
+    }
+    const total = await mergeAndSaveApiKeys(incoming, { replace: false });
+    await loadKeyLists();
+    showKeyStatus(
+      "Đã import · tổng " + total + " key (merge, không ghi đè trùng)",
+      "success",
+    );
+  } catch (e) {
+    showKeyStatus("Import lỗi: " + (e.message || e), "error");
+  }
 }
 
 function renderKeyList(provider, keys, keyStatusData) {
@@ -666,202 +838,50 @@ function renderKeyList(provider, keys, keyStatusData) {
       const info = keyStatusData[key] || {};
       let cls, txt;
       if (info.rateLimitedUntil && Date.now() < info.rateLimitedUntil) {
-        cls = "rate-limited";
+        cls = "is-limited";
         txt =
-          "limit " +
+          "Limit " +
           Math.ceil((info.rateLimitedUntil - Date.now()) / 60000) +
           "p";
       } else if (info.lastUsed && Date.now() - info.lastUsed < 60000) {
-        cls = "active";
-        txt = "vừa dùng";
+        cls = "is-active";
+        txt = "Vừa dùng";
       } else {
-        cls = "idle";
+        cls = "is-ok";
         txt = "OK";
       }
       return (
         '<div class="key-item">' +
-        '<span class="key-item-text">' +
-        esc(maskKey(key)) +
-        "</span>" +
-        '<span class="key-item-status ' +
-        cls +
-        '">' +
-        txt +
-        "</span>" +
-        '<button class="key-item-delete" data-provider="' +
-        provider +
-        '" data-idx="' +
-        i +
-        '" title="Xóa key">&times;</button>' +
+          '<code class="key-item-text" title="' + esc(maskKey(key)) + '">' +
+            esc(maskKey(key)) +
+          "</code>" +
+          '<span class="key-item-status ' + cls + '">' + esc(txt) + "</span>" +
+          '<button type="button" class="key-item-delete" data-provider="' +
+            provider +
+            '" data-idx="' +
+            i +
+            '" title="Xóa key" aria-label="Xóa key">' +
+            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>' +
+          "</button>" +
         "</div>"
       );
     })
     .join("");
 }
 
-// Event delegation for key delete buttons
+// Event delegation for key delete buttons (click may land on SVG child)
 document.addEventListener("click", async (e) => {
-  if (e.target.classList.contains("key-item-delete")) {
-    const btn = e.target;
-    const d = await chrome.storage.sync.get(["apiKeys"]);
-    const apiKeys = d.apiKeys || {};
-    if (apiKeys[btn.dataset.provider])
-      apiKeys[btn.dataset.provider].splice(+btn.dataset.idx, 1);
-    await chrome.storage.sync.set({ apiKeys });
-    await chrome.storage.local.set({ backupApiKeys: apiKeys });
-    loadKeyLists();
-    loadProviderHealth();
-    showKeyStatus("Đã xóa", "success");
-  }
+  const btn = e.target.closest(".key-item-delete");
+  if (!btn) return;
+  const d = await chrome.storage.sync.get(["apiKeys"]);
+  const apiKeys = d.apiKeys || {};
+  if (apiKeys[btn.dataset.provider])
+    apiKeys[btn.dataset.provider].splice(+btn.dataset.idx, 1);
+  await chrome.storage.sync.set({ apiKeys });
+  await chrome.storage.local.set({ backupApiKeys: apiKeys });
+  loadKeyLists();
+  showKeyStatus("Đã xóa", "success");
 });
-
-// === PROVIDER HEALTH PANEL ===
-// Reads chrome.storage.local keyStatus (rateLimitedUntil, lastUsed, lastRateLimited)
-function formatHealthTime(ts) {
-  if (!ts) return "—";
-  try {
-    return new Date(ts).toLocaleTimeString("vi-VN", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch (_) {
-    return "—";
-  }
-}
-
-function formatWaitUntil(until) {
-  const ms = until - Date.now();
-  if (ms <= 0) return "sẵn sàng";
-  const mins = Math.ceil(ms / 60000);
-  if (mins < 60) return "còn ~" + mins + "p";
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return "còn ~" + h + "h" + (m ? m + "p" : "");
-}
-
-/** Safe DOM helpers — prefer textContent over string HTML for user/API data. */
-function el(tag, attrs = {}, children = []) {
-  const node = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs || {})) {
-    if (!k || /^on/i.test(k)) continue;
-    if (v == null || v === false) continue;
-    if (k === "className") node.className = String(v);
-    else if (k === "textContent") node.textContent = String(v);
-    else if (v === true) node.setAttribute(k, "");
-    else node.setAttribute(k, String(v));
-  }
-  const kids = Array.isArray(children) ? children : [children];
-  for (const child of kids) {
-    if (child == null || child === false) continue;
-    if (typeof child === "string" || typeof child === "number") {
-      node.appendChild(document.createTextNode(String(child)));
-    } else if (child && child.nodeType) {
-      node.appendChild(child);
-    }
-  }
-  return node;
-}
-
-async function loadProviderHealth() {
-  const listEl = document.getElementById("providerHealthList");
-  if (!listEl) return;
-
-  const data = await chrome.storage.sync.get(["apiKeys"]);
-  const apiKeys = data.apiKeys || {};
-  const localData = await chrome.storage.local.get(["keyStatus"]);
-  const ks = localData.keyStatus || {};
-  const now = Date.now();
-
-  // Clear with DOM APIs (no innerHTML of user/key-derived strings)
-  while (listEl.firstChild) listEl.removeChild(listEl.firstChild);
-
-  let count = 0;
-  for (const provider of ALL_PROVIDERS) {
-    const keys = apiKeys[provider] || [];
-    for (const key of keys) {
-      count++;
-      const info = ks[key] || {};
-      const limited =
-        info.rateLimitedUntil && now < info.rateLimitedUntil;
-      let statusLabel;
-      let statusCls;
-      if (limited) {
-        statusLabel =
-          "Rate limited until " +
-          formatHealthTime(info.rateLimitedUntil) +
-          " (" +
-          formatWaitUntil(info.rateLimitedUntil) +
-          ")";
-        statusCls = "ph-limited";
-      } else {
-        statusLabel = "OK";
-        statusCls = "ph-ok";
-      }
-      const lastUsed = info.lastUsed
-        ? "Last used " + formatHealthTime(info.lastUsed)
-        : "Chưa dùng";
-
-      listEl.appendChild(
-        el("div", { className: "provider-health-row" }, [
-          el("div", { className: "provider-health-main" }, [
-            el("span", { className: "provider-health-provider" }, [provider]),
-            el("span", { className: "provider-health-key" }, [maskKey(key)]),
-          ]),
-          el("div", { className: "provider-health-meta" }, [
-            el("span", { className: "provider-health-badge " + statusCls }, [
-              statusLabel,
-            ]),
-            el("span", { className: "provider-health-last" }, [lastUsed]),
-          ]),
-        ]),
-      );
-    }
-  }
-
-  if (count === 0) {
-    listEl.appendChild(
-      el("div", { className: "field-hint" }, [
-        "Chưa có key. Thêm key ở trên để xem trạng thái.",
-      ]),
-    );
-  }
-}
-
-async function clearProviderRateLimits() {
-  if (
-    !confirm(
-      "Xóa trạng thái rate-limit của tất cả key?\n(Không xóa API key — chỉ cho phép retry ngay.)",
-    )
-  ) {
-    return;
-  }
-  const local = await chrome.storage.local.get(["keyStatus"]);
-  const ks = { ...(local.keyStatus || {}) };
-  for (const key of Object.keys(ks)) {
-    const entry = { ...(ks[key] || {}) };
-    delete entry.rateLimitedUntil;
-    delete entry.lastRateLimited;
-    ks[key] = entry;
-  }
-  await chrome.storage.local.set({ keyStatus: ks });
-  await loadProviderHealth();
-  if (typeof loadKeyLists === "function") loadKeyLists();
-  showKeyStatus("Đã xóa cờ rate-limit (key vẫn giữ).", "success");
-}
-
-const refreshProviderHealthBtn = document.getElementById(
-  "refreshProviderHealthBtn",
-);
-if (refreshProviderHealthBtn) {
-  refreshProviderHealthBtn.addEventListener("click", () => {
-    loadProviderHealth();
-    loadKeyLists();
-  });
-}
-const clearRateLimitBtn = document.getElementById("clearRateLimitBtn");
-if (clearRateLimitBtn) {
-  clearRateLimitBtn.addEventListener("click", () => clearProviderRateLimits());
-}
 
 
 // Single in-flight guard shared by the button + paste auto-add, so a fast
@@ -894,7 +914,6 @@ async function addApiKey() {
     await chrome.storage.local.set({ backupApiKeys: apiKeys });
     newApiKeyInput.value = "";
     loadKeyLists();
-    loadProviderHealth();
     showKeyStatus(
       "Đã thêm — " + provider.charAt(0).toUpperCase() + provider.slice(1),
       "success",
@@ -911,6 +930,20 @@ async function addApiKey() {
 newApiKeyInput.addEventListener('paste', () => {
   setTimeout(async () => {
     const key = newApiKeyInput.value.trim();
+    // Paste recovery JSON into the key field → import
+    if (key.startsWith("{") && key.includes("apiKeys")) {
+      try {
+        const raw = JSON.parse(key);
+        const incoming = _normalizeImportedApiKeys(raw);
+        if (incoming && _countApiKeys(incoming) > 0) {
+          const total = await mergeAndSaveApiKeys(incoming);
+          newApiKeyInput.value = "";
+          await loadKeyLists();
+          showKeyStatus("Đã import " + total + " key từ clipboard JSON", "success");
+          return;
+        }
+      } catch (_) {}
+    }
     if (key.length > 20) {
       const added = await addApiKey();
       if (added) await handleTestConnection(testBtn);
@@ -919,6 +952,25 @@ newApiKeyInput.addEventListener('paste', () => {
 });
 
 addKeyBtn.addEventListener("click", () => addApiKey());
+
+// Export / Import keys (survives reinstall if you keep the JSON file)
+const exportKeysBtn = document.getElementById("exportKeysBtn");
+const importKeysBtn = document.getElementById("importKeysBtn");
+const importKeysFile = document.getElementById("importKeysFile");
+const emptyImportBtn = document.getElementById("emptyImportBtn");
+if (exportKeysBtn) exportKeysBtn.addEventListener("click", () => exportApiKeys());
+function triggerImportPicker() {
+  if (importKeysFile) importKeysFile.click();
+}
+if (importKeysBtn) importKeysBtn.addEventListener("click", triggerImportPicker);
+if (emptyImportBtn) emptyImportBtn.addEventListener("click", triggerImportPicker);
+if (importKeysFile) {
+  importKeysFile.addEventListener("change", async () => {
+    const file = importKeysFile.files && importKeysFile.files[0];
+    await importApiKeysFromFile(file);
+    importKeysFile.value = "";
+  });
+}
 
 async function handleTestConnection(btn) {
   const data = await chrome.storage.sync.get(["apiKeys"]);
@@ -936,13 +988,13 @@ async function handleTestConnection(btn) {
   try {
     const r = await chrome.runtime.sendMessage({ action: "test-connection" });
     if (r?.ok) {
-      showKeyStatus("✓ " + r.provider + (r.model ? " — " + r.model : " — OK"), "success");
+      showKeyStatus("" + r.provider + (r.model ? " — " + r.model : " — OK"), "success");
     } else if (r?.error && r.error.includes("429")) {
-      showKeyStatus("⏱ Rate limited — thử lại sau vài phút", "error");
+      showKeyStatus("Rate limited — thử lại sau vài phút", "error");
     } else if (r?.error && (r.error.includes("401") || r.error.includes("403"))) {
-      showKeyStatus("✗ Key không hợp lệ hoặc hết hạn", "error");
+      showKeyStatus("Key không hợp lệ hoặc hết hạn", "error");
     } else if (r?.error && r.error.includes("network")) {
-      showKeyStatus("✗ Lỗi mạng — kiểm tra kết nối internet", "error");
+      showKeyStatus("Lỗi mạng — kiểm tra kết nối internet", "error");
     } else {
       showKeyStatus(r?.error || "Lỗi không xác định", "error");
     }
@@ -985,22 +1037,8 @@ if (clearCacheBtn) {
   });
 }
 
-// Migrate old single apiKey
-(async () => {
-  const data = await chrome.storage.sync.get(["apiKey", "apiKeys", "provider"]);
-  const apiKeys = data.apiKeys || {};
-  for (const p of ALL_PROVIDERS) {
-    if (!apiKeys[p]) apiKeys[p] = [];
-  }
-  if (data.apiKey) {
-    const provider = data.provider || detectProvider(data.apiKey);
-    if (!apiKeys[provider].includes(data.apiKey))
-      apiKeys[provider].push(data.apiKey);
-    await chrome.storage.sync.set({ apiKeys });
-    await chrome.storage.local.set({ backupApiKeys: apiKeys });
-  }
-  loadKeyLists();
-})();
+// Load keys (+ restore from local backup if sync was wiped)
+loadKeyLists();
 
 // === HISTORY ===
 let historyData = [];
@@ -1048,11 +1086,48 @@ function renderPostTimeSuggestions(items) {
 
   box.style.display = "block";
   box.innerHTML = `
-    <div class="post-time-suggest-title">🕒 Gợi ý giờ đăng tiếp theo (cách 1–2 giờ từ bài đầu)</div>
+    <div class="post-time-suggest-title">Gợi ý giờ đăng tiếp theo (cách 1–2 giờ từ bài đầu)</div>
     <div class="post-time-suggest-list">
       ${unique.map((ts) => `<span class="post-time-pill">${formatHm(ts)}</span>`).join("")}
     </div>
   `;
+}
+
+/** Collapse whitespace + repeated tokens so list previews stay readable. */
+function cleanHistoryPreview(raw, maxLen) {
+  if (!raw) return "";
+  let t = String(raw)
+    .replace(/[\u200b-\u200f\u202a-\u202e\ufeff]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  // "FacebookFacebookFacebook" (no spaces)
+  t = t.replace(/\b([A-Za-zÀ-ỹ]{3,})\1{1,}\b/gi, "$1");
+  // "Facebook Facebook Facebook"
+  t = t.replace(/\b([A-Za-zÀ-ỹ]{2,})(?:\s+\1){2,}\b/gi, "$1");
+  // Drop pure chrome noise
+  if (/^(facebook|threads|linkedin|reddit|twitter|x)(\s+\1)*$/i.test(t)) return "";
+  if (t.length > maxLen) t = t.slice(0, maxLen).replace(/\s+\S*$/, "").trim() + "…";
+  return t;
+}
+
+function formatSiteLabel(site) {
+  const s = String(site || "").toLowerCase();
+  const map = {
+    facebook: "Facebook",
+    threads: "Threads",
+    x: "X",
+    twitter: "X",
+    linkedin: "LinkedIn",
+    reddit: "Reddit",
+  };
+  return map[s] || (site ? String(site) : "");
+}
+
+function typeBadgeLabel(type) {
+  if (type === "status_share") return "Status";
+  if (type === "comment_summary") return "Bình luận";
+  if (type === "translate" || String(type || "").startsWith("translate")) return "Dịch";
+  return "Tóm tắt";
 }
 
 async function loadHistory() {
@@ -1066,52 +1141,52 @@ async function loadHistory() {
   actions.style.display = historyData.length > 0 ? "block" : "none";
   renderPostTimeSuggestions(historyData);
   if (historyData.length === 0) {
-    list.innerHTML =
-      '<div class="empty-state">Chưa có lịch sử tóm tắt.<br><span class="field-hint">Tóm tắt một bài trên feed để xuất hiện tại đây.</span></div>';
+    list.innerHTML = '<p class="empty">Chưa có lịch sử</p>';
     return;
   }
   list.innerHTML = historyData
     .map((h, i) => {
       const bt = h.type || "summary";
-      // Sử dụng esc() cho tất cả user-generated content để ngăn XSS
       const dateStr = esc(new Date(h.date).toLocaleString("vi"));
-      const siteStr = esc(h.site || "");
-      const textPreview = esc((h.text || "").substring(0, 80));
-      const summaryPreview = esc((h.summary || "").substring(0, 120));
+      const siteStr = esc(formatSiteLabel(h.site));
+      const badge = esc(typeBadgeLabel(bt));
+      // Prefer AI summary as title; original text only if useful
+      // Longer previews — CSS line-clamp handles final fit (was 100/90, looked cut off)
+      const title = cleanHistoryPreview(h.summary || "", 220) || cleanHistoryPreview(h.text || "", 220) || "Không có nội dung";
+      let excerpt = cleanHistoryPreview(h.text || "", 160);
+      // Avoid duplicating the same line under the title
+      if (excerpt && title.startsWith(excerpt.slice(0, 40))) excerpt = "";
+      if (excerpt && excerpt === title) excerpt = "";
+
       return (
-        '<div class="history-item" data-idx="' +
-        i +
-        '">' +
-        '<div class="history-date">' +
-        dateStr +
-        " · " +
-        siteStr +
-        '<span class="history-badge ' +
-        esc(bt) +
-        '">' +
-        (bt === "affiliate" ? "Affiliate" : "Tóm tắt") +
-        "</span></div>" +
-        '<div class="history-text">' +
-        textPreview +
-        "...</div>" +
-        '<div class="history-summary">' +
-        summaryPreview +
-        "...</div></div>"
+        '<article class="history-item" data-idx="' + i + '" role="button" tabindex="0">' +
+          '<div class="history-meta">' +
+            '<time class="history-date">' + dateStr + "</time>" +
+            (siteStr ? '<span class="history-site">' + siteStr + "</span>" : "") +
+            '<span class="history-badge history-badge--' + esc(bt) + '">' + badge + "</span>" +
+          "</div>" +
+          '<div class="history-title">' + esc(title) + "</div>" +
+          (excerpt ? '<div class="history-excerpt">' + esc(excerpt) + "</div>" : "") +
+        "</article>"
       );
     })
     .join("");
-  // Update debug info
-  if (typeof featureFlags !== 'undefined' && featureFlags.testMode) {
+  if (typeof featureFlags !== "undefined" && featureFlags.testMode) {
     updateDebugInfo();
   }
 }
 
 // Event delegation for history items
 document.addEventListener("click", (e) => {
-  if (e.target.closest(".history-item")) {
-    const item = e.target.closest(".history-item");
-    showHistoryDetail(+item.dataset.idx);
-  }
+  const item = e.target.closest(".history-item");
+  if (item) showHistoryDetail(+item.dataset.idx);
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  const item = e.target.closest(".history-item");
+  if (!item || e.target !== item) return;
+  e.preventDefault();
+  showHistoryDetail(+item.dataset.idx);
 });
 
 function showHistoryDetail(idx) {
@@ -1120,8 +1195,12 @@ function showHistoryDetail(idx) {
   document.getElementById("historyList").style.display = "none";
   document.getElementById("historyActions").style.display = "none";
   document.getElementById("historyDetail").style.display = "block";
+  const siteLabel = formatSiteLabel(h.site);
   document.getElementById("historyDetailDate").textContent =
-    new Date(h.date).toLocaleString("vi") + " · " + (h.site || "");
+    new Date(h.date).toLocaleString("vi") +
+    (siteLabel ? " · " + siteLabel : "") +
+    " · " +
+    typeBadgeLabel(h.type || "summary");
   document.getElementById("historyDetailBody").textContent = h.summary || "";
 }
 
@@ -1203,8 +1282,8 @@ document.getElementById("clearBtn").addEventListener("click", async () => {
   const statusEl = showHistoryStatus("Đã xóa lịch sử", "success", 30000);
   const undoBtn = document.createElement("button");
   undoBtn.type = "button";
-  undoBtn.textContent = "↩ Hoàn tác";
-  undoBtn.style.cssText = "margin-left:8px;padding:3px 10px;border:1px solid #a855f7;border-radius:6px;background:transparent;color:#a855f7;font-size:12px;cursor:pointer;";
+  undoBtn.textContent = "Hoàn tác";
+  undoBtn.style.cssText = "margin-left:8px;padding:3px 10px;border:1px solid #3F3F46;border-radius:6px;background:transparent;color:#3F3F46;font-size:12px;cursor:pointer;";
   undoBtn.addEventListener("click", async () => {
     const backupData = await chrome.storage.local.get("historyBackup");
     if (backupData.historyBackup && backupData.historyBackup.items) {
@@ -1225,6 +1304,47 @@ document.getElementById("clearBtn").addEventListener("click", async () => {
 });
 
 // === REVIEW TAB ===
+
+/** Human labels for telemetry reason keys (must match content.js map). */
+const REASON_LABELS = {
+  ads_about_link: "Link QC",
+  why_am_i_seeing: "Ad disclosure",
+  portal_label: "Nhãn Được tài trợ",
+  aria_label: "aria Sponsored",
+  sponsored_keyword: "Sponsored / Được tài trợ",
+  ad_structure: "Cấu trúc ad",
+  ads_library_link: "Ads Library",
+  affiliate_domain: "Link Affiliate",
+  shortener_link: "Short-link",
+  affiliate_param: "Aff param",
+  redirect_wrapper: "FB redirect",
+  affiliate_text: "Nội dung Aff",
+  affiliate_cta: "CTA Affiliate",
+  // Bài “làm X để nhận Y” (engagement bait)
+  comment_gate: "Comment để nhận link/file",
+  like_gate: "Like/react để nhận",
+  share_gate: "Share để nhận",
+  follow_gate: "Follow để nhận",
+  tag_gate: "Tag bạn để nhận",
+  join_gate: "Join group để nhận",
+  inbox_gate: "Inbox/DM để nhận",
+  engagement_combo: "Like+Cmt+Share để nhận",
+  engagement_gate: "Làm X để nhận Y",
+  action_comment: "yêu cầu comment",
+  action_like: "yêu cầu like",
+  action_share: "yêu cầu share",
+  action_follow: "yêu cầu follow",
+  action_tag: "yêu cầu tag",
+  action_join: "yêu cầu join",
+  action_save: "yêu cầu save",
+};
+
+function reasonLabel(key) {
+  if (!key) return "–";
+  if (REASON_LABELS[key]) return REASON_LABELS[key];
+  // Fallback: snake_case → words
+  return String(key).replace(/_/g, " ");
+}
 
 // === AGENT STATS (Feature 7) ===
 async function loadAgentStats() {
@@ -1258,11 +1378,30 @@ async function loadAgentStats() {
 
     if (hasAgentStats) {
       const lastPost = stats && stats.lastPostTime ? new Date(stats.lastPostTime).toLocaleString("vi") : "–";
-      document.getElementById("statLastPost").textContent = lastPost;
+      const lastEl = document.getElementById("statLastPost");
+      lastEl.textContent = lastPost;
+      lastEl.title = lastPost;
     } else {
+      // Prefer meaningful gate/ad reasons over noisy action_* chips
       const topReasons = telemetry.topReasons || {};
-      const topReason = Object.entries(topReasons).sort((a, b) => b[1] - a[1])[0];
-      document.getElementById("statLastPost").textContent = topReason ? `${topReason[0]} (${topReason[1]})` : "–";
+      const ranked = Object.entries(topReasons)
+        .filter(([k]) => !String(k).startsWith("action_"))
+        .sort((a, b) => b[1] - a[1]);
+      const topReason = ranked[0];
+      const reasonEl = document.getElementById("statLastPost");
+      if (topReason) {
+        const label = reasonLabel(topReason[0]);
+        const reasonText = `${label} (${topReason[1]})`;
+        reasonEl.textContent = reasonText;
+        reasonEl.title =
+          `${label}\nMã nội bộ: ${topReason[0]}\nSố lần bắt hôm nay: ${topReason[1]}` +
+          (topReason[0] === "comment_gate" || String(topReason[0]).endsWith("_gate")
+            ? "\n→ Bài kiểu “comment/like/share để nhận link, file…”"
+            : "");
+      } else {
+        reasonEl.textContent = "–";
+        reasonEl.title = "";
+      }
     }
   } catch (err) {
     console.warn("[FeedWriter] Failed to load stats:", err?.message || err);
@@ -1394,21 +1533,13 @@ async function useTemplate(id) {
 
   if (!template) return;
 
-  // Apply template to appropriate field
-  if (template.type === "summary") {
-    customSummaryPromptEl.value = template.prompt;
-  } else if (template.type === "affiliate") {
-    customAffPromptEl.value = template.prompt;
-  } else if (template.type === "status") {
-    customSummaryPromptEl.value = template.prompt;
-  }
+  // Apply template to summary prompt field (affiliate writing removed)
+  customSummaryPromptEl.value = template.prompt;
 
   showTemplateStatus("Đã áp dụng template", "success");
 
-  // Scroll to the field
-  const targetField = template.type === "affiliate" ? customAffPromptEl : customSummaryPromptEl;
-  targetField.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  targetField.focus();
+  customSummaryPromptEl.scrollIntoView({ behavior: "smooth", block: "center" });
+  customSummaryPromptEl.focus();
 }
 
 // Delete template
@@ -1441,7 +1572,7 @@ function escapeHtml(text) {
 }
 
 function normalizeTemplateType(type) {
-  return ["summary", "affiliate", "status"].includes(type) ? type : "summary";
+  return ["summary", "status"].includes(type) ? type : "summary";
 }
 
 // === SETTINGS MANAGEMENT ===
@@ -1560,162 +1691,3 @@ function showSettingsManagementStatus(message, type) {
   }, 3000);
 }
 
-// === AUTO GITHUB → FACEBOOK (popup wiring) ===
-function showGithubStatus(message, type) {
-  if (!githubAutopostStatus) return;
-  githubAutopostStatus.textContent = message;
-  githubAutopostStatus.className = `status ${type || ""}`.trim();
-  githubAutopostStatus.style.display = "block";
-}
-
-function renderGithubLog() {
-  if (!githubAutopostLog) return;
-  chrome.storage.local.get(["autoGithubLog"], (d) => {
-    const log = (d && d.autoGithubLog) || [];
-    if (!log.length) {
-      githubAutopostLog.innerHTML =
-        '<div class="field-hint">Chưa có lần chạy nào.</div>';
-      return;
-    }
-    githubAutopostLog.innerHTML = log
-      .map((e) => {
-        const dt = e.ts ? new Date(e.ts) : null;
-        const when = dt
-          ? dt.toLocaleDateString() + " " + dt.toLocaleTimeString().slice(0, 5)
-          : "";
-        const icon = e.ok ? "✅" : "⚠️";
-        const trig = e.trigger === "manual" ? "thủ công" : "tự động";
-        const repo = e.repo
-          ? ' · <span style="opacity:.85">' + escapeHtml(e.repo) + "</span>"
-          : "";
-        const stage = e.stage
-          ? ' · <code style="font-size:10px;opacity:.75">' +
-            escapeHtml(String(e.stage)) +
-            "</code>"
-          : "";
-        const msg = escapeHtml(e.message || "");
-        return (
-          '<div style="padding:6px 8px;border-bottom:1px solid rgba(127,127,127,.15);font-size:12px;line-height:1.4;">' +
-          icon +
-          ' <span style="opacity:.6">' +
-          when +
-          " (" +
-          trig +
-          ")</span>" +
-          repo +
-          stage +
-          '<br><span style="opacity:.9">' +
-          msg +
-          "</span></div>"
-        );
-      })
-      .join("");
-  });
-}
-
-// Live Labs gate: typing confirm phrase or toggling checkbox updates controls
-if (labsAutomationEnabledEl) {
-  labsAutomationEnabledEl.addEventListener("change", () => {
-    if (labsAutomationEnabledEl.checked && !isLabsConfirmTextValid()) {
-      // Allow checking, but keep auto controls locked until phrase matches
-      showGithubStatus(
-        "Gõ «TOI HIEU RUI RO» vào ô xác nhận để mở khóa auto-post.",
-        "error",
-      );
-    }
-    updateGithubLabsGateUI();
-    if (!labsAutomationEnabledEl.checked) {
-      // Turning Labs off immediately disables schedule + clears alarm path on next save;
-      // also persist + reschedule now so alarms do not keep firing.
-      chrome.storage.sync.set(
-        {
-          labsAutomationEnabled: false,
-          autoGithubEnabled: false,
-          labsAutomationAcknowledgedAt: null,
-        },
-        () => {
-          try {
-            chrome.runtime.sendMessage({ action: "reschedule-github" });
-          } catch (_) {}
-        },
-      );
-      if (labsConfirmInputEl) labsConfirmInputEl.value = "";
-      showGithubStatus("Đã tắt Labs — auto-post bị vô hiệu.", "");
-    }
-  });
-}
-if (labsConfirmInputEl) {
-  labsConfirmInputEl.addEventListener("input", () => {
-    updateGithubLabsGateUI();
-  });
-}
-if (disableLabsBtn) {
-  disableLabsBtn.addEventListener("click", () => {
-    if (labsAutomationEnabledEl) labsAutomationEnabledEl.checked = false;
-    if (labsConfirmInputEl) labsConfirmInputEl.value = "";
-    if (autoGithubEnabledEl) autoGithubEnabledEl.checked = false;
-    updateGithubLabsGateUI();
-    chrome.storage.sync.set(
-      {
-        labsAutomationEnabled: false,
-        autoGithubEnabled: false,
-        labsAutomationAcknowledgedAt: null,
-      },
-      () => {
-        try {
-          chrome.runtime.sendMessage({ action: "reschedule-github" });
-        } catch (_) {}
-        showGithubStatus("Đã tắt Labs ngay — lịch auto-post đã xóa.", "success");
-      },
-    );
-  });
-}
-
-if (runGithubNowBtn) {
-  runGithubNowBtn.addEventListener("click", () => {
-    if (runGithubNowBtn.disabled) return;
-    if (!isLabsArmed()) {
-      showGithubStatus(
-        "Labs automation chưa bật. Bật trong popup và xác nhận rủi ro.",
-        "error",
-      );
-      return;
-    }
-    const label = runGithubNowBtn.textContent;
-    runGithubNowBtn.dataset.running = "1";
-    runGithubNowBtn.disabled = true;
-    runGithubNowBtn.textContent = "Đang chạy… (mở tab FB, có thể mất ~1-2 phút)";
-    showGithubStatus(
-      "Đang lấy repo, viết tóm tắt và đăng… Vui lòng không đóng trình duyệt.",
-      "",
-    );
-    chrome.runtime.sendMessage(
-      { action: "run-github-autopost-now" },
-      (res) => {
-        delete runGithubNowBtn.dataset.running;
-        runGithubNowBtn.textContent = label;
-        updateGithubLabsGateUI();
-        if (chrome.runtime.lastError) {
-          showGithubStatus(
-            "Lỗi: " + chrome.runtime.lastError.message,
-            "error",
-          );
-          renderGithubLog();
-          return;
-        }
-        if (res && res.ok) {
-          showGithubStatus(res.message || "Đã đăng.", "success");
-        } else {
-          showGithubStatus(
-            (res && res.message) || "Không đăng được.",
-            "error",
-          );
-        }
-        renderGithubLog();
-      },
-    );
-  });
-}
-
-updateGithubLabsGateUI();
-renderGithubLog();

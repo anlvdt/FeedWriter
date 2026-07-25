@@ -1,77 +1,26 @@
 "use strict";
-"use strict";
 // FeedWriter — Content script
 // https://github.com/anlvdt/fb-post-summarizer
 // Author: Le An (anlvdt)
 
-// Prefer FeedWriter.dom.* with fallback to window.fbs* COMPAT aliases (remove after v3.0)
-window.FeedWriter = window.FeedWriter || {};
-window.FeedWriter.runtime = window.FeedWriter.runtime || {};
-function fwDom(name) {
-  const dom = window.FeedWriter && window.FeedWriter.dom;
-  if (dom && typeof dom[name] === "function") return dom[name];
-  // COMPAT: camelCase name → fbsExtractImages, fbsCleanRelatedUrl, etc.
-  const fbsKey =
-    "fbs" + name.charAt(0).toUpperCase() + name.slice(1);
-  return window[fbsKey];
-}
+// Boot marker — check facebook.com DevTools Console after reload.
+// If you do NOT see this line, the page is still running an old inject (hard-refresh needed).
+try {
+  console.info("[FeedWriter] content UI v3 loaded", {
+    host: location.hostname,
+    path: location.pathname.slice(0, 40),
+  });
+} catch (_) {}
 
 let MIN_LEN = 400;
-/** Min chars for summarize / floating toolbar (feed injection still uses MIN_LEN). */
-const SUMMARIZE_MIN_CHARS = 50;
 let isBlocked = false;
-
-function isMacPlatform() {
-  try {
-    if (navigator.userAgentData && navigator.userAgentData.platform) {
-      return /mac/i.test(navigator.userAgentData.platform);
-    }
-  } catch (_) {}
-  return /Mac|iPhone|iPad|iPod/i.test(
-    navigator.platform || navigator.userAgent || "",
-  );
-}
-
-function modKeyLabel() {
-  return isMacPlatform() ? "\u2318" : "Ctrl";
-}
 const DEFAULT_SOURCE_TEMPLATE = "• Nguồn bài viết: {platform} {author} {source}\n  {link}";
 let globalSourceTemplate = DEFAULT_SOURCE_TEMPLATE;
 let globalCustomSourceLink = "";
 let globalRelatedSourceLinks = [];
 let pendingSourceDiscovery = null;
 let scanTimer = null;
-// Unified per-post state (replaces scattered WeakSets + dataset flags)
-// Keys are post/article DOM nodes; values are plain state objects.
-const postStateMap = new WeakMap();
-function getPostState(el) {
-  if (!el) return null;
-  let s = postStateMap.get(el);
-  if (!s) {
-    s = {
-      seeMoreInjected: false,
-      allPostInjected: false,
-      commentInjected: false,
-      affiliateHidden: false,
-      observed: false,
-      evalFingerprint: "",
-    };
-    postStateMap.set(el, s);
-  }
-  return s;
-}
-/** @deprecated use getPostState(el).seeMoreInjected — kept as thin adapter */
-const injected = {
-  has(el) {
-    return !!(el && getPostState(el).seeMoreInjected);
-  },
-  add(el) {
-    if (el) getPostState(el).seeMoreInjected = true;
-  },
-  delete(el) {
-    if (el) getPostState(el).seeMoreInjected = false;
-  },
-};
+const injected = new WeakSet();
 const summaryCache = new LRUCache(50);
 const observers = []; // Store observers for cleanup
 const listeners = []; // Store event listeners for cleanup
@@ -130,7 +79,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (changes.customSourceLink) globalCustomSourceLink = changes.customSourceLink.newValue || "";
   if (changes.hideAffiliatePosts) hideAffiliatePosts = !!changes.hideAffiliatePosts.newValue;
   if (changes.enableUnicodeBold) window.enableUnicodeBold = changes.enableUnicodeBold.newValue !== false;
-  if (changes.adDisplayMode) adDisplayMode = changes.adDisplayMode.newValue || "collapse";
+  if (changes.adDisplayMode) adDisplayMode = changes.adDisplayMode.newValue || "hide";
   if (changes.affiliateDisplayMode) affiliateDisplayMode = changes.affiliateDisplayMode.newValue || "collapse";
   if (changes.blockedDomains) updateBlockedState(changes.blockedDomains.newValue);
 });
@@ -219,18 +168,7 @@ themeObserver.observe(document.body, {
 observers.push(themeObserver);
 
 // === AFFILIATE LINK DETECTION (uses unified engine from content-dom.js) ===
-/** @deprecated use getPostState(el).affiliateHidden */
-const affiliatePostsHidden = {
-  has(el) {
-    return !!(el && getPostState(el).affiliateHidden);
-  },
-  add(el) {
-    if (el) getPostState(el).affiliateHidden = true;
-  },
-  delete(el) {
-    if (el) getPostState(el).affiliateHidden = false;
-  },
-};
+const affiliatePostsHidden = new WeakSet();
 
 // Telemetry counters
 let telemetry = {
@@ -277,7 +215,8 @@ function saveTelemetry() {
 }
 
 // Display modes: hide, collapse, mark
-let adDisplayMode = "collapse";
+// Sponsored / Được tài trợ defaults to full hide
+let adDisplayMode = "hide";
 let affiliateDisplayMode = "collapse";
 
 chrome.storage.sync.get(["adDisplayMode", "affiliateDisplayMode"], (d) => {
@@ -289,18 +228,89 @@ function _getReasonText(reason) {
   const reasonMap = {
     ads_about_link: "Link QC",
     why_am_i_seeing: "Ad disclosure",
-    portal_label: "Nhãn tài trợ",
-    aria_label: "Quảng cáo",
-    sponsored_keyword: "Từ khóa SP",
+    portal_label: "Nhãn Được tài trợ",
+    aria_label: "aria Sponsored",
+    sponsored_keyword: "Sponsored / Được tài trợ",
+    ad_structure: "Cấu trúc ad",
+    ads_library_link: "Ads Library",
     affiliate_domain: "Link Affiliate",
     shortener_link: "Short-link",
     affiliate_param: "Aff param",
     redirect_wrapper: "FB redirect",
     affiliate_text: "Nội dung Aff",
     affiliate_cta: "CTA Affiliate",
-    comment_gate: "Yêu cầu comment để nhận nội dung",
+    // Engagement bait: do X to get Y
+    comment_gate: "Comment để nhận",
+    like_gate: "Like/react để nhận",
+    share_gate: "Share để nhận",
+    follow_gate: "Follow để nhận",
+    tag_gate: "Tag bạn để nhận",
+    join_gate: "Join group để nhận",
+    inbox_gate: "Inbox/DM để nhận",
+    engagement_combo: "Like+Cmt+Share để nhận",
+    engagement_gate: "Làm X để nhận Y",
+    action_comment: "cmt",
+    action_like: "like",
+    action_share: "share",
+    action_follow: "follow",
+    action_tag: "tag",
+    action_join: "join",
+    action_save: "save",
   };
   return reasonMap[reason] || reason;
+}
+
+/** Build human-readable label for engagement-gate posts from actions. */
+function _engagementGateLabel(evalResult) {
+  const actions = Array.isArray(evalResult?.engagementActions)
+    ? evalResult.engagementActions
+    : [];
+  const actionVi = {
+    comment: "comment",
+    like: "like",
+    share: "share",
+    follow: "follow",
+    tag: "tag",
+    join: "join",
+    save: "save",
+  };
+  if (actions.length >= 2) {
+    return "Bài yêu cầu " + actions.map((a) => actionVi[a] || a).join("+");
+  }
+  if (actions.length === 1) {
+    const a = actions[0];
+    if (a === "comment") return "Bài yêu cầu comment";
+    if (a === "like") return "Bài yêu cầu like/react";
+    if (a === "share") return "Bài yêu cầu share";
+    if (a === "follow") return "Bài yêu cầu follow";
+    if (a === "tag") return "Bài yêu cầu tag bạn";
+    if (a === "join") return "Bài yêu cầu join group";
+    if (a === "save") return "Bài yêu cầu lưu bài";
+  }
+  // Fallback from primary reason key
+  const r = (evalResult?.reasons || [])[0] || "";
+  if (r === "like_gate") return "Bài yêu cầu like/react";
+  if (r === "share_gate") return "Bài yêu cầu share";
+  if (r === "follow_gate") return "Bài yêu cầu follow";
+  if (r === "tag_gate") return "Bài yêu cầu tag bạn";
+  if (r === "join_gate") return "Bài yêu cầu join group";
+  if (r === "inbox_gate") return "Bài yêu cầu inbox/DM";
+  if (r === "engagement_combo") return "Bài yêu cầu tương tác (combo)";
+  return "Bài yêu cầu tương tác";
+}
+
+function _engagementGateShort(evalResult) {
+  const actions = Array.isArray(evalResult?.engagementActions)
+    ? evalResult.engagementActions
+    : [];
+  if (actions.length >= 2) return "Engage bait";
+  if (actions[0] === "like") return "Like gate";
+  if (actions[0] === "share") return "Share gate";
+  if (actions[0] === "follow") return "Follow gate";
+  if (actions[0] === "tag") return "Tag gate";
+  if (actions[0] === "join") return "Join gate";
+  if (actions[0] === "comment") return "Comment gate";
+  return "Engage bait";
 }
 
 function hideFlaggedPost(postContainer, evalResult, type) {
@@ -308,8 +318,14 @@ function hideFlaggedPost(postContainer, evalResult, type) {
   affiliatePostsHidden.add(postContainer);
 
   const displayMode = type === "sponsored" ? adDisplayMode : affiliateDisplayMode;
-  const reasonText = evalResult.reasons.map(_getReasonText).join(", ");
+  // Skip noisy action_* keys in visible reason chips — actions already in label
+  const reasonText = evalResult.reasons
+    .filter((r) => !String(r).startsWith("action_"))
+    .map(_getReasonText)
+    .join(", ");
   const confidence = evalResult.confidence;
+  const isEngage =
+    type === "comment_gate" || type === "engagement_gate";
 
   if (displayMode === "hide") {
     postContainer.style.display = "none";
@@ -317,34 +333,62 @@ function hideFlaggedPost(postContainer, evalResult, type) {
   }
 
   if (displayMode === "mark") {
-    postContainer.style.outline = "2px solid rgba(255, 107, 107, 0.5)";
-    postContainer.style.outlineOffset = "4px";
+    postContainer.style.outline = "1px solid rgba(139, 147, 247, 0.45)";
+    postContainer.style.outlineOffset = "3px";
     const badge = document.createElement("div");
     badge.className = "fbs-mark-badge";
-    const shortType = type === "sponsored" ? "QC" : type === "comment_gate" ? "Comment gate" : "Aff";
-    badge.textContent = `⚠️ ${shortType} (${confidence}%)`;
-    badge.style.cssText = "position:absolute;top:8px;right:8px;padding:2px 8px;font-size:10px;background:rgba(255,107,107,0.9);color:#fff;border-radius:4px;z-index:100;";
+    const shortType = type === "sponsored"
+      ? "QC"
+      : isEngage
+        ? _engagementGateShort(evalResult)
+        : "Aff";
+    badge.textContent = `${shortType} · ${confidence}%`;
     postContainer.style.position = "relative";
     postContainer.appendChild(badge);
     return;
   }
 
-  // Collapse mode (default)
-  const indicator = document.createElement("div");
-  indicator.className = "fbs-affiliate-indicator";
-  const hiddenLabel = type === "sponsored"
-    ? "Quảng cáo"
-    : type === "comment_gate"
-      ? "Bài yêu cầu comment"
-      : "Affiliate";
-  indicator.innerHTML =
-    `<span style="color:#ff6b6b;font-size:11px;font-weight:600;">🚫 ${hiddenLabel} đã ẩn</span>` +
-    `<span style="color:#888;font-size:10px;margin-left:8px;">(${reasonText} · ${confidence}%)</span>` +
-    '<button class="fbs-affiliate-show" style="margin-left:8px;padding:2px 8px;font-size:10px;border-radius:4px;background:rgba(255,107,107,0.15);color:#ff6b6b;border:1px solid rgba(255,107,107,0.3);cursor:pointer;">Hiện</button>';
+  // Collapse mode — soft chip (violet accent, not red alarm)
+  const kind =
+    type === "sponsored" ? "sponsored" : isEngage ? "engagement" : "affiliate";
+  const hiddenLabel =
+    type === "sponsored"
+      ? "Quảng cáo"
+      : isEngage
+        ? _engagementGateLabel(evalResult)
+        : "Affiliate";
 
-  const showBtn = indicator.querySelector(".fbs-affiliate-show");
+  const indicator = document.createElement("div");
+  indicator.className = "fbs-affiliate-indicator fbs-hidden-chip";
+  indicator.setAttribute("data-fbs-ui", "v3");
+  indicator.setAttribute("data-kind", kind);
+  indicator.innerHTML =
+    '<svg class="fbs-hidden-chip-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">' +
+    (kind === "sponsored"
+      ? '<path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>'
+      : '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/>') +
+    "</svg>" +
+    '<div class="fbs-hidden-chip-body">' +
+    '<span class="fbs-hidden-chip-title"></span>' +
+    (reasonText
+      ? '<span class="fbs-hidden-chip-meta"></span>'
+      : "") +
+    "</div>" +
+    '<button type="button" class="fbs-affiliate-show fbs-hidden-chip-show">Hiện</button>';
+
+  indicator.querySelector(".fbs-hidden-chip-title").textContent =
+    hiddenLabel + " đã ẩn";
+  const metaEl = indicator.querySelector(".fbs-hidden-chip-meta");
+  if (metaEl) {
+    metaEl.textContent =
+      reasonText + (confidence ? " · " + confidence + "%" : "");
+    metaEl.title = metaEl.textContent;
+  }
+
+  const showBtn = indicator.querySelector(".fbs-hidden-chip-show");
   showBtn.addEventListener("click", (e) => {
     e.stopPropagation();
+    e.preventDefault();
     postContainer.style.display = "";
     indicator.remove();
     affiliatePostsHidden.delete(postContainer);
@@ -356,72 +400,167 @@ function hideFlaggedPost(postContainer, evalResult, type) {
   postContainer.parentElement?.insertBefore(indicator, postContainer);
 }
 
-function scanAffiliatePosts() {
-  if (SITE !== "facebook") return;
-  const evaluatePostSignals = fwDom("evaluatePostSignals");
-  if (typeof evaluatePostSignals !== "function") return;
+/** Nested feed unit? (comment thread, etc.) */
+function _isNestedFeedUnit(article) {
+  let depth = 0;
+  let anc = article.parentElement;
+  for (let j = 0; j < 20; j++) {
+    if (!anc || anc === document.body) break;
+    if (
+      anc.getAttribute("role") === "article" ||
+      anc.hasAttribute("data-virtualized") ||
+      (anc.getAttribute("data-pagelet") &&
+        anc.getAttribute("data-pagelet").startsWith("FeedUnit"))
+    )
+      depth++;
+    anc = anc.parentElement;
+  }
+  return depth >= 1;
+}
 
-  const root = document.querySelector('div[role="main"]') || document.querySelector('div[id^="mount_0_0"]') || document.body;
-  const candidates = [
+function _feedCandidates(root) {
+  return [
     ...root.querySelectorAll('article[role="article"]'),
-    ...root.querySelectorAll('[data-virtualized]'),
+    ...root.querySelectorAll("[data-virtualized]"),
     ...root.querySelectorAll('div[data-pagelet^="FeedUnit"]'),
   ];
-  const useIO = !!postObserver;
-  let evaluated = 0;
+}
 
-  for (const article of candidates) {
-    const st = getPostState(article);
-    if (st.affiliateHidden) continue;
+/**
+ * Fast path: sponsored only — no fingerprint lock, re-checks until hidden.
+ * Called on every new DOM node so ads die before user scrolls past.
+ */
+function scanSponsoredFast(rootEl) {
+  if (SITE !== "facebook") return;
+  const root =
+    rootEl ||
+    document.querySelector('div[role="main"]') ||
+    document.querySelector('div[id^="mount_0_0"]') ||
+    document.body;
 
-    const isNew = !st.observed;
-    if (postObserver && isNew) {
-      st.observed = true;
-      postObserver.observe(article);
+  // Portal-based hide (detached "Được tài trợ" labels)
+  if (typeof hideFeedClutter === "function") {
+    try {
+      hideFeedClutter();
+    } catch (_) {}
+  }
+
+  const detect =
+    typeof window.fbsDetectSponsoredSignals === "function"
+      ? window.fbsDetectSponsoredSignals
+      : typeof detectSponsoredSignals === "function"
+        ? detectSponsoredSignals
+        : null;
+  const isSp =
+    typeof isSponsored === "function"
+      ? isSponsored
+      : typeof window.fbsIsSponsored === "function"
+        ? window.fbsIsSponsored
+        : null;
+
+  for (const article of _feedCandidates(root)) {
+    if (affiliatePostsHidden.has(article)) continue;
+    if (article.dataset.fbsSponsoredHidden === "1") continue;
+    if (_isNestedFeedUnit(article)) continue;
+
+    let hit = null;
+    if (detect) {
+      hit = detect(article);
+    } else if (isSp && isSp(article)) {
+      hit = { isSponsored: true, reasons: ["sponsored_keyword"], confidence: 85 };
     }
+    if (!hit || !hit.isSponsored) continue;
 
-    // IO-gate: skip expensive evaluatePostSignals for off-screen, already-evaluated posts
-    if (useIO && !isNew && !visiblePosts.has(article) && st.evalFingerprint) {
-      continue;
+    article.dataset.fbsSponsoredHidden = "1";
+    telemetry.postsFlaggedAds++;
+    for (const r of hit.reasons || []) {
+      telemetry.topReasons[r] = (telemetry.topReasons[r] || 0) + 1;
     }
+    hideFlaggedPost(
+      article,
+      {
+        isSponsored: true,
+        reasons: hit.reasons || ["portal_label"],
+        confidence: hit.confidence || 90,
+      },
+      "sponsored",
+    );
+  }
+}
 
-    const evalFingerprint = hashText((article.innerText || article.textContent || "").trim());
-    if (st.evalFingerprint === evalFingerprint) continue;
+function scanAffiliatePosts() {
+  if (SITE !== "facebook") return;
+  if (typeof window.fbsEvaluatePostSignals !== "function") return;
 
-    // Skip nested articles (comments)
-    let depth = 0;
-    let anc = article.parentElement;
-    for (let j = 0; j < 20; j++) {
-      if (!anc || anc === document.body) break;
-      if (
-        anc.getAttribute("role") === "article" ||
-        anc.hasAttribute("data-virtualized") ||
-        (anc.getAttribute("data-pagelet") && anc.getAttribute("data-pagelet").startsWith("FeedUnit"))
-      )
-        depth++;
-      anc = anc.parentElement;
-    }
-    if (depth >= 1) continue;
+  // Always run sponsored fast path first
+  scanSponsoredFast();
 
-    st.evalFingerprint = evalFingerprint;
-    telemetry.postsScanned++;
-    evaluated++;
+  const root =
+    document.querySelector('div[role="main"]') ||
+    document.querySelector('div[id^="mount_0_0"]') ||
+    document.body;
 
-    const evalResult = evaluatePostSignals(article);
+  for (const article of _feedCandidates(root)) {
+    if (affiliatePostsHidden.has(article)) continue;
+    if (_isNestedFeedUnit(article)) continue;
 
-    if (evalResult.isCommentGate) {
-      telemetry.postsFlaggedCommentGate++;
-      for (const r of evalResult.reasons) {
-        telemetry.topReasons[r] = (telemetry.topReasons[r] || 0) + 1;
+    // Sponsored may appear after first paint (portal) — recheck if not yet hidden
+    if (article.dataset.fbsSponsoredHidden !== "1") {
+      const det =
+        typeof window.fbsDetectSponsoredSignals === "function"
+          ? window.fbsDetectSponsoredSignals(article)
+          : null;
+      if (det && det.isSponsored) {
+        article.dataset.fbsSponsoredHidden = "1";
+        telemetry.postsFlaggedAds++;
+        for (const r of det.reasons || []) {
+          telemetry.topReasons[r] = (telemetry.topReasons[r] || 0) + 1;
+        }
+        hideFlaggedPost(
+          article,
+          {
+            isSponsored: true,
+            reasons: det.reasons || [],
+            confidence: det.confidence || 90,
+          },
+          "sponsored",
+        );
+        continue;
       }
-      hideFlaggedPost(article, evalResult, "comment_gate");
-    } else if (hideAffiliatePosts && evalResult.isSponsored) {
+    }
+
+    const evalFingerprint = hashText(
+      (article.innerText || article.textContent || "").trim(),
+    );
+    if (article.dataset.fbsEvalFingerprint === evalFingerprint) continue;
+
+    article.dataset.fbsEvalFingerprint = evalFingerprint;
+    telemetry.postsScanned++;
+
+    const evalResult = window.fbsEvaluatePostSignals(article);
+
+    if (evalResult.isSponsored) {
+      article.dataset.fbsSponsoredHidden = "1";
       telemetry.postsFlaggedAds++;
       for (const r of evalResult.reasons) {
         telemetry.topReasons[r] = (telemetry.topReasons[r] || 0) + 1;
       }
       hideFlaggedPost(article, evalResult, "sponsored");
-    } else if (hideAffiliatePosts && evalResult.isAffiliate && evalResult.confidence >= 70) {
+      continue;
+    }
+
+    // Engagement bait
+    if (evalResult.isEngagementGate || evalResult.isCommentGate) {
+      telemetry.postsFlaggedCommentGate++;
+      for (const r of evalResult.reasons) {
+        telemetry.topReasons[r] = (telemetry.topReasons[r] || 0) + 1;
+      }
+      hideFlaggedPost(article, evalResult, "engagement_gate");
+    } else if (
+      hideAffiliatePosts &&
+      evalResult.isAffiliate &&
+      evalResult.confidence >= 70
+    ) {
       telemetry.postsFlaggedAffiliate++;
       for (const r of evalResult.reasons) {
         telemetry.topReasons[r] = (telemetry.topReasons[r] || 0) + 1;
@@ -430,10 +569,6 @@ function scanAffiliatePosts() {
     }
   }
 
-  if (typeof scanPerfCounts !== "undefined" && scanPerfCounts) {
-    scanPerfCounts.affiliateEvaluated = evaluated;
-    scanPerfCounts.affiliateCandidates = candidates.length;
-  }
   saveTelemetry();
 }
 
@@ -449,7 +584,7 @@ function findNewSeeMoreElements() {
     if (rootEl && SITE === "facebook") {
       const candidates = rootEl.querySelectorAll('article[role="article"], [data-virtualized], div[data-pagelet^="FeedUnit"]');
       for (const c of candidates) {
-        if (!getPostState(c).observed) {
+        if (!c.dataset.fbsObserved) {
           roots.push(c);
         }
       }
@@ -592,7 +727,7 @@ function cleanText(text) {
 }
 
 const ICON_BASE64 =
-  "data:image/png;base64,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";
+  "data:image/png;base64,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";
 
 // === OVERLAY (panel, backdrop, streaming) ===
 let backdrop = null,
@@ -605,84 +740,95 @@ let backdrop = null,
 let isSummarizing = false,
   currentPort = null;
 
-function getPanelFocusables() {
-  if (!panel) return [];
-  return Array.from(
-    panel.querySelectorAll(
-      'button, [href], input, select, textarea, [role="button"][tabindex]:not([tabindex="-1"])',
-    ),
-  ).filter((el) => {
-    if (el.disabled) return false;
-    const style = window.getComputedStyle(el);
-    if (style.display === "none" || style.visibility === "hidden") return false;
-    if (el.offsetParent === null && style.position !== "fixed") return false;
-    return true;
-  });
-}
-
 function ensureOverlay() {
-  if (panel && panel.isConnected) return;
+  // Force rebuild when an old panel shell is still on the page
+  if (panel && panel.isConnected && panel.getAttribute("data-fbs-ui") === "v3") return;
+  if (panel && panel.isConnected) {
+    try { panel.remove(); } catch (_) {}
+    panel = null;
+    panelBody = null;
+  }
+  if (backdrop && backdrop.isConnected) {
+    try { backdrop.remove(); } catch (_) {}
+    backdrop = null;
+  }
+  // Drop any orphaned legacy panels from previous content-script injects
+  document.querySelectorAll(".fbs-panel, .fbs-backdrop").forEach((el) => {
+    if (el.getAttribute?.("data-fbs-ui") !== "v3") {
+      try { el.remove(); } catch (_) {}
+    }
+  });
+
   backdrop = document.createElement("div");
   backdrop.className = "fbs-backdrop";
   document.body.appendChild(backdrop);
   backdrop.addEventListener("click", closeOverlay);
 
-  const mod = modKeyLabel();
   panel = document.createElement("div");
-  panel.className = "fbs-panel";
-  panel.setAttribute("role", "dialog");
-  panel.setAttribute("aria-modal", "true");
-  panel.setAttribute("aria-label", "FeedWriter");
+  panel.className = "fbs-panel fbs-ui-v3";
+  panel.setAttribute("data-fbs-ui", "v3");
   panel.innerHTML =
-    '<div class="fbs-panel-head"><span class="fbs-panel-head-left"><img src="' +
-    ICON_BASE64 +
-    '" width="16" height="16" alt=""> <span class="fbs-title-text">Tóm tắt AI</span><span class="fbs-mode-badge" data-mode="summary">Tóm tắt</span></span>' +
-    '<div class="fbs-panel-actions"><div class="fbs-min" role="button" tabindex="0" title="Thu gọn/Mở rộng" aria-label="Thu gọn">_</div><div class="fbs-close" role="button" tabindex="0" title="Đóng" aria-label="Đóng">&#10005;</div></div></div>' +
-    '<div class="fbs-panel-body"></div>' +
-    '<div class="fbs-tone-row" role="group" aria-label="Đổi tone">' +
-    '<span class="fbs-tone-label">Tone</span>' +
-    '<button type="button" class="fbs-tone-btn" data-tone="short">Ngắn hơn</button>' +
-    '<button type="button" class="fbs-tone-btn" data-tone="academic">Học thuật</button>' +
-    '<button type="button" class="fbs-tone-btn" data-tone="viral">Viral</button>' +
-    '<button type="button" class="fbs-tone-btn" data-tone="bullet">Bullet</button>' +
-    "</div>" +
+    '<div class="fbs-panel-head">' +
+      '<div class="fbs-brand">' +
+        '<img class="fbs-brand-icon" src="' + ICON_BASE64 + '" width="18" height="18" alt="">' +
+        '<div class="fbs-brand-text">' +
+          '<span class="fbs-title-text">FeedWriter</span>' +
+          '<span class="fbs-subtitle" data-role="panel-subtitle">Tóm tắt</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="fbs-panel-actions">' +
+        '<button type="button" class="fbs-icon-btn fbs-min" title="Thu gọn" aria-label="Thu gọn">' +
+          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14"/></svg>' +
+        '</button>' +
+        '<button type="button" class="fbs-icon-btn fbs-close" title="Đóng" aria-label="Đóng">' +
+          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6 6 18M6 6l12 12"/></svg>' +
+        '</button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="fbs-panel-body" role="region" aria-live="polite"></div>' +
+    '<div class="fbs-tone-row" hidden>' +
+      '<span class="fbs-tone-label">Viết lại với tone</span>' +
+      '<div class="fbs-tone-chips" role="group" aria-label="Tone">' +
+        '<button type="button" class="fbs-tone-btn" data-tone="short">Ngắn hơn</button>' +
+        '<button type="button" class="fbs-tone-btn" data-tone="academic">Học thuật</button>' +
+        '<button type="button" class="fbs-tone-btn" data-tone="viral">Viral</button>' +
+        '<button type="button" class="fbs-tone-btn" data-tone="bullet">Bullet</button>' +
+      '</div>' +
+    '</div>' +
     '<div class="fbs-panel-footer">' +
-    '<div class="fbs-shortcuts-hint">' +
-      '<div class="fbs-shortcut-item">' +
-        '<span class="fbs-shortcut-key">' + mod + '</span>' +
-        '<span class="fbs-shortcut-key">C</span>' +
-        '<span class="fbs-shortcut-label">Copy</span>' +
+      '<div class="fbs-footer-tools">' +
+        '<button type="button" class="fbs-tool-btn fbs-edit-btn" title="Chỉnh sửa (Ctrl+E)">' +
+          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>' +
+          '<span>Sửa</span>' +
+        '</button>' +
+        '<button type="button" class="fbs-tool-btn fbs-regen-btn" title="Viết lại">' +
+          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6"/><path d="M21 13a9 9 0 1 1-3-7.7L21 8"/></svg>' +
+          '<span>Lại</span>' +
+        '</button>' +
+        '<button type="button" class="fbs-tool-btn fbs-stop-btn" title="Dừng">' +
+          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>' +
+          '<span>Dừng</span>' +
+        '</button>' +
+        '<select class="fbs-model-select" title="Provider AI" aria-label="Provider AI">' +
+          '<option value="">Auto</option>' +
+          '<option value="groq">Groq</option>' +
+          '<option value="gemini">Gemini</option>' +
+          '<option value="cerebras">Cerebras</option>' +
+          '<option value="sambanova">Samba</option>' +
+          '<option value="openrouter">OpenRouter</option>' +
+        '</select>' +
       '</div>' +
-      '<div class="fbs-shortcut-item">' +
-        '<span class="fbs-shortcut-key">' + mod + '</span>' +
-        '<span class="fbs-shortcut-key">E</span>' +
-        '<span class="fbs-shortcut-label">Sửa</span>' +
+      '<div class="fbs-footer-primary">' +
+        '<button type="button" class="fbs-btn-secondary fbs-copy-btn" title="Copy (Ctrl+C)">' +
+          '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>' +
+          'Copy' +
+        '</button>' +
+        '<button type="button" class="fbs-btn-primary fbs-post-status-btn" title="Kiểm tra nguồn & đăng status">' +
+          '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>' +
+          'Đăng status' +
+        '</button>' +
       '</div>' +
-      '<div class="fbs-shortcut-item">' +
-        '<span class="fbs-shortcut-key">Esc</span>' +
-        '<span class="fbs-shortcut-label">Đóng</span>' +
-      '</div>' +
-    '</div>' +
-    '<div class="fbs-footer-row">' +
-    '<div class="fbs-footer-left fbs-footer-secondary">' +
-      '<button class="fbs-edit-btn" title="Chỉnh sửa (' + mod + '+E)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>' +
-      '<button class="fbs-stop-btn" title="Dừng stream"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg></button>' +
-      '<select class="fbs-model-select" title="Chọn provider">' +
-        '<option value="">Auto</option>' +
-        '<option value="groq">Groq</option>' +
-        '<option value="gemini">Gemini</option>' +
-        '<option value="cerebras">Cerebras</option>' +
-        '<option value="sambanova">Samba</option>' +
-        '<option value="openrouter">OR</option>' +
-      '</select>' +
-      '<button class="fbs-regen-btn" title="Viết lại"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M21 13a9 9 0 1 1-3-7.7L21 8"/></svg></button>' +
-    '</div>' +
-    '<div class="fbs-footer-right fbs-footer-primary">' +
-      '<button class="fbs-copy-btn" title="Copy (' + mod + '+C)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy</button>' +
-      '<button class="fbs-post-status-btn" style="display:none" title="Mở FB Composer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Đăng Status</button>' +
-    '</div>' +
-    '</div>' +
-    "</div>";
+    '</div>';
   document.body.appendChild(panel);
   panelBody = panel.querySelector(".fbs-panel-body");
   panel.querySelector(".fbs-close").addEventListener("click", closeOverlay);
@@ -705,24 +851,6 @@ function ensureOverlay() {
       const { text, type, _element } = lastSummarizeParams;
       summarizeText(text, type, _element, tone);
     });
-  });
-
-  // Simple focus trap: Tab cycles within the dialog
-  panel.addEventListener("keydown", (e) => {
-    if (e.key !== "Tab" || !panel.classList.contains("fbs-visible")) return;
-    const focusables = getPanelFocusables();
-    if (focusables.length === 0) return;
-    const first = focusables[0];
-    const last = focusables[focusables.length - 1];
-    if (e.shiftKey) {
-      if (document.activeElement === first || !panel.contains(document.activeElement)) {
-        e.preventDefault();
-        last.focus();
-      }
-    } else if (document.activeElement === last) {
-      e.preventDefault();
-      first.focus();
-    }
   });
 }
 
@@ -792,7 +920,8 @@ function toggleEdit() {
     panelBody.innerHTML =
       '<div class="fbs-result">' + fmt(editedText) + "</div>";
     editBtn.innerHTML =
-      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Sửa';
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span>Sửa</span>';
+    editBtn.classList.remove("is-done");
 
     // Clear undo/redo history when exiting edit mode
     undoRedoHistory.clear();
@@ -801,7 +930,7 @@ function toggleEdit() {
     const currentText =
       panelBody.dataset.editedText || panelBody.innerText || "";
     panelBody.innerHTML =
-      '<textarea class="fbs-edit-textarea">' +
+      '<textarea class="fbs-edit-textarea" aria-label="Chỉnh sửa nội dung">' +
       esc(currentText) +
       "</textarea>";
     const textarea = panelBody.querySelector(".fbs-edit-textarea");
@@ -841,7 +970,8 @@ function toggleEdit() {
     textarea.focus();
     textarea.setSelectionRange(0, 0);
     editBtn.innerHTML =
-      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Xong';
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg><span>Xong</span>';
+    editBtn.classList.add("is-done");
   }
 }
 
@@ -857,36 +987,19 @@ function regenerate() {
 
 function openOverlay(html, streaming, type = "summary") {
   ensureOverlay();
-  const newlyOpened = !panel.classList.contains("fbs-visible");
-  const titleText = panel.querySelector(".fbs-title-text");
-  const modeBadge = panel.querySelector(".fbs-mode-badge");
-  let modeLabel = "Tóm tắt";
-  let titleLabel = "Tóm tắt nội dung";
-  if (type === "affiliate") {
-    modeLabel = "Affiliate";
-    titleLabel = "Chế bài Affiliate";
-  } else if (type === "status_share") {
-    modeLabel = "Status";
-    titleLabel = "Viết Status";
-  } else if (type === "comment_summary") {
-    modeLabel = "Comment";
-    titleLabel = "Tóm tắt bình luận";
-  } else if (type === "batch" || String(type).startsWith("batch")) {
-    modeLabel = "Batch";
-    titleLabel = "Xử lý hàng loạt";
+  // Brand stays "FeedWriter"; mode goes in subtitle
+  const subtitle = panel.querySelector('[data-role="panel-subtitle"]');
+  if (subtitle) {
+    if (type === "status_share") subtitle.textContent = "Status";
+    else if (type === "comment_summary") subtitle.textContent = "Bình luận";
+    else if (streaming || isSummarizing) subtitle.textContent = "Đang viết…";
+    else subtitle.textContent = "Tóm tắt";
   }
-  if (titleText) titleText.textContent = titleLabel;
-  if (modeBadge) {
-    modeBadge.textContent = modeLabel;
-    modeBadge.setAttribute("data-mode", type || "summary");
-  }
-  panel.setAttribute("data-fbs-mode", type || "summary");
 
   // Streaming: chỉ update nội dung result, không rebuild toàn bộ DOM
   if (streaming) {
     const existingResult = panelBody.querySelector(".fbs-result");
     if (existingResult) {
-      // Extract nội dung mới từ html
       const temp = document.createElement("div");
       temp.innerHTML = html;
       const newResult = temp.querySelector(".fbs-result");
@@ -897,7 +1010,6 @@ function openOverlay(html, streaming, type = "summary") {
       panelBody.innerHTML = html;
     }
 
-    // Streaming progress indicator — hiển thị số ký tự đã nhận
     const resultEl = panelBody.querySelector(".fbs-result");
     if (resultEl) {
       const chars = (resultEl.textContent || "").length;
@@ -905,69 +1017,91 @@ function openOverlay(html, streaming, type = "summary") {
       if (!progressEl) {
         progressEl = document.createElement("span");
         progressEl.className = "fbs-stream-progress";
-        const headSpan = panel.querySelector(".fbs-panel-head span");
-        if (headSpan) headSpan.appendChild(progressEl);
+        const brandText = panel.querySelector(".fbs-brand-text");
+        if (brandText) brandText.appendChild(progressEl);
       }
-      progressEl.textContent = chars > 0 ? `(${chars} ký tự)` : "";
+      progressEl.textContent = chars > 0 ? chars + " ký tự" : "";
     }
   } else {
     panelBody.innerHTML = html;
-    // Remove progress indicator when streaming ends
     const progressEl = panel.querySelector(".fbs-stream-progress");
     if (progressEl) progressEl.remove();
   }
 
-  // Clear edited text cache when new content loads
   delete panelBody.dataset.editedText;
   backdrop.classList.add("fbs-visible");
   panel.classList.add("fbs-visible");
+  panel.classList.remove("is-composer", "fbs-panel-left", "fbs-minimized");
+  panel.dataset.mode = type || "summary";
+  panel.classList.toggle("is-streaming", !!(streaming || isSummarizing));
+  panel.classList.toggle(
+    "is-ready",
+    !isSummarizing && !streaming && html.includes("fbs-result"),
+  );
+
   const footer = panel.querySelector(".fbs-panel-footer");
   const hasContent =
-    html.includes("fbs-result") || html.includes("fbs-loading") || streaming;
-  footer.style.display = hasContent ? "flex" : "none";
-  panel.querySelector(".fbs-stop-btn").style.display =
-    isSummarizing || streaming ? "inline-flex" : "none";
-  panel.querySelector(".fbs-copy-btn").style.display =
-    !isSummarizing && !streaming ? "inline-flex" : "none";
-  panel.querySelector(".fbs-post-status-btn").style.display =
+    html.includes("fbs-result") ||
+    html.includes("fbs-loading") ||
+    html.includes("fbs-progress") ||
+    streaming;
+  if (footer) {
+    footer.style.display = hasContent ? "flex" : "none";
+    footer.classList.toggle("is-visible", !!hasContent);
+    // Tools-only footer while streaming (primary actions hidden via setVis)
+    footer.classList.toggle("is-streaming-footer", !!(isSummarizing || streaming));
+  }
+
+  const setVis = (sel, on) => {
+    const el = panel.querySelector(sel);
+    if (!el) return;
+    el.style.display = on
+      ? el.tagName === "SELECT"
+        ? "inline-block"
+        : "inline-flex"
+      : "none";
+    el.hidden = !on;
+  };
+  setVis(".fbs-stop-btn", isSummarizing || streaming);
+  setVis(".fbs-copy-btn", !isSummarizing && !streaming);
+  setVis(
+    ".fbs-post-status-btn",
+    !isSummarizing &&
+      !streaming &&
+      html.includes("fbs-result") &&
+      SITE === "facebook",
+  );
+  setVis(
+    ".fbs-regen-btn",
+    !isSummarizing && !streaming && html.includes("fbs-result"),
+  );
+  setVis(
+    ".fbs-edit-btn",
+    !isSummarizing && !streaming && html.includes("fbs-result"),
+  );
+  setVis(".fbs-model-select", !isSummarizing && !streaming);
+
+  const toneRow = panel.querySelector(".fbs-tone-row");
+  const showTone =
     !isSummarizing &&
     !streaming &&
     html.includes("fbs-result") &&
-    SITE === "facebook" &&
-    type !== "affiliate"
-      ? "inline-flex"
-      : "none";
-  panel.querySelector(".fbs-regen-btn").style.display =
-    !isSummarizing && !streaming ? "inline-flex" : "none";
-  panel.querySelector(".fbs-edit-btn").style.display =
-    !isSummarizing && !streaming && html.includes("fbs-result")
-      ? "inline-flex"
-      : "none";
-  panel.querySelector(".fbs-model-select").style.display =
-    !isSummarizing && !streaming ? "inline-block" : "none";
-  const toneRow = panel.querySelector(".fbs-tone-row");
-  const showTone = !isSummarizing && !streaming && html.includes("fbs-result") && type === "summary";
-  toneRow.classList.toggle("fbs-tone-visible", showTone);
+    type === "summary";
+  if (toneRow) {
+    toneRow.hidden = !showTone;
+    toneRow.classList.toggle("fbs-tone-visible", showTone);
+  }
   if (showTone && lastSummarizeParams && lastSummarizeParams.tone) {
-    // Re-apply active class to the tone that was used for this result
     panel.querySelectorAll(".fbs-tone-btn").forEach((b) => {
       b.classList.toggle("active", b.dataset.tone === lastSummarizeParams.tone);
     });
   } else if (!showTone) {
-    panel.querySelectorAll(".fbs-tone-btn").forEach((b) => b.classList.remove("active"));
+    panel
+      .querySelectorAll(".fbs-tone-btn")
+      .forEach((b) => b.classList.remove("active"));
   }
   if (streaming && panelBody.scrollHeight - panelBody.scrollTop < 500)
     panelBody.scrollTop = panelBody.scrollHeight;
-
-  // a11y: focus close (or first focusable) when panel first opens
-  if (newlyOpened) {
-    requestAnimationFrame(() => {
-      if (!panel || !panel.classList.contains("fbs-visible")) return;
-      const closeBtn = panel.querySelector(".fbs-close");
-      const target = closeBtn || getPanelFocusables()[0];
-      if (target && typeof target.focus === "function") target.focus();
-    });
-  }
 }
 
 
@@ -984,6 +1118,9 @@ function openOverlay(html, streaming, type = "summary") {
   if (panel) {
     panel.classList.remove("fbs-visible");
     panel.classList.remove("fbs-panel-left");
+    panel.classList.remove("is-composer");
+    panel.classList.remove("is-streaming");
+    panel.classList.remove("is-ready");
   }
   if (backdrop) backdrop.classList.remove("fbs-visible");
 }
@@ -1040,38 +1177,13 @@ function copyResult() {
 
   navigator.clipboard.writeText(text).then(() => {
     const btn = panel.querySelector(".fbs-copy-btn");
-    if (!btn) return;
     const orig = btn.innerHTML;
-    btn.classList.add("fbs-copy-success");
     btn.innerHTML =
-      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Đã copy';
-    showFbsToast("Đã copy vào clipboard");
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Copied';
     setTimeout(() => {
       btn.innerHTML = orig;
-      btn.classList.remove("fbs-copy-success");
     }, 1500);
-  }).catch(() => {
-    showFbsToast("Không copy được — thử lại hoặc copy thủ công", true);
   });
-}
-
-/** Lightweight toast near bottom of viewport (content page) */
-function showFbsToast(message, isError = false) {
-  let toast = document.querySelector(".fbs-toast");
-  if (!toast) {
-    toast = document.createElement("div");
-    toast.className = "fbs-toast";
-    toast.setAttribute("role", "status");
-    toast.setAttribute("aria-live", "polite");
-    document.body.appendChild(toast);
-  }
-  toast.textContent = message;
-  toast.classList.toggle("fbs-toast-error", !!isError);
-  toast.classList.add("fbs-toast-visible");
-  clearTimeout(showFbsToast._timer);
-  showFbsToast._timer = setTimeout(() => {
-    toast.classList.remove("fbs-toast-visible");
-  }, 2200);
 }
 
 // === ĐĂNG STATUS ===
@@ -1102,38 +1214,79 @@ async function handlePostStatus() {
     }
     text = lines.join("\n");
 
-    // Lấy metadata từ DOM element (nếu có)
+    // Lấy metadata từ DOM element (nếu có) — multi-strategy link + author
     const _element = lastSummarizeParams?._element || null;
-    let rawUrl = _element ? extractPostPermalink(_element) : location.href;
-    const author = _element ? extractPostAuthor(_element) : "";
-    const source = _element ? extractPostSource(_element) : "";
+    let meta = _element && typeof window.fbsExtractMeta === "function"
+      ? window.fbsExtractMeta(_element)
+      : null;
+    let rawUrl = meta?.permalink || (_element ? extractPostPermalink(_element) : location.href);
+    let author = meta?.author || (_element ? extractPostAuthor(_element) : "");
+    let source = meta?.source || (_element ? extractPostSource(_element) : "");
+    let linkQuality = meta?.quality || "";
     const imageUrl = _element ? extractPostImage(_element) : "";
     // Lấy TẤT CẢ ảnh để user có thể chọn paste multi-image
-    const extractImages = fwDom("extractImages");
-    const allImages = _element && typeof extractImages === "function"
-      ? extractImages(_element)
+    const allImages = _element && typeof window.fbsExtractImages === "function"
+      ? window.fbsExtractImages(_element)
       : (imageUrl ? [imageUrl] : []);
     let relatedLinks = [];
-    const discoverRelatedSourceLinks = fwDom("discoverRelatedSourceLinks");
-    if (_element && typeof discoverRelatedSourceLinks === "function") {
+    if (_element && typeof window.fbsDiscoverRelatedSourceLinks === "function") {
       try {
         const discovered =
           pendingSourceDiscovery?.element === _element
             ? await pendingSourceDiscovery.promise
-            : await discoverRelatedSourceLinks(_element, text);
-        if (discovered?.sourceUrl) rawUrl = discovered.sourceUrl;
+            : await window.fbsDiscoverRelatedSourceLinks(_element, text);
+        // Only adopt discovered sourceUrl when stronger than a shell URL
+        if (discovered?.sourceUrl) {
+          const weak = typeof window.fbsIsWeakFbShellUrl === "function"
+            ? window.fbsIsWeakFbShellUrl(rawUrl)
+            : !rawUrl;
+          const discoveredStrong = typeof window.fbsIsStrongFbPermalink === "function"
+            ? window.fbsIsStrongFbPermalink(discovered.sourceUrl)
+            : !!discovered.sourceUrl;
+          if (!rawUrl || weak || discoveredStrong) {
+            rawUrl = discovered.sourceUrl;
+            if (discoveredStrong) linkQuality = "exact";
+          }
+        }
         relatedLinks = discovered?.relatedLinks || [];
       } catch (_) {}
     }
-    const extractPermalinkAsync = fwDom("extractPermalinkAsync");
-    if (
-      _element &&
-      typeof extractPermalinkAsync === "function" &&
-      (!rawUrl || /^https:\/\/(?:www\.)?facebook\.com\/groups\/[^/]+\/?$/i.test(rawUrl))
-    ) {
+    // Prefer timestamp/"1 giờ" + Share→Copy whenever link is not a strong post permalink
+    const isStrong =
+      rawUrl &&
+      typeof window.fbsIsStrongFbPermalink === "function" &&
+      window.fbsIsStrongFbPermalink(rawUrl);
+    const needsAsyncLink =
+      !rawUrl ||
+      !isStrong ||
+      linkQuality === "shell" ||
+      linkQuality === "" ||
+      linkQuality === "constructed" ||
+      (typeof window.fbsIsWeakFbShellUrl === "function" && window.fbsIsWeakFbShellUrl(rawUrl));
+    if (_element && needsAsyncLink && typeof window.fbsExtractPermalinkAsync === "function") {
       try {
-        rawUrl = (await extractPermalinkAsync(_element)) || rawUrl;
+        const asyncUrl = await window.fbsExtractPermalinkAsync(_element, {
+          forceShare: !isStrong,
+        });
+        if (
+          asyncUrl &&
+          (typeof window.fbsIsStrongFbPermalink !== "function" ||
+            window.fbsIsStrongFbPermalink(asyncUrl) ||
+            !rawUrl ||
+            !isStrong)
+        ) {
+          rawUrl = asyncUrl;
+          linkQuality =
+            typeof window.fbsIsStrongFbPermalink === "function" &&
+            window.fbsIsStrongFbPermalink(asyncUrl)
+              ? "exact"
+              : linkQuality || "constructed";
+        }
       } catch (_) {}
+    }
+    // Re-read author after async in case DOM shifted (cheap, cached)
+    if (_element && !author) {
+      author = extractPostAuthor(_element) || "";
     }
 
     // Không append nguồn vào text — nguồn sẽ ghi ở comment đầu tiên
@@ -1175,7 +1328,10 @@ async function handlePostStatus() {
     // Dịch panel sang phải, ẩn backdrop
     panel.classList.add("fbs-panel-left");
     if (backdrop) backdrop.classList.remove("fbs-visible");
-    openFacebookComposer(text, cleanUrl, imageUrl, author, source, allImages, relatedLinks);
+    openFacebookComposer(text, cleanUrl, imageUrl, author, source, allImages, relatedLinks, {
+      linkQuality,
+      postElement: _element,
+    });
   } catch (_) {
     // Fallback
     const resultEl = panelBody?.querySelector(".fbs-result");
@@ -1200,18 +1356,16 @@ document.addEventListener("keydown", (e) => {
   const panel = document.querySelector(".fbs-panel.fbs-visible");
   if (!panel) return;
 
-  const mod = e.ctrlKey || e.metaKey;
-
-  // Copy with Ctrl/⌘+C (when not in input/textarea)
-  if (mod && e.key === "c" && !["INPUT", "TEXTAREA"].includes(e.target.tagName)) {
+  // Copy with Ctrl+C (when not in input/textarea)
+  if (e.ctrlKey && e.key === "c" && !["INPUT", "TEXTAREA"].includes(e.target.tagName)) {
     e.preventDefault();
     const copyBtn = panel.querySelector(".fbs-copy-btn");
     if (copyBtn) copyBtn.click();
     return;
   }
 
-  // Edit with Ctrl/⌘+E
-  if (mod && e.key === "e") {
+  // Edit with Ctrl+E
+  if (e.ctrlKey && e.key === "e") {
     e.preventDefault();
     const editBtn = panel.querySelector(".fbs-edit-btn");
     if (editBtn && editBtn.style.display !== "none") editBtn.click();
@@ -1286,9 +1440,9 @@ function buildCommentText(cleanUrl, author, source, options = {}) {
     out = out.replaceAll("{source}", s && s !== a ? `(${s})` : "");
   } else {
     if (a) {
-      out = `📌 NGUỒN THAM KHẢO:\n· Tác giả: ${a}${s && s !== a ? ` (${s})` : ""} · ${plat}\n· Link gốc: {link}`;
+      out = `NGUỒN THAM KHẢO:\n· Tác giả: ${a}${s && s !== a ? ` (${s})` : ""} · ${plat}\n· Link gốc: {link}`;
     } else {
-      out = `📌 NGUỒN THAM KHẢO:\n· Link gốc: {link}`;
+      out = `NGUỒN THAM KHẢO:\n· Link gốc: {link}`;
     }
   }
 
@@ -1310,18 +1464,17 @@ function buildCommentText(cleanUrl, author, source, options = {}) {
     : Array.isArray(globalRelatedSourceLinks)
     ? globalRelatedSourceLinks
     : [];
-  const cleanRelatedUrl = fwDom("cleanRelatedUrl");
-  const normalizedSourceUrl = typeof cleanRelatedUrl === "function"
-    ? cleanRelatedUrl(cleanUrl)
+  const normalizedSourceUrl = typeof window.fbsCleanRelatedUrl === "function"
+    ? window.fbsCleanRelatedUrl(cleanUrl)
     : cleanUrl;
-  const normalizedCustomUrl = typeof cleanRelatedUrl === "function"
-    ? cleanRelatedUrl(globalCustomSourceLink)
+  const normalizedCustomUrl = typeof window.fbsCleanRelatedUrl === "function"
+    ? window.fbsCleanRelatedUrl(globalCustomSourceLink)
     : globalCustomSourceLink;
   const seenRelated = new Set();
   for (const item of relatedLinks) {
     const rawUrl = typeof item === "string" ? item : item?.url;
-    const url = typeof cleanRelatedUrl === "function"
-      ? cleanRelatedUrl(rawUrl)
+    const url = typeof window.fbsCleanRelatedUrl === "function"
+      ? window.fbsCleanRelatedUrl(rawUrl)
       : rawUrl;
     if (!url || seenRelated.has(url) || url === normalizedSourceUrl || url === normalizedCustomUrl) continue;
     seenRelated.add(url);
@@ -1336,7 +1489,7 @@ function buildCommentText(cleanUrl, author, source, options = {}) {
 
   // Cleanup extra spaces but preserve intentional line breaks
   out = out.split('\n').map(line => line.replace(/\s+/g, ' ').trim()).filter(line => line).join('\n');
-  if (!out) out = "📌 NGUỒN THAM KHẢO:\n· Link gốc: " + linkStr;
+  if (!out) out = "NGUỒN THAM KHẢO:\n· Link gốc: " + linkStr;
 
   // Strip any markdown bold/italic asterisks to ensure clean copy in comments
   out = out.replace(/\*\*/g, "").replace(/\*/g, "");
@@ -1350,83 +1503,235 @@ function buildCommentText(cleanUrl, author, source, options = {}) {
 // Plural: returns ALL images from the post (main + shared inner, deduped & sorted)
 // Must be called AFTER extractPostImage() for the same element since extractPostImage
 // populates the internal _lastExtractedImages cache.
-// Prefer FeedWriter.dom; keep window.fbs* COMPAT aliases — remove after v3.0
-window.FeedWriter = window.FeedWriter || {};
-window.FeedWriter.dom = window.FeedWriter.dom || {};
-window.FeedWriter.dom.extractImages = function (element) {
+window.fbsExtractImages = function (element) {
   // Always re-run extraction to get fresh data for this element
   extractPostImage(element);
   return _lastExtractedImages.slice();
 };
-window.fbsExtractImages = FeedWriter.dom.extractImages; // COMPAT alias — remove after v3.0
 
-// Async version: lấy permalink (sử dụng nút Share để copy link chính xác tuyệt đối, fallback sang DOM)
-// Nếu post là BÀI SHARE → ưu tiên tìm link bài GỐC trong nested article trước
-window.FeedWriter.dom.extractPermalinkAsync = async function (element) {
+/**
+ * Multi-strategy permalink:
+ *  1) Timestamp / header link ("1 giờ") in the post unit
+ *  2) Strong DOM patterns (pfbid, /posts/, story_fbid)
+ *  3) Share → "Sao chép liên kết" / "Copy link" (most reliable when DOM is obfuscated)
+ *
+ * options.forceShare = true → always try Share after DOM (for "Tìm lại")
+ */
+window.fbsExtractPermalinkAsync = async function (element, options = {}) {
+  const forceShare = !!(options && options.forceShare);
   try {
     if (SITE === "facebook" && element) {
       const postContainer = _findPostContainer(element);
+      if (!postContainer) return extractPostPermalink(element) || "";
 
-      // === ƯU TIÊN 1: Nếu là bài share → tìm link bài GỐC trong DOM trước ===
-      // Tránh phải click nút Share (slow + xâm lấn) nếu đã có link gốc trong DOM
+      const isBarePhoto = (u) =>
+        typeof _isBareFbPhotoShell === "function" && _isBareFbPhotoShell(u);
+      const isPostFamily = (u) => {
+        if (!u || isBarePhoto(u)) return false;
+        if (typeof _permalinkFamilyRank === "function") return _permalinkFamilyRank(u) >= 80;
+        return (
+          typeof _isStrongFbPermalink === "function" &&
+          _isStrongFbPermalink(u) &&
+          !/\/photo\/?(\?|$)/i.test(u)
+        );
+      };
+
+      // 1) Timestamp chip first ("1 giờ" next to author) — post family only
+      if (typeof _findTimestampPermalink === "function") {
+        const ts = _findTimestampPermalink(postContainer);
+        if (ts && isPostFamily(ts) && !forceShare) return _cleanFbUrl(ts);
+      }
+
+      // 2) Shared original + full DOM scan
+      const meta = typeof extractPostMeta === "function" ? extractPostMeta(element) : null;
+      if (meta?.permalink && meta.quality === "exact" && isPostFamily(meta.permalink) && !forceShare) {
+        return meta.permalink;
+      }
+
       const sharedInner = _findSharedPostArticle(postContainer);
       if (sharedInner) {
         const innerPermalink = _findPermalinkInContainer(sharedInner);
-        if (innerPermalink) return innerPermalink;
-      }
-
-      const shareBtn = Array.from(postContainer.querySelectorAll('div[role="button"]')).find(b => {
-        const label = (b.getAttribute("aria-label") || "").toLowerCase();
-        return label.includes("chia sẻ") || label.includes("share") || label.includes("gửi cho bạn bè") || label.includes("send this to friends");
-      });
-
-      if (shareBtn) {
-        const oldClip = await navigator.clipboard.readText().catch(() => "");
-        shareBtn.click();
-        await new Promise(r => setTimeout(r, 800));
-
-        // Exclude FeedWriter panel (also role=dialog) from FB share dialog lookup
-        const dialog = document.querySelector('div[role="dialog"]:not(.fbs-panel)');
-        if (dialog) {
-           let copyBtn = null;
-           const spans = Array.from(dialog.querySelectorAll('span[dir="auto"], div[dir="auto"]'));
-           for (const el of spans) {
-              const t = (el.textContent || "").toLowerCase().trim();
-              if (("sao chép liên kết copy link").includes(t) && t.length > 5) {
-                 copyBtn = el.closest('[role="button"], [role="menuitem"], div[tabindex="0"], div.x1i10hfl');
-                 if (copyBtn) break;
-              }
-           }
-
-           if (copyBtn) {
-             copyBtn.click();
-             await new Promise(r => setTimeout(r, 1200));
-             
-             const newClip = await navigator.clipboard.readText().catch(() => "");
-             if (newClip && newClip.includes("facebook.com") && newClip !== oldClip) {
-               try {
-                 const closeBtn = document.querySelector('div[role="dialog"]:not(.fbs-panel) [aria-label="Đóng"][role="button"], div[role="dialog"]:not(.fbs-panel) [aria-label="Close"][role="button"]');
-                 if (closeBtn) closeBtn.click();
-               } catch (_) {}
-
-               // Clean URL — loại bỏ tracking params nhưng giữ fbid
-               return _cleanFbUrl(newClip);
-             }
-           }
-           
-           try {
-             const closeBtn = document.querySelector('div[role="dialog"]:not(.fbs-panel) [aria-label="Đóng"][role="button"], div[role="dialog"]:not(.fbs-panel) [aria-label="Close"][role="button"]');
-             if (closeBtn) closeBtn.click();
-             else document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", keyCode: 27, bubbles: true }));
-           } catch (_) {}
+        if (innerPermalink && isPostFamily(innerPermalink) && !forceShare) {
+          return _cleanFbUrl(innerPermalink);
         }
       }
+
+      const domPermalink = _findPermalinkInContainer(postContainer);
+      if (domPermalink && isPostFamily(domPermalink) && !forceShare) {
+        return _cleanFbUrl(domPermalink);
+      }
+
+      // 3) Share → Copy link when DOM only has /photo/ shells or weak results
+      const needShare =
+        forceShare ||
+        !domPermalink ||
+        isBarePhoto(domPermalink) ||
+        !isPostFamily(domPermalink) ||
+        (meta && (meta.quality === "shell" || meta.quality === "constructed"));
+      if (needShare) {
+        const shareUrl = await _fbCopyLinkViaShareMenu(postContainer);
+        if (shareUrl && !isBarePhoto(shareUrl)) return shareUrl;
+      }
+
+      // 4) Fallbacks — never return bare https://www.facebook.com/photo/
+      if (meta?.permalink && meta.quality !== "shell" && !isBarePhoto(meta.permalink)) {
+        return meta.permalink;
+      }
+      if (domPermalink && !isBarePhoto(domPermalink)) return _cleanFbUrl(domPermalink);
+      if (meta?.permalink && !isBarePhoto(meta.permalink)) return meta.permalink;
     }
   } catch (_) {}
 
   return extractPostPermalink(element) || "";
 };
-window.fbsExtractPermalinkAsync = FeedWriter.dom.extractPermalinkAsync; // COMPAT alias — remove after v3.0
+
+/** Open post Share menu and click "Copy link" / "Sao chép liên kết". */
+async function _fbCopyLinkViaShareMenu(postContainer) {
+  if (!postContainer) return "";
+
+  const isShareControl = (el) => {
+    const label = (
+      (el.getAttribute("aria-label") || "") +
+      " " +
+      (el.getAttribute("title") || "") +
+      " " +
+      ((el.textContent || "").slice(0, 80))
+    )
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!label) return false;
+    // Exact-ish share actions — avoid "Share your thoughts" comment boxes
+    if (
+      label === "chia sẻ" ||
+      label === "share" ||
+      label.includes("gửi nội dung này cho bạn bè") ||
+      label.includes("send this to friends") ||
+      label.includes("gửi cho bạn bè") ||
+      label.includes("share this") ||
+      /^chia sẻ\b/.test(label) ||
+      /^share\b/.test(label)
+    ) {
+      // Exclude comment composer / reactions
+      if (label.includes("bình luận") || label.includes("comment") || label.includes("cảm xúc")) return false;
+      return true;
+    }
+    return false;
+  };
+
+  // Prefer footer action bar buttons inside this post
+  const scopeButtons = Array.from(
+    postContainer.querySelectorAll('[role="button"], [aria-label], div[tabindex="0"]')
+  );
+  let shareBtn = scopeButtons.find(isShareControl) || null;
+
+  // Sometimes share lives one level outside virtualized inner node
+  if (!shareBtn && postContainer.parentElement) {
+    shareBtn = Array.from(
+      postContainer.parentElement.querySelectorAll('[role="button"][aria-label], [aria-label]')
+    ).find(isShareControl) || null;
+  }
+  if (!shareBtn) return "";
+
+  const oldClip = await navigator.clipboard.readText().catch(() => "");
+  try {
+    shareBtn.click();
+  } catch (_) {
+    return "";
+  }
+
+  // Wait for dialog OR menu popover
+  let surface = null;
+  for (let i = 0; i < 20; i++) {
+    await new Promise((r) => setTimeout(r, 150));
+    surface =
+      document.querySelector('div[role="dialog"]') ||
+      document.querySelector('[role="menu"]') ||
+      document.querySelector('[role="listbox"]');
+    if (surface) break;
+  }
+  if (!surface) {
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    return "";
+  }
+
+  const isCopyLabel = (t) => {
+    t = (t || "").toLowerCase().replace(/\s+/g, " ").trim();
+    if (!t || t.length > 48) return false;
+    return (
+      t === "sao chép liên kết" ||
+      t === "copy link" ||
+      t === "copy link to post" ||
+      t === "copy" ||
+      t.includes("sao chép liên kết") ||
+      t.includes("copy link") ||
+      t.includes("copy the link")
+    );
+  };
+
+  let copyBtn = null;
+  const nodes = surface.querySelectorAll(
+    'span[dir="auto"], div[dir="auto"], [role="menuitem"], [role="button"], [role="listitem"], span'
+  );
+  for (const el of nodes) {
+    const t = (el.textContent || "").replace(/\s+/g, " ").trim();
+    if (!isCopyLabel(t)) continue;
+    copyBtn =
+      el.closest('[role="button"], [role="menuitem"], [role="listitem"], div[tabindex="0"], a') || el;
+    // Prefer the row that is clickable
+    if (copyBtn) break;
+  }
+
+  if (!copyBtn) {
+    // Close and abort
+    try {
+      const closeBtn = surface.querySelector(
+        '[aria-label="Đóng"][role="button"], [aria-label="Close"][role="button"]'
+      );
+      if (closeBtn) closeBtn.click();
+      else document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    } catch (_) {}
+    return "";
+  }
+
+  try {
+    copyBtn.click();
+  } catch (_) {}
+
+  // Poll clipboard for FB url (clipboard write can lag)
+  let newClip = "";
+  for (let i = 0; i < 12; i++) {
+    await new Promise((r) => setTimeout(r, 150));
+    newClip = await navigator.clipboard.readText().catch(() => "");
+    if (
+      newClip &&
+      newClip !== oldClip &&
+      /facebook\.com|fb\.watch|fb\.com/i.test(newClip)
+    ) {
+      break;
+    }
+  }
+
+  // Dismiss UI
+  try {
+    const closeBtn = document.querySelector(
+      'div[role="dialog"] [aria-label="Đóng"][role="button"], div[role="dialog"] [aria-label="Close"][role="button"]'
+    );
+    if (closeBtn) closeBtn.click();
+    else document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    // second escape for nested menus
+    setTimeout(() => {
+      try {
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      } catch (_) {}
+    }, 80);
+  } catch (_) {}
+
+  if (newClip && /facebook\.com|fb\.watch|fb\.com/i.test(newClip) && newClip !== oldClip) {
+    return _cleanFbUrl(newClip);
+  }
+  return "";
+}
 
 // === HELPERS ===
 function esc(s) {
@@ -1453,7 +1758,7 @@ function displayError(errorData) {
         '<div class="fbs-error-title">' + esc(errorData.message) + '</div>' +
       '</div>' +
       '<div class="fbs-error-detail">' + esc(errorData.detail) + '</div>' +
-      '<div class="fbs-error-action">💡 ' + esc(errorData.action) + '</div>';
+      '<div class="fbs-error-action">' + esc(errorData.action) + '</div>';
 
     // Add action buttons if available
     if (errorData.actionButton) {
@@ -1508,8 +1813,11 @@ function fmt(t) {
   html = html
     .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
     .replace(/\*(.*?)\*/g, "<em>$1</em>");
-  html = html.replace(/✓\s+/g, '<span style="color: #a855f7; font-weight: bold; margin-right: 8px;">✓</span> ');
-  html = html.replace(/━━━━━━━━━━/g, '<div style="margin: 20px 0; border-top: 1px dashed rgba(255, 255, 255, 0.15); display: flex; align-items: center; justify-content: center; color: rgba(255, 255, 255, 0.25); font-size: 11px; letter-spacing: 0.1em; pointer-events: none;">━━━━━━━━━━</div>');
+  html = html.replace(/✓\s+/g, '<span class="fbs-bullet-dot">·</span> ');
+  html = html.replace(
+    /━━━━━━━━━━/g,
+    '<div class="fbs-source-footer" aria-hidden="true"></div>',
+  );
 
   const lines = html.split("\n");
   let formattedLines = [];
@@ -1527,23 +1835,34 @@ function fmt(t) {
     }
 
     if (inGlossary) {
-      if (!trimmed || trimmed.includes("━━━━━━━━━━")) {
+      if (!trimmed || trimmed.includes("━━━━━━━━━━") || trimmed.includes("fbs-source-footer")) {
         inGlossary = false;
         formattedLines.push(renderGlossaryCard(glossaryItems));
-        if (trimmed) formattedLines.push(line);
+        if (trimmed && !trimmed.includes("fbs-source-footer")) formattedLines.push(line);
       } else {
         glossaryItems.push(line);
       }
       continue;
     }
 
-    if (trimmed.includes("✓")) {
-      const cleanBullet = line.replace(/✓\s*/, '').trim();
-      formattedLines.push(`<div class="fbs-bullet"><span class="fbs-bullet-marker">▸</span><span class="fbs-bullet-text">${cleanBullet}</span></div>`);
+    if (trimmed.includes("✓") || /class="fbs-bullet-dot"/.test(line)) {
+      const cleanBullet = line
+        .replace(/✓\s*/, "")
+        .replace(/<span class="fbs-bullet-dot">·<\/span>\s*/g, "")
+        .trim();
+      formattedLines.push(
+        '<div class="fbs-bullet"><span class="fbs-bullet-marker">▸</span><span class="fbs-bullet-text">' +
+          cleanBullet +
+          "</span></div>",
+      );
     } else if (i === 0 && trimmed.length > 0) {
-      formattedLines.push(`<div class="fbs-title-line" style="font-size: 18px; font-weight: 800; line-height: 1.35; color: #f0e6ff; margin-bottom: 16px; border-left: 4px solid #a855f7; padding-left: 12px; margin-left: -4px;">${line}</div>`);
+      formattedLines.push('<div class="fbs-title-line">' + line + "</div>");
     } else {
-      formattedLines.push(line ? `<div class="fbs-para" style="margin-bottom: 12px;">${line}</div>` : `<div style="height: 12px;"></div>`);
+      formattedLines.push(
+        line
+          ? '<div class="fbs-para">' + line + "</div>"
+          : '<div class="fbs-para-break" aria-hidden="true"></div>',
+      );
     }
   }
 
@@ -1555,62 +1874,64 @@ function fmt(t) {
 }
 
 function renderGlossaryCard(items) {
-  const itemsHtml = items.map(item => {
-    const cleanItem = item.replace(/✓\s*/, '').replace(/^[·•\-*]\s*/, '');
-    return `<div class="fbs-glossary-item" style="font-size: 14px; line-height: 1.6; color: #d0d4dc; padding: 4px 0; display: flex; gap: 8px;"><span style="color: #a855f7; opacity: 0.7;">•</span>${cleanItem}</div>`;
-  }).filter(Boolean).join('');
-  return `<div class="fbs-glossary" style="margin-top: 20px; padding: 16px 18px; background: rgba(168, 85, 247, 0.04); border-radius: 12px; border: 1px solid rgba(168, 85, 247, 0.15); border-left: 4px solid #a855f7;"><div class="fbs-glossary-heading" style="font-size: 13px; font-weight: 700; color: #e0d0f5; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px;">Giải thích thuật ngữ</div>${itemsHtml}</div>`;
-}
-
-// === READ TIME ===
-function calcReadTime(el) {
-  if (!el) return null;
-  const words = (el.innerText || "").trim().split(/\s+/).filter(Boolean).length;
-  if (words < 80) return null;
-  return { words, mins: Math.max(1, Math.round(words / 200)) };
+  const itemsHtml = items
+    .map((item) => {
+      const cleanItem = item
+        .replace(/✓\s*/, "")
+        .replace(/^[·•\-*]\s*/, "")
+        .replace(/<span class="fbs-bullet-dot">·<\/span>\s*/g, "");
+      if (!cleanItem) return "";
+      return (
+        '<div class="fbs-glossary-item"><span class="fbs-glossary-bullet">·</span>' +
+        cleanItem +
+        "</div>"
+      );
+    })
+    .filter(Boolean)
+    .join("");
+  return (
+    '<div class="fbs-glossary">' +
+    '<div class="fbs-glossary-heading">Giải thích thuật ngữ</div>' +
+    itemsHtml +
+    "</div>"
+  );
 }
 
 // === BUTTONS ===
-function createBtn(stats) {
+function createBtn() {
+  // Use <button> (not div[role=button]) so Facebook's [role=button] layout
+  // rules cannot stretch it into a full-height strip.
   const d = document.createElement("button");
   d.type = "button";
   d.className = "fbs-btn";
-  d.setAttribute("title", "Tóm tắt nội dung bằng FeedWriter");
-  d.setAttribute("aria-label", "Tóm tắt bài viết");
-  const statsHtml = stats
-    ? '<span class="fbs-btn-stats">~' +
-      stats.mins +
-      " phút · " +
-      stats.words.toLocaleString("vi-VN") +
-      " từ</span>"
-    : "";
+  d.setAttribute("data-fbs-action", "summarize");
   d.innerHTML =
-    '<img src="' +
+    '<img class="fbs-btn-icon" src="' +
     ICON_BASE64 +
-    '" width="13" height="13" alt="">' +
-    "<span>Tóm tắt</span>" +
-    statsHtml;
+    '" width="14" height="14" alt="" aria-hidden="true">' +
+    '<span class="fbs-btn-label" title="Tóm tắt nội dung">Tóm tắt</span>';
   return d;
 }
 
-function createInlineBtn(stats) {
+function createInlineBtn() {
   const d = document.createElement("span");
   d.className = "fbs-btn-inline";
   d.setAttribute("role", "button");
   d.setAttribute("tabindex", "0");
-  d.setAttribute("title", "Tóm tắt nội dung bằng FeedWriter");
-  const statsHtml = stats
-    ? '<span class="fbs-inline-stats">~' + stats.mins + " phút</span>"
-    : "";
+  d.setAttribute("data-fbs-ui", "v3");
+  d.style.cssText =
+    "cursor:pointer;font-size:inherit;font-family:inherit;background:none;border:none;padding:0;margin:0;display:inline;line-height:inherit;vertical-align:baseline;height:auto;width:auto;max-height:none;writing-mode:horizontal-tb;";
   d.innerHTML =
-    '<span class="fbs-inline-sep" aria-hidden="true">·</span>' +
-    '<span class="fbs-inline-pill">' +
-    '<img class="fbs-inline-icon" src="' +
+    ' · <span title="Tóm tắt nội dung" style="cursor:pointer;display:inline-flex;align-items:center;gap:3px;vertical-align:baseline;color:#A1A1AA;font-weight:600;font-size:0.92em;background:rgba(161,161,170,0.13);padding:0px 6px 1px;border-radius:8px;transition:background 0.15s"><img src="' +
     ICON_BASE64 +
-    '" width="12" height="12" alt="">' +
-    "<span>Tóm tắt</span>" +
-    statsHtml +
-    "</span>";
+    '" style="width:11px;height:11px;vertical-align:-1px;flex-shrink:0">Tóm tắt</span>';
+  const pill = d.querySelector("span");
+  d.addEventListener("mouseenter", () => {
+    pill.style.background = "rgba(161,161,170,0.28)";
+  });
+  d.addEventListener("mouseleave", () => {
+    pill.style.background = "rgba(161,161,170,0.13)";
+  });
   return d;
 }
 
@@ -1636,129 +1957,8 @@ function createInlineBtn(stats) {
 
 
 
-// === FACEBOOK AUTHOR HELPERS ===
-
-// Extract a valid author name from the first <a> inside a header element.
-function _fbNameFromHeader(header) {
-  const link = header.querySelector("a");
-  if (!link) return "";
-  // Ưu tiên aria-label (Facebook thường set đúng tên ở đây)
-  const ariaLabel = (link.getAttribute("aria-label") || "").trim();
-  if (ariaLabel.length >= 2 && ariaLabel.length < 80) return ariaLabel;
-  // Fallback: innerText (tránh textContent vì FB chèn ký tự rác anti-scraping)
-  const name = (link.innerText || link.textContent || "").trim();
-  // Validate: tên hợp lệ không chứa quá nhiều số/ký tự lạ
-  if (
-    name.length >= 2 &&
-    name.length < 80 &&
-    !SEE_MORE.includes(name.toLowerCase()) &&
-    !/[\d]{8,}/.test(name) &&
-    !/[a-f0-9]{10,}/i.test(name)
-  )
-    return name;
-  return "";
-}
-
-// Check if a DOM element sits inside the comment section of a post.
-// Facebook comments live inside a form (comment composer area) or after
-// a "comment" / "bình luận" section. We detect this by checking if the
-// element is preceded by the main post text content — shared-post articles
-// appear BEFORE the text or embedded within it, while comments appear AFTER.
-//
-// Heuristic: a nested article is a COMMENT if:
-//   (a) it does NOT contain a profile-link header (h2/h3/h4 with <a>), OR
-//   (b) it sits inside a container whose role is "list" or that has
-//       ul/[role="list"] ancestor (Facebook wraps comments in list roles), OR
-//   (c) it is a sibling/descendant of a form element (comment input area).
-function _fbIsCommentArticle(nested, postContainer) {
-  // (b) Inside a list-like container → comment
-  let el = nested.parentElement;
-  for (let i = 0; i < 10 && el && el !== postContainer; i++) {
-    const role = (el.getAttribute("role") || "").toLowerCase();
-    if (role === "list" || role === "listitem" || el.tagName === "UL")
-      return true;
-    el = el.parentElement;
-  }
-  // (c) Inside or adjacent to a form → comment
-  if (nested.closest("form")) return true;
-  el = nested.parentElement;
-  for (let i = 0; i < 5 && el && el !== postContainer; i++) {
-    if (el.querySelector(":scope > form")) return true;
-    el = el.parentElement;
-  }
-  return false;
-}
-
-// Find the original author of a shared post.
-// Returns "" if the post is NOT a shared post.
-//
-// Facebook DOM for shared posts (all 3 cases):
-//   1. Personal share:  [article sharer] > ... > [article original-author]
-//   2. Group share:     [article sharer] > ... > [article original-author]
-//   3. Page share:      [article page]   > ... > [article original-author]
-//
-// The inner article of a shared post:
-//   - Has its own h2/h3/h4 header with a profile <a> link
-//   - Is NOT inside a comment list/form area
-//   - Is a direct child article of the post (not nested deeper in comment replies)
-function _fbFindOriginalAuthor(postContainer) {
-  const nestedArticles = postContainer.querySelectorAll('[role="article"]');
-  for (const nested of nestedArticles) {
-    if (nested === postContainer) continue;
-
-    // Must be a direct child article of postContainer (not nested inside another nested article)
-    const parentArticle = nested.parentElement?.closest('[role="article"]');
-    if (parentArticle && parentArticle !== postContainer) continue;
-
-    // Skip comment articles
-    if (_fbIsCommentArticle(nested, postContainer)) continue;
-
-    // Must have its own header with a profile link — this is the shared post's author
-    const headers = nested.querySelectorAll("h2, h3, h4");
-    for (const h of headers) {
-      // Header must belong to THIS nested article, not a deeper one
-      if (h.closest('[role="article"]') !== nested) continue;
-      const name = _fbNameFromHeader(h);
-      if (name) return name;
-    }
-
-    // Fallback: strong > a directly inside this nested article (some shared post layouts)
-    const strongs = nested.querySelectorAll("strong a");
-    for (const s of strongs) {
-      if (s.closest('[role="article"]') !== nested) continue;
-      const name = (s.innerText || s.textContent || "").trim();
-      if (
-        name.length >= 2 &&
-        name.length < 80 &&
-        !/[a-f0-9]{10,}/i.test(name)
-      )
-        return name;
-    }
-  }
-  return "";
-}
-
-// Extract author from a non-shared post container (the simple case).
-function _fbExtractAuthorFromContainer(container) {
-  const headers = container.querySelectorAll("h2, h3, h4");
-  for (const h of headers) {
-    if (h.closest('[role="article"]') !== container) continue;
-    const name = _fbNameFromHeader(h);
-    if (name) return name;
-  }
-  // Fallback: strong > a
-  const strongs = container.querySelectorAll("strong a");
-  for (const s of strongs) {
-    if (s.closest('[role="article"]') !== container) continue;
-    const name = (s.innerText || s.textContent || "").trim();
-    if (name.length >= 2 && name.length < 80 && !/[a-f0-9]{10,}/i.test(name))
-      return name;
-  }
-  return "";
-}
-
-
-
+// Facebook author helpers live in content-dom.js
+// (_fbNameFromHeader, _fbFindOriginalAuthor, _fbExtractAuthorFromContainer, ...)
 
 
 function extractPostTitle(element) {
@@ -1862,26 +2062,14 @@ async function processBatchNext() {
 }
 
 async function processSingleText(text, type) {
-  let settings = {};
-  try {
-    settings = await new Promise((r) =>
-      chrome.storage.sync.get(
-        ["summaryLength", "promptStyle", "outputLanguage"],
-        r,
-      ),
-    );
-  } catch (_) {
-    settings = {};
-  }
   return new Promise((resolve, reject) => {
     chrome.runtime.sendMessage(
       {
         action: "summarize",
         text: text,
         type: type,
-        summaryLength: settings.summaryLength || "medium",
-        promptStyle: settings.promptStyle || "default",
-        outputLanguage: settings.outputLanguage || "auto",
+        summaryLength: "medium",
+        promptStyle: "default"
       },
       (response) => {
         if (chrome.runtime.lastError) {
@@ -1959,7 +2147,7 @@ function showBatchResults() {
 
   results.forEach((item, index) => {
     const statusClass = item.success ? 'success' : 'error';
-    const statusIcon = item.success ? '✓' : '✗';
+    const statusIcon = item.success ? 'OK' : 'ERR';
     const preview = item.text.substring(0, 50) + (item.text.length > 50 ? '...' : '');
 
     html += `
@@ -2012,13 +2200,10 @@ function showBatchResults() {
 }
 
 async function summarizeText(text, type = "summary", contextElement = null, tone = null) {
-  if (!text || text.length < SUMMARIZE_MIN_CHARS) {
+  if (!text || text.length < 50) {
     openOverlay(
-      '<div class="fbs-error">Text quá ngắn để tóm tắt (tối thiểu ' +
-        SUMMARIZE_MIN_CHARS +
-        " ký tự).</div>",
+      '<div class="fbs-error">Text quá ngắn để tóm tắt.</div>',
       false,
-      type,
     );
     return;
   }
@@ -2042,7 +2227,6 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
         "outputLanguage",
         "customInstructions",
         "customSummaryPrompt",
-        "customAffPrompt",
       ], r),
     );
   } catch (_) {
@@ -2053,6 +2237,8 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
     );
     return;
   }
+  // Legacy affiliate writing removed — fall back to summary
+  if (type && String(type).startsWith("affiliate")) type = "summary";
   const cacheKey =
     hashText(text) +
     "_" +
@@ -2066,9 +2252,7 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
     "_" +
     hashText(settings.customInstructions || "") +
     "_" +
-    hashText(type.startsWith("affiliate")
-      ? settings.customAffPrompt || ""
-      : settings.customSummaryPrompt || "") +
+    hashText(settings.customSummaryPrompt || "") +
     (tone ? "_" + tone : "");
 
   if (summaryCache.has(cacheKey)) {
@@ -2083,28 +2267,21 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
   lastSummarizeParams = { text, type, _element: contextElement, tone };
   isSummarizing = true;
   const title =
-    type === "affiliate"
-      ? "Đang viết bài Affiliate..."
-      : type === "status_share"
-        ? "Đang viết Status..."
-        : type === "comment_summary"
-          ? "Đang tóm tắt bình luận..."
-          : "Đang tóm tắt...";
+    type === "status_share"
+      ? "Đang viết Status..."
+      : type === "comment_summary"
+        ? "Đang tóm tắt bình luận..."
+        : "Đang tóm tắt...";
 
-  // Skeleton loading with status label (no spinner-only dead end)
-  const skeletonHtml =
-    '<div class="fbs-loading-wrap">' +
-    '<div class="fbs-loading-status">' +
-    '<span class="fbs-spinner" aria-hidden="true"></span>' +
-    '<span class="fbs-loading-title">' +
-    esc(title) +
-    "</span></div>" +
+  // Show skeleton loading instead of spinner
+  const skeletonHtml = '<div class="fbs-panel-body fbs-loading">' +
     '<div class="fbs-skeleton fbs-skeleton-text"></div>' +
     '<div class="fbs-skeleton fbs-skeleton-text"></div>' +
     '<div class="fbs-skeleton fbs-skeleton-text"></div>' +
-    '<div class="fbs-skeleton fbs-skeleton-text fbs-skeleton-short"></div>' +
-    '<p class="fbs-loading-hint">AI đang viết… bạn có thể bấm Dừng nếu chờ lâu.</p>' +
-    "</div>";
+    '<div class="fbs-skeleton fbs-skeleton-text"></div>' +
+    '<div class="fbs-skeleton fbs-skeleton-text"></div>' +
+    '<div style="margin-top:8px;font-size:11px;color:rgba(255,255,255,0.5);">' + title + '</div>' +
+    '</div>';
 
   openOverlay(skeletonHtml, false, type);
 
@@ -2142,13 +2319,14 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
     isSummarizing = false;
     return;
   }
-  // Extract post metadata for enriched history
+  // Extract post metadata for enriched history (multi-strategy)
   const _el = lastSummarizeParams._element;
-  const _sourceUrl = extractPostPermalink(_el);
+  const _meta = _el && typeof extractPostMeta === "function" ? extractPostMeta(_el) : null;
+  const _sourceUrl = _meta?.permalink || extractPostPermalink(_el);
   const _imageUrl = extractPostImage(_el);
-  const _author = extractPostAuthor(_el);
+  const _author = _meta?.author || extractPostAuthor(_el);
   const _title = extractPostTitle(_el);
-  const _source = extractPostSource(_el);
+  const _source = _meta?.source || extractPostSource(_el);
   const _modelSelect = panel && panel.querySelector(".fbs-model-select");
   const _preferredProvider = _modelSelect ? _modelSelect.value : "";
   currentPort.postMessage({
@@ -2193,8 +2371,7 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
 
     // Estimate expected length based on generation type and tone
     let expectedLength = 450;
-    if (type === "affiliate") expectedLength = 650;
-    else if (type === "status_share") expectedLength = 500;
+    if (type === "status_share") expectedLength = 500;
     else if (type === "comment_summary") expectedLength = 300;
     else if (tone === "short") expectedLength = 200;
     else if (tone === "bullet") expectedLength = 350;
@@ -2255,11 +2432,10 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
       isSummarizing = false;
       summaryCache.set(cacheKey, msg.full);
       const discoveryElement = lastSummarizeParams?._element;
-      const discoverRelatedSourceLinks = fwDom("discoverRelatedSourceLinks");
-      if (discoveryElement && typeof discoverRelatedSourceLinks === "function") {
+      if (discoveryElement && typeof window.fbsDiscoverRelatedSourceLinks === "function") {
         pendingSourceDiscovery = {
           element: discoveryElement,
-          promise: discoverRelatedSourceLinks(discoveryElement, msg.full).catch(() => ({
+          promise: window.fbsDiscoverRelatedSourceLinks(discoveryElement, msg.full).catch(() => ({
             sourceUrl: "",
             relatedLinks: [],
           })),
@@ -2332,11 +2508,6 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
   });
 }
 
-// Register runtime API on FeedWriter namespace
-window.FeedWriter = window.FeedWriter || {};
-window.FeedWriter.runtime = window.FeedWriter.runtime || {};
-window.FeedWriter.runtime.summarizeText = summarizeText;
-
 // === MESSAGES (CONTEXT MENU, SHORTCUTS & UNSHORTEN) ===
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.action === "clear-cache") {
@@ -2356,37 +2527,34 @@ chrome.runtime.onMessage.addListener((msg) => {
         false,
       );
   }
-  if (msg.action === "shortcut-affiliate-shortcut") {
-    const text = window.getSelection().toString();
-    if (text) summarizeText(text, "affiliate");
-    else
+  if (msg.action === "shortcut-translate-shortcut") {
+    const text = window.getSelection().toString().trim();
+    if (text) {
+      window.postMessage(
+        { source: "feedwriter", type: "translate", text, mode: "auto" },
+        "*"
+      );
+    } else {
       openOverlay(
-        '<div class="fbs-error">Vui lòng bôi đen đoạn văn bản trước khi bấm Hotkey!</div>',
+        '<div class="fbs-error">Bôi đen văn bản tiếng Anh trước khi dịch (Ctrl+Shift+T).</div>',
         false,
       );
-  }
-  if (msg.action === "auto-github-post") {
-    // Triggered by the background scheduler in a dedicated FB tab.
-    const githubAutoPost =
-      (window.FeedWriter && window.FeedWriter.composer && window.FeedWriter.composer.githubAutoPost) ||
-      window.fbsGithubAutoPost;
-    if (typeof githubAutoPost === "function") {
-      githubAutoPost(msg.text, msg.url, msg.image);
-    } else {
-      try {
-        chrome.runtime.sendMessage({
-          action: "github-autopost-done",
-          ok: false,
-          message: "githubAutoPost chưa sẵn sàng.",
-          stage: "not_ready",
-        });
-      } catch (_) {}
     }
-    return;
+  }
+  if (msg.action === "translate-selection" && msg.text) {
+    window.postMessage(
+      {
+        source: "feedwriter",
+        type: "translate",
+        text: msg.text,
+        mode: msg.mode || "auto",
+      },
+      "*"
+    );
   }
   if (msg.action === "unshorten-result") {
     if (msg.error) {
-      finishUnshorten("✗ Bóc link lỗi", true);
+      finishUnshorten("Bóc link lỗi", true);
       openOverlay(
         '<div class="fbs-error">' + esc(msg.error) + "</div>",
         false,
@@ -2394,9 +2562,9 @@ chrome.runtime.onMessage.addListener((msg) => {
     } else if (msg.text) {
       navigator.clipboard
         .writeText(msg.text)
-        .then(() => finishUnshorten("✓ Đã copy link", false))
+        .then(() => finishUnshorten("Đã copy link", false))
         .catch(() => {
-          finishUnshorten("✗ Lỗi clipboard", true);
+          finishUnshorten("Lỗi clipboard", true);
           openOverlay(
             '<div class="fbs-error">Lỗi ghi clipboard. Link gốc là:<br><code>' +
               esc(msg.text) +
@@ -2411,79 +2579,89 @@ chrome.runtime.onMessage.addListener((msg) => {
 // === INJECT BUTTON ===
 function inject(target, seeMoreClickable, textContainer, seeMoreOriginal) {
   if (injected.has(target)) {
-    if (target.querySelector(".fbs-wrap, .fbs-btn, .fbs-btn-inline")) return;
+    // Keep if a healthy (non-stretched) button already exists
+    const existing = target.querySelector(".fbs-wrap[data-fbs-ui='v3'] .fbs-btn, .fbs-btn-inline[data-fbs-ui='v3']");
+    if (existing) return;
+    // Drop broken/legacy buttons so we can re-inject
+    target.querySelectorAll(".fbs-wrap, .fbs-btn:not(.fbs-copy-btn):not(.fbs-post-status-btn), .fbs-btn-inline").forEach((el) => {
+      try { el.remove(); } catch (_) {}
+    });
     injected.delete(target);
   }
   injected.add(target);
 
-  const isInline = !!(seeMoreOriginal && seeMoreOriginal.parentElement);
-  const wrap = document.createElement("span");
-  if (isInline) {
-    wrap.style.cssText =
-      "display:inline;position:relative;vertical-align:baseline;";
-  } else {
-    wrap.className = "fbs-wrap";
-  }
-  const readStats = calcReadTime(textContainer || target);
-  wrap.appendChild(isInline ? createInlineBtn(readStats) : createBtn(readStats));
+  // Prefer INLINE chip after "Xem thêm" — never stretch absolute on media blocks.
+  const canInline = !!(seeMoreOriginal && seeMoreOriginal.parentElement);
 
   let inserted = false;
 
-  // 1) Insert after "Xem thêm" text element (don't wrap/move it)
-  if (!inserted && seeMoreOriginal && seeMoreOriginal.parentElement) {
+  if (canInline) {
+    const wrap = document.createElement("span");
+    wrap.setAttribute("data-fbs-ui", "v3");
+    wrap.className = "fbs-wrap fbs-wrap-inline";
+    const btnNode = createInlineBtn();
+    if (btnNode.setAttribute) btnNode.setAttribute("data-fbs-ui", "v3");
+    wrap.appendChild(btnNode);
     try {
-      seeMoreOriginal.parentElement.insertBefore(
-        wrap,
-        seeMoreOriginal.nextSibling,
-      );
+      seeMoreOriginal.parentElement.insertBefore(wrap, seeMoreOriginal.nextSibling);
       inserted = true;
     } catch (e) {}
-  }
-
-  // 2) Insert after clickable
-  if (!inserted && seeMoreClickable && seeMoreClickable.parentElement) {
-    try {
-      seeMoreClickable.parentElement.insertBefore(
-        wrap,
-        seeMoreClickable.nextSibling,
-      );
-      inserted = true;
-    } catch (e) {}
-  }
-
-  // 3) Append to text container
-  if (!inserted && textContainer) {
-    try {
-      textContainer.appendChild(wrap);
-      inserted = true;
-    } catch (e) {}
-  }
-
-  // 4) Fallback absolute
-  if (!inserted) {
-    wrap.className = "fbs-wrap";
-    const pos = getComputedStyle(target).position;
-    if (pos === "static" || pos === "") target.style.position = "relative";
-    target.appendChild(wrap);
-  }
-
-  const btnEl =
-    wrap.querySelector(".fbs-btn") || wrap.querySelector(".fbs-btn-inline");
-  // role="button" elements must be operable by keyboard (Enter / Space).
-  btnEl.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      btnEl.click();
+    if (!inserted && seeMoreClickable && seeMoreClickable.parentElement) {
+      try {
+        seeMoreClickable.parentElement.insertBefore(wrap, seeMoreClickable.nextSibling);
+        inserted = true;
+      } catch (e) {}
     }
-  });
+    if (!inserted && textContainer) {
+      try {
+        textContainer.appendChild(wrap);
+        inserted = true;
+      } catch (e) {}
+    }
+    if (inserted) {
+      const btnEl = wrap.querySelector(".fbs-btn-inline") || wrap;
+      btnEl.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          btnEl.click();
+        }
+      });
+      // Wire click on wrap path below via shared handler
+      wrap._fbsIsInlineInject = true;
+    }
+  }
+
+  // Fallback: fixed corner chip on the post unit (never full-bleed absolute button)
+  if (!inserted) {
+    const postUnit =
+      (target && _isFeedPostCandidate(target) && target) ||
+      (textContainer && textContainer.closest?.('[data-pagelet^="FeedUnit"], [data-virtualized], article[role="article"]')) ||
+      target;
+    if (postUnit && typeof _mountPostChip === "function") {
+      _mountPostChip(postUnit);
+      inserted = true;
+    }
+  }
+
+  // Legacy absolute wrap removed — it was stretched by FB image layouts.
+  if (!inserted) return;
+
+  // Chip path has its own click handler in _mountPostChip
+  const inlineWrap =
+    (seeMoreOriginal &&
+      seeMoreOriginal.parentElement &&
+      seeMoreOriginal.parentElement.querySelector(".fbs-wrap-inline[data-fbs-ui='v3']")) ||
+    (textContainer && textContainer.querySelector(".fbs-wrap-inline[data-fbs-ui='v3']")) ||
+    (target && target.querySelector && target.querySelector(".fbs-wrap-inline[data-fbs-ui='v3']"));
+  const btnEl =
+    (inlineWrap && (inlineWrap.querySelector(".fbs-btn-inline") || inlineWrap)) || null;
+  if (!btnEl) return;
+
   btnEl.addEventListener("click", async (e) => {
     e.stopPropagation();
     const type = "summary";
-    const title = "Đang tóm tắt...";
     openOverlay(
-      '<div class="fbs-loading"><div class="fbs-spinner"></div><span>' +
-        title +
-        "</span></div>",
+      '<div class="fbs-loading"><div class="fbs-spinner"></div><span>Đang tóm tắt...</span></div>',
       false,
       type,
     );
@@ -2502,7 +2680,7 @@ function inject(target, seeMoreClickable, textContainer, seeMoreOriginal) {
         "",
     );
 
-    // Collapse back: try "Ẩn bớt" button first (FB re-added it), fallback to toggle click
+    // Collapse back
     const collapseBtn = findCollapseBtn(textContainer || target);
     if (collapseBtn) {
       try {
@@ -2562,19 +2740,15 @@ function createFloatingToolbar() {
   floatingToolbar.setAttribute("role", "toolbar");
   floatingToolbar.setAttribute("aria-label", "FeedWriter — công cụ cho vùng chọn");
   floatingToolbar.innerHTML =
-    '<div class="fbs-floating-brand" aria-hidden="true"><img src="' +
+    '<button class="fbs-floating-btn fbs-btn-highlight" data-action="summary" title="Tóm tắt"><img src="' +
     ICON_BASE64 +
-    '" width="14" height="14" alt=""></div>' +
-    '<button type="button" class="fbs-floating-btn fbs-btn-highlight" data-action="summary" title="Tóm tắt vùng chọn">' +
-    "<span>Tóm tắt</span></button>" +
-    '<button type="button" class="fbs-floating-btn fbs-floating-status" data-action="status_share" title="Viết Status ngôi thứ nhất">' +
-    "<span>Status</span></button>" +
-    '<button type="button" class="fbs-floating-btn fbs-floating-aff" data-action="affiliate" title="Chế bài Affiliate">' +
-    "<span>Affiliate</span></button>" +
+    '" width="13" height="13" alt=""> Tóm tắt</button>' +
+    '<button class="fbs-floating-btn" data-action="translate" data-mode="auto" title="Dịch EN→VI">Dịch</button>' +
+    '<button class="fbs-floating-btn" data-action="translate" data-mode="slang" title="Slang / thành ngữ">Slang</button>' +
+    '<button class="fbs-floating-btn" data-action="translate" data-mode="collocation" title="Collocations">Cụm từ</button>' +
+    '<button class="fbs-floating-btn" data-action="translate" data-mode="shadowing" title="Shadowing luyện nói">Shadow</button>' +
     (SITE === "facebook"
-      ? '<span class="fbs-floating-sep" aria-hidden="true"></span>' +
-        '<button type="button" class="fbs-floating-btn fbs-floating-batch" data-action="batch" title="Chọn nhiều bài (Alt+B)">' +
-        "<span>Batch</span></button>"
+      ? '<button class="fbs-floating-btn" data-action="batch" title="Chọn nhiều bài (Alt+B)">Batch</button>'
       : "");
   document.body.appendChild(floatingToolbar);
 
@@ -2586,19 +2760,36 @@ function createFloatingToolbar() {
     const action = btn.getAttribute("data-action");
     if (action === "batch") {
       floatingToolbar.classList.remove("fbs-visible");
-      if (batchMode) exitBatchMode(); else enterBatchMode();
+      if (batchMode) exitBatchMode();
+      else enterBatchMode();
       return;
     }
     const sel = window.getSelection();
     const text = sel.toString().trim();
-    if (text) {
-      floatingToolbar.classList.remove("fbs-visible");
-      const anchor =
-        sel.rangeCount > 0
-          ? sel.getRangeAt(0).startContainer.parentElement
-          : null;
-      summarizeText(text, action, anchor);
+    if (!text) return;
+    floatingToolbar.classList.remove("fbs-visible");
+
+    if (action === "translate") {
+      const mode = btn.getAttribute("data-mode") || "auto";
+      // Bridge to translate.js (separate content-script world) via window message
+      window.postMessage(
+        { source: "feedwriter", type: "translate", text, mode },
+        "*"
+      );
+      // Also try runtime message for pages where translate listens
+      try {
+        chrome.runtime.sendMessage({
+          action: "relay-translate",
+          text,
+          mode,
+        });
+      } catch (_) {}
+      return;
     }
+
+    const anchor =
+      sel.rangeCount > 0 ? sel.getRangeAt(0).startContainer.parentElement : null;
+    summarizeText(text, action === "summary" ? "summary" : action, anchor);
   });
 
   const hideToolbar = () => {
@@ -2617,8 +2808,15 @@ function handleSelection() {
   setTimeout(() => {
     const selection = window.getSelection();
     const text = selection.toString().trim();
-    // Gate on SUMMARIZE_MIN_CHARS (same as summarizeText), not MIN_LEN (feed inject).
-    if (text.length < SUMMARIZE_MIN_CHARS || selection.rangeCount === 0) {
+    if (selection.rangeCount === 0) {
+      floatingToolbar.classList.remove("fbs-visible");
+      return;
+    }
+    // Translate: short EN phrases OK. Summary still needs MIN_LEN.
+    const canTranslate =
+      text.length >= 2 && text.length <= 2000 && /[A-Za-z]/.test(text);
+    const canSummary = text.length >= MIN_LEN;
+    if (!canTranslate && !canSummary) {
       floatingToolbar.classList.remove("fbs-visible");
       return;
     }
@@ -2628,18 +2826,30 @@ function handleSelection() {
       floatingToolbar.classList.remove("fbs-visible");
       return;
     }
-    // Make it visible first so we can measure its real width/height, then
-    // centre on the selection and clamp inside the viewport (never off-screen).
+
+    floatingToolbar.querySelectorAll("[data-action]").forEach((btn) => {
+      const action = btn.getAttribute("data-action");
+      if (action === "summary" || action === "batch") {
+        btn.disabled = !canSummary;
+        btn.style.opacity = canSummary ? "1" : "0.35";
+        btn.style.pointerEvents = canSummary ? "" : "none";
+      } else if (action === "translate") {
+        btn.disabled = !canTranslate;
+        btn.style.opacity = canTranslate ? "1" : "0.35";
+        btn.style.pointerEvents = canTranslate ? "" : "none";
+      }
+    });
+
     floatingToolbar.classList.add("fbs-visible");
-    const tbW = floatingToolbar.offsetWidth || 160;
+    const tbW = floatingToolbar.offsetWidth || 300;
     const tbH = floatingToolbar.offsetHeight || 40;
     const M = 8;
     let left = rect.left + rect.width / 2 - tbW / 2;
     left = Math.max(M, Math.min(left, window.innerWidth - tbW - M));
     let below = false;
-    let top = rect.top - tbH - 8; // preferred: above the selection
+    let top = rect.top - tbH - 8;
     if (top < M) {
-      top = rect.bottom + 8; // not enough room above → flip below
+      top = rect.bottom + 8;
       below = true;
     }
     floatingToolbar.classList.toggle("fbs-below", below);
@@ -2668,106 +2878,180 @@ const visiblePosts = new Set();
 let postObserver = null;
 if (typeof IntersectionObserver !== "undefined") {
   postObserver = new IntersectionObserver((entries) => {
-    let becameVisible = false;
     for (const entry of entries) {
       if (entry.isIntersecting) {
-        if (!visiblePosts.has(entry.target)) becameVisible = true;
         visiblePosts.add(entry.target);
       } else {
         visiblePosts.delete(entry.target);
       }
     }
-    // Re-scan when posts enter the viewport (IO-gated scanners skip off-screen work)
-    if (becameVisible && typeof scheduleScan === "function") scheduleScan();
   }, { rootMargin: "800px 0px" });
 }
 
-// === FB ALL POSTS (Feature 6) — hover "Tóm tắt" for posts without "Xem thêm" ===
+// === FB ALL POSTS (Feature 6) — one fixed chip per top-level feed post ===
+
+/** True if node looks like a feed post unit (not a nested comment / media shell). */
+function _isFeedPostCandidate(el) {
+  if (!el || el.nodeType !== 1) return false;
+  const pagelet = el.getAttribute("data-pagelet") || "";
+  if (pagelet.startsWith("FeedUnit")) return true;
+  if (el.getAttribute("role") === "article") return true;
+  if (el.hasAttribute("data-virtualized")) return true;
+  return false;
+}
+
+/**
+ * Collect unique TOP-LEVEL posts only.
+ * Avoids injecting into every nested article / photo / comment shell
+ * (which caused giant stretched buttons on images).
+ */
+function _getTopLevelFeedPosts(root) {
+  const raw = [
+    ...root.querySelectorAll('div[data-pagelet^="FeedUnit"]'),
+    ...root.querySelectorAll('div[role="feed"] > div'),
+    ...root.querySelectorAll('div[role="main"] [data-virtualized]'),
+    ...root.querySelectorAll('div[role="main"] article[role="article"]'),
+  ];
+  const seen = new Set();
+  const tops = [];
+  for (const el of raw) {
+    if (!el || seen.has(el)) continue;
+    // Skip if contained in another candidate (keep outermost)
+    let nested = false;
+    for (const other of raw) {
+      if (other !== el && other.contains(el)) {
+        nested = true;
+        break;
+      }
+    }
+    if (nested) continue;
+    // Skip tiny / non-post shells (image-only tiles often < 120px tall without text)
+    const text = (el.innerText || "").replace(/\s+/g, " ").trim();
+    if (text.length < MIN_LEN) continue;
+    // Skip comment-only blocks: many short lines of names without body
+    if (el.querySelector('form[role="presentation"], div[aria-label*="Viết bình luận"], div[aria-label*="Write a comment"]')
+        && text.length < MIN_LEN * 1.5
+        && !el.querySelector('div[dir="auto"]')) {
+      continue;
+    }
+    seen.add(el);
+    tops.push(el);
+  }
+  return tops;
+}
+
+/** Remove any FeedWriter chips that Facebook layout has stretched. */
+function _purgeBrokenChips(scope) {
+  const root = scope || document;
+  root.querySelectorAll(".fbs-allpost-btn, .fbs-chip-host, .fbs-wrap:not(.fbs-wrap-inline)").forEach((el) => {
+    try {
+      const h = el.offsetHeight || 0;
+      const w = el.offsetWidth || 0;
+      // Normal chip ~28–40px tall, ~70–140px wide. Anything huge = layout hijack.
+      if (h > 48 || w > 220 || h > w * 1.8) {
+        el.remove();
+      }
+    } catch (_) {}
+  });
+}
+
+/**
+ * Mount a FIXED-SIZE chip host in the top-right of a post.
+ * Host is isolated so FB flex/grid cannot stretch the button with the image.
+ */
+function _mountPostChip(article) {
+  // Already has a healthy host?
+  const existingHost = article.querySelector(":scope > .fbs-chip-host[data-fbs-ui='v3']");
+  if (existingHost) {
+    const btn = existingHost.querySelector(".fbs-allpost-btn");
+    if (btn && (btn.offsetHeight || 0) <= 48 && (existingHost.offsetHeight || 0) <= 48) return;
+    try { existingHost.remove(); } catch (_) {}
+  }
+  // Drop any loose buttons from older builds
+  article.querySelectorAll(".fbs-allpost-btn, .fbs-chip-host, .fbs-wrap:not(.fbs-wrap-inline)").forEach((el) => {
+    try { el.remove(); } catch (_) {}
+  });
+
+  const pos = getComputedStyle(article).position;
+  if (pos === "static" || pos === "") {
+    // Isolate without fighting FB layout too hard
+    article.style.position = "relative";
+  }
+
+  const host = document.createElement("div");
+  host.className = "fbs-chip-host";
+  host.setAttribute("data-fbs-ui", "v3");
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "fbs-allpost-btn";
+  btn.setAttribute("data-fbs-action", "summarize");
+  btn.setAttribute("data-fbs-ui", "v3");
+  btn.title = "Tóm tắt bài này";
+  btn.innerHTML =
+    '<img class="fbs-btn-icon" src="' + ICON_BASE64 + '" width="12" height="12" alt="" aria-hidden="true">' +
+    '<span class="fbs-btn-label">Tóm tắt</span>';
+
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const t = (article.innerText || "").trim();
+    if (t.length >= MIN_LEN) summarizeText(t, "summary", article);
+  });
+
+  host.appendChild(btn);
+  article.appendChild(host);
+}
+
 function scanFBAllPosts() {
   if (SITE !== "facebook") return;
-  const root = document.querySelector('div[role="main"]') || document.querySelector('div[id^="mount_0_0"]') || document.body;
+  const root =
+    document.querySelector('div[role="main"]') ||
+    document.querySelector('div[id^="mount_0_0"]') ||
+    document.body;
 
-  // Support both old layout (role="article"), new virtualized layout (data-virtualized), and modern feed units (data-pagelet)
-  const candidates = [
-    ...root.querySelectorAll('article[role="article"]'),
-    ...root.querySelectorAll('[data-virtualized]'),
-    ...root.querySelectorAll('div[data-pagelet^="FeedUnit"]'),
-  ];
-  const useIO = !!postObserver;
-  let processed = 0;
-  let skippedOffscreen = 0;
+  _purgeBrokenChips(root);
 
-  for (const article of candidates) {
-    const st = getPostState(article);
-    const isNew = !st.observed;
-    if (postObserver && isNew) {
-      st.observed = true;
+  const posts = _getTopLevelFeedPosts(root);
+  for (const article of posts) {
+    if (postObserver && !article.dataset.fbsObserved) {
+      article.dataset.fbsObserved = "1";
       postObserver.observe(article);
     }
 
-    // IO-gate: skip re-query for off-screen posts already processed
-    if (useIO && !isNew && !visiblePosts.has(article) && st.allPostInjected) {
-      skippedOffscreen++;
-      continue;
-    }
-
-    if (st.allPostInjected) {
-      if (article.querySelector(".fbs-allpost-btn")) continue;
-      st.allPostInjected = false;
-    }
-    // Skip if already has a regular fbs button
-    if (article.querySelector(".fbs-wrap, .fbs-btn, .fbs-btn-inline, .fbs-allpost-btn")) continue;
-    // Skip if this is nested inside another post container (comment articles)
-    let depth = 0;
-    let anc = article.parentElement;
-    for (let j = 0; j < 20; j++) {
-      if (!anc || anc === document.body) break;
-      if (
-        anc.getAttribute("role") === "article" ||
-        anc.hasAttribute("data-virtualized") ||
-        (anc.getAttribute("data-pagelet") && anc.getAttribute("data-pagelet").startsWith("FeedUnit"))
-      )
-        depth++;
-      anc = anc.parentElement;
-    }
-    if (depth >= 1) continue; // nested = comment/reply
     if (isSponsored(article)) {
-      st.allPostInjected = true;
+      fbAllPostInjected.add(article);
       continue;
     }
-    const text = (article.innerText || "").trim();
-    if (text.length < MIN_LEN) continue;
-    st.allPostInjected = true;
-    processed++;
-    const pos = getComputedStyle(article).position;
-    if (pos === "static" || pos === "") article.style.position = "relative";
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "fbs-allpost-btn";
-    btn.innerHTML =
-      '<img class="fbs-allpost-icon" src="' +
-      ICON_BASE64 +
-      '" width="13" height="13" alt="">' +
-      '<span class="fbs-allpost-label">Tóm tắt</span>';
-    btn.title = "FeedWriter — Tóm tắt bài này";
-    btn.setAttribute("aria-label", "Tóm tắt bài viết bằng FeedWriter");
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      const t = (article.innerText || "").trim();
-      if (t.length >= MIN_LEN) summarizeText(t, "summary", article);
-    });
-    article.appendChild(btn);
-  }
 
-  if (typeof scanPerfCounts !== "undefined" && scanPerfCounts) {
-    scanPerfCounts.fbAllCandidates = candidates.length;
-    scanPerfCounts.fbAllInjected = processed;
-    scanPerfCounts.fbAllSkippedOffscreen = skippedOffscreen;
+    // Skip if inline "Xem thêm" chip already present
+    if (article.querySelector(".fbs-wrap-inline, .fbs-btn-inline[data-fbs-ui='v3']")) {
+      fbAllPostInjected.add(article);
+      continue;
+    }
+
+    // Healthy fixed host already?
+    const host = article.querySelector(":scope > .fbs-chip-host[data-fbs-ui='v3']");
+    if (host) {
+      const btn = host.querySelector(".fbs-allpost-btn");
+      if (btn && (btn.offsetHeight || 0) <= 48 && (host.offsetHeight || 0) <= 48) {
+        fbAllPostInjected.add(article);
+        continue;
+      }
+    }
+
+    if (fbAllPostInjected.has(article) && host) {
+      // was marked but broken — remount
+      fbAllPostInjected.delete(article);
+    }
+
+    _mountPostChip(article);
+    fbAllPostInjected.add(article);
   }
 }
 
 // === COMMENT THREAD SUMMARY (Feature 11) ===
+const commentBtnInjected = new WeakSet();
 function scanCommentSections() {
   if (SITE !== "facebook") return;
   const root = document.querySelector('div[role="main"]') || document.querySelector('div[id^="mount_0_0"]') || document.body;
@@ -2776,23 +3060,7 @@ function scanCommentSections() {
     ...root.querySelectorAll('article[role="article"]'),
     ...root.querySelectorAll('[data-virtualized]'),
   ];
-  const useIO = !!postObserver;
-  let skippedOffscreen = 0;
-
   for (const article of articles) {
-    const st = getPostState(article);
-    const isNew = !st.observed;
-    if (postObserver && isNew) {
-      st.observed = true;
-      postObserver.observe(article);
-    }
-
-    // IO-gate: skip re-query for off-screen posts already processed
-    if (useIO && !isNew && !visiblePosts.has(article) && st.commentInjected) {
-      skippedOffscreen++;
-      continue;
-    }
-
     // Only top-level post containers — not nested in another post
     let depth = 0;
     let ancestor = article.parentElement;
@@ -2802,9 +3070,9 @@ function scanCommentSections() {
       ancestor = ancestor.parentElement;
     }
     if (depth >= 1) continue; // nested = not a top-level post
-    if (st.commentInjected) {
+    if (commentBtnInjected.has(article)) {
       if (article.querySelector(".fbs-comment-summary-btn")) continue;
-      st.commentInjected = false;
+      commentBtnInjected.delete(article);
     }
     // Check for comment articles inside this post
     const commentArticles = article.querySelectorAll('article[role="article"]');
@@ -2816,17 +3084,11 @@ function scanCommentSections() {
       if (t.length > 10) commentTexts.push(t);
     }
     if (commentTexts.length < 2) continue;
-    st.commentInjected = true;
+    commentBtnInjected.add(article);
     const btn = document.createElement("button");
-    btn.type = "button";
     btn.className = "fbs-comment-summary-btn";
-    btn.innerHTML =
-      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>' +
-      "<span>Tóm tắt " +
-      commentTexts.length +
-      " bình luận</span>";
-    btn.title = "FeedWriter — Tóm tắt thread bình luận";
-    btn.setAttribute("aria-label", "Tóm tắt " + commentTexts.length + " bình luận");
+    btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg> Tóm tắt ' + commentTexts.length + ' bình luận';
+    btn.title = "Tóm tắt toàn bộ thread bình luận";
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       e.preventDefault();
@@ -2841,11 +3103,6 @@ function scanCommentSections() {
     const firstComment = commentArticles[0];
     firstComment.parentElement?.insertBefore(btn, firstComment);
   }
-
-  if (typeof scanPerfCounts !== "undefined" && scanPerfCounts) {
-    scanPerfCounts.commentCandidates = articles.length;
-    scanPerfCounts.commentSkippedOffscreen = skippedOffscreen;
-  }
 }
 
 // === BATCH QUEUE (Feature 12) ===
@@ -2858,19 +3115,10 @@ function createBatchBar() {
   if (batchBar) return;
   batchBar = document.createElement("div");
   batchBar.className = "fbs-batch-bar";
-  batchBar.setAttribute("role", "status");
   batchBar.innerHTML =
-    '<div class="fbs-batch-bar-left">' +
-    '<img class="fbs-batch-logo" src="' +
-    ICON_BASE64 +
-    '" width="16" height="16" alt="">' +
     '<span class="fbs-batch-count">0 bài đã chọn</span>' +
-    '<span class="fbs-batch-hint">Alt+B để thoát</span>' +
-    "</div>" +
-    '<div class="fbs-batch-bar-actions">' +
-    '<button type="button" class="fbs-batch-run-btn">Tóm tắt tất cả</button>' +
-    '<button type="button" class="fbs-batch-cancel-btn" title="Thoát Batch Mode" aria-label="Thoát Batch Mode">✕</button>' +
-    "</div>";
+    '<button class="fbs-batch-run-btn">Tóm tắt tất cả</button>' +
+    '<button class="fbs-batch-cancel-btn" title="Thoát Batch Mode" aria-label="Thoát Batch Mode">×</button>';
   document.body.appendChild(batchBar);
   batchBar.querySelector(".fbs-batch-run-btn").addEventListener("click", runBatch);
   batchBar.querySelector(".fbs-batch-cancel-btn").addEventListener("click", exitBatchMode);
@@ -2878,11 +3126,7 @@ function createBatchBar() {
 
 function updateBatchBar() {
   if (!batchBar) return;
-  const n = batchQueue.length;
-  batchBar.querySelector(".fbs-batch-count").textContent =
-    n + " bài đã chọn";
-  const runBtn = batchBar.querySelector(".fbs-batch-run-btn");
-  if (runBtn) runBtn.disabled = n === 0;
+  batchBar.querySelector(".fbs-batch-count").textContent = batchQueue.length + " bài đã chọn";
 }
 
 function enterBatchMode() {
@@ -2988,43 +3232,26 @@ const ALL_CLUTTER_LABELS_NORM = ALL_CLUTTER_LABELS.map(kw =>
 let clutterToast = null;
 let clutterToastTimer = null;
 
-function showClutterToast(count) {
-  if (!clutterToast) {
-    clutterToast = document.createElement("div");
-    clutterToast.style.cssText =
-      "position:fixed;bottom:72px;right:20px;z-index:2147483641;" +
-      "background:rgba(20,10,40,0.92);color:#c9b8ff;font-size:12px;font-weight:600;" +
-      "padding:7px 14px;border-radius:20px;border:1px solid rgba(168,85,247,0.35);" +
-      "backdrop-filter:blur(6px);pointer-events:none;transition:opacity 0.3s;" +
-      "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;";
-    document.body.appendChild(clutterToast);
-  }
-  clutterToast.textContent = "🧹 Đã ẩn " + count + " phần tử thừa";
-  clutterToast.style.opacity = "1";
-  clearTimeout(clutterToastTimer);
-  clutterToastTimer = setTimeout(() => { if (clutterToast) clutterToast.style.opacity = "0"; }, 2500);
+function showClutterToast(_count) {
+  // Silent — no toast (user preference)
 }
 
 function _hideWrapper(wrapper) {
-  // Walk up to a single-child pass-through parent if present
+  // Instant hide — ads must disappear before user scrolls past (no 240ms anim)
   let toHide = wrapper;
   const par = wrapper.parentElement;
-  if (par && par !== document.body &&
-      par.getAttribute("role") !== "feed" &&
-      par.getAttribute("role") !== "main" &&
-      par.children.length === 1) {
+  if (
+    par &&
+    par !== document.body &&
+    par.getAttribute("role") !== "feed" &&
+    par.getAttribute("role") !== "main" &&
+    par.children.length === 1 &&
+    (typeof _isFbLayoutColumn !== "function" || !_isFbLayoutColumn(par))
+  ) {
     toHide = par;
   }
-  // Smooth collapse: shrink height with CSS transition → then display:none.
-  // This prevents the jarring layout jump from instant display:none.
-  const h = toHide.offsetHeight;
-  toHide.style.cssText += ";overflow:hidden!important;transition:max-height 0.22s ease,opacity 0.18s ease;max-height:" + h + "px;opacity:1";
-  // RAF ensures browser paints the starting state before we animate to 0
-  requestAnimationFrame(() => {
-    toHide.style.maxHeight = "0";
-    toHide.style.opacity = "0";
-    setTimeout(() => toHide.style.setProperty("display", "none", "important"), 240);
-  });
+  toHide.style.setProperty("display", "none", "important");
+  toHide.setAttribute("data-fbs-hidden", "1");
 }
 
 
@@ -3057,6 +3284,9 @@ let activeUnshortenPill = null;
 let activeUnshortenOriginalHTML = "";
 let unshortenTimeout = null;
 
+const UNSHORTEN_PILL_STYLE =
+  "cursor:pointer;display:inline-flex;align-items:center;gap:4px;padding:0px 6px 1px;border-radius:6px;background:rgba(255,107,107,0.15);color:#ff6b6b;font-size:0.85em;font-weight:bold;margin-left:4px;";
+
 // Restore the active pill to its idle state after a brief result message.
 function finishUnshorten(message, isError) {
   clearTimeout(unshortenTimeout);
@@ -3064,14 +3294,14 @@ function finishUnshorten(message, isError) {
   const pill = activeUnshortenPill;
   activeUnshortenPill = null;
   if (!pill) return;
-  pill.classList.remove("fbs-pill-busy");
-  pill.classList.toggle("fbs-pill-error", !!isError);
-  pill.classList.toggle("fbs-pill-ok", !isError);
+  pill.style.pointerEvents = "";
+  pill.style.color = isError ? "#ff6b6b" : "#2ed573";
   pill.textContent = message;
   const original = activeUnshortenOriginalHTML;
   setTimeout(() => {
     pill.innerHTML = original;
-    pill.classList.remove("fbs-pill-error", "fbs-pill-ok", "fbs-pill-busy");
+    pill.style.opacity = "";
+    pill.style.color = "";
   }, 2500);
 }
 
@@ -3080,25 +3310,25 @@ function scanShopeeLinks() {
   for (const a of links) {
     if (a.dataset.fbsUnshorten) continue;
     a.dataset.fbsUnshorten = "1";
-    const pill = document.createElement("button");
-    pill.type = "button";
-    pill.className = "fbs-unshorten-pill";
-    pill.title = "Mở trang tạo link affiliate Shopee chính thức";
-    pill.setAttribute("aria-label", "Bóc link Shopee affiliate");
-    pill.innerHTML =
-      '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>' +
-      "<span>Bóc Link</span>";
+    const btn = document.createElement("span");
+    btn.innerHTML =
+      ' <span class="fbs-unshorten-pill" title="Bóc Link Không Cookie" style="' +
+      UNSHORTEN_PILL_STYLE +
+      '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>Bóc Link</span>';
+    const pill = btn.querySelector("span");
     const originalHTML = pill.innerHTML;
     pill.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
+      // Single in-flight: ignore clicks (this or other pills) while one runs.
       if (unshortenInFlight) return;
       unshortenInFlight = true;
       activeUnshortenPill = pill;
       activeUnshortenOriginalHTML = originalHTML;
-      pill.classList.add("fbs-pill-busy");
-      pill.classList.remove("fbs-pill-error", "fbs-pill-ok");
-      pill.textContent = "Đang bóc…";
+      pill.style.opacity = "0.65";
+      pill.style.pointerEvents = "none";
+      pill.style.color = "";
+      pill.textContent = "Đang bóc link…";
       clearTimeout(unshortenTimeout);
       unshortenTimeout = setTimeout(() => {
         finishUnshorten("Quá hạn — thử lại", true);
@@ -3107,47 +3337,36 @@ function scanShopeeLinks() {
         .sendMessage({ action: "unshorten-shopee-inline", url: a.href })
         .catch(() => finishUnshorten("Lỗi gửi yêu cầu", true));
     });
-    a.insertAdjacentElement("afterend", pill);
+    a.insertAdjacentElement("afterend", btn);
   }
 }
 
-/** Set during a scan when localStorage.fbsDebugPerf === '1' */
-let scanPerfCounts = null;
-
 function scan() {
   if (!isContextValid() || isBlocked) return;
-  const debugPerf =
-    typeof localStorage !== "undefined" && localStorage.fbsDebugPerf === "1";
-  const t0 = debugPerf ? performance.now() : 0;
-  scanPerfCounts = debugPerf ? {} : null;
-
+  if (document.hidden) return;
   if (SITE === "reddit") scanRedditPosts();
-  hideFeedClutter();
+  // Sponsored first (fast) then rest
+  scanSponsoredFast();
+  try {
+    _purgeBrokenChips(document);
+  } catch (_) {}
   findNewSeeMoreElements().forEach(processSeeMore);
   scanFBAllPosts();
-  scanCommentSections();
+  if (!scan._skipComments) scanCommentSections();
   scanShopeeLinks();
   scanAffiliatePosts();
-
-  if (debugPerf) {
-    console.debug(
-      "[FeedWriter] scan",
-      (performance.now() - t0).toFixed(1) + "ms",
-      {
-        visible: visiblePosts.size,
-        ...scanPerfCounts,
-      },
-    );
-  }
-  scanPerfCounts = null;
 }
 
 let scanDebounceTimer = null;
 let scanScheduled = false;
-const SCAN_DEBOUNCE_MS = 600;
+let sponsoredDebounceTimer = null;
+let sponsoredScheduled = false;
+const SCAN_DEBOUNCE_MS = 400;
+const SPONSORED_DEBOUNCE_MS = 32; // ~1 frame — hide ads ASAP
+let _scanSafetyCount = 0;
 
 function scheduleScan() {
-  if (scanScheduled) return;
+  if (scanScheduled || document.hidden) return;
   scanScheduled = true;
   clearTimeout(scanDebounceTimer);
   scanDebounceTimer = setTimeout(() => {
@@ -3156,16 +3375,48 @@ function scheduleScan() {
   }, SCAN_DEBOUNCE_MS);
 }
 
+function scheduleSponsoredFast() {
+  if (document.hidden || SITE !== "facebook") return;
+  if (sponsoredScheduled) return;
+  sponsoredScheduled = true;
+  clearTimeout(sponsoredDebounceTimer);
+  sponsoredDebounceTimer = setTimeout(() => {
+    sponsoredScheduled = false;
+    try {
+      scanSponsoredFast();
+    } catch (_) {}
+  }, SPONSORED_DEBOUNCE_MS);
+}
+
+// Immediate first pass
+scanSponsoredFast();
 scan();
 scheduleScan();
 
-// Safety-net only: periodic scan catches posts missed by MutationObserver
-scanTimer = setInterval(scan, 15000);
+// Catch ads that load portals slightly after the post (~0.3–1s)
+let sponsoredCatchup = 0;
+const sponsoredCatchupTimer = setInterval(() => {
+  if (document.hidden || SITE !== "facebook") return;
+  scanSponsoredFast();
+  if (++sponsoredCatchup > 40) {
+    // after ~20s of catch-up, slow to every 1.5s (handled by safety below)
+  }
+}, 500);
 
-// Chrome throttles background tabs and Facebook may rebuild virtualized feed
-// nodes while a tab is idle. Re-scan as soon as the user returns.
+// Safety full scan
+scanTimer = setInterval(() => {
+  if (document.hidden) return;
+  _scanSafetyCount++;
+  scan._skipComments = _scanSafetyCount % 2 === 0;
+  scanSponsoredFast();
+  scan();
+}, 2500);
+
 const resumeScan = () => {
-  if (document.visibilityState === "visible") scan();
+  if (document.visibilityState === "visible") {
+    scanSponsoredFast();
+    scan();
+  }
 };
 document.addEventListener("visibilitychange", resumeScan);
 window.addEventListener("focus", resumeScan);
@@ -3177,61 +3428,52 @@ listeners.push({ element: window, event: "pageshow", handler: resumeScan });
 let fastScanPending = false;
 const scanObserver = new MutationObserver((mutations) => {
   let hasNewPost = false;
+  let hasPortal = false;
   for (const m of mutations) {
     for (const node of m.addedNodes) {
       if (node.nodeType !== 1) continue;
-      const isPost = node.getAttribute?.("role") === "article" ||
-                     node.hasAttribute?.("data-virtualized") ||
-                     (node.getAttribute?.("data-pagelet") || "").startsWith("FeedUnit");
-      const isPortal = node.classList?.contains("__fb-light-mode");
-      if (isPost || isPortal) { hasNewPost = true; break; }
-      if (node.querySelector?.('article[role="article"], [data-virtualized], .__fb-light-mode')) {
-        hasNewPost = true; break;
+      const pagelet = node.getAttribute?.("data-pagelet") || "";
+      const isPost =
+        node.getAttribute?.("role") === "article" ||
+        node.hasAttribute?.("data-virtualized") ||
+        pagelet.startsWith("FeedUnit");
+      const isPortal =
+        node.classList?.contains("__fb-light-mode") ||
+        node.classList?.contains("__fb-dark-mode") ||
+        (node.id && node.tagName === "SPAN" && (node.textContent || "").length < 80);
+      if (isPost) hasNewPost = true;
+      if (isPortal) hasPortal = true;
+      if (
+        !hasNewPost &&
+        node.querySelector?.(
+          'article[role="article"], [data-virtualized], [data-pagelet^="FeedUnit"], .__fb-light-mode, .__fb-dark-mode',
+        )
+      ) {
+        hasNewPost = true;
       }
+      if (hasNewPost && hasPortal) break;
     }
-    if (hasNewPost) break;
+    if (hasNewPost && hasPortal) break;
   }
 
-  if (hasNewPost && !fastScanPending) {
-    fastScanPending = true;
-    requestAnimationFrame(() => {
-      fastScanPending = false;
-      scan();
-    });
-  } else {
-    scheduleScan();
+  // Always prioritize sponsored path on DOM churn
+  if (hasNewPost || hasPortal) {
+    scheduleSponsoredFast();
+    if (!fastScanPending) {
+      fastScanPending = true;
+      requestAnimationFrame(() => {
+        fastScanPending = false;
+        scanSponsoredFast();
+      });
+    }
   }
+  scheduleScan();
 });
-// Prefer feed/main root when present (smaller mutation surface than document.body)
-const scanRoot =
-  document.querySelector('div[role="main"]') ||
-  document.querySelector('div[role="feed"]') ||
-  document.querySelector('div[id^="mount_0_0"]') ||
-  document.body;
-scanObserver.observe(scanRoot, {
+scanObserver.observe(document.documentElement || document.body, {
   childList: true,
   subtree: true,
 });
 observers.push(scanObserver);
-if (scanRoot !== document.body) {
-  // Also watch body for feed remounts (FB SPA navigations)
-  const bodyScanObserver = new MutationObserver((mutations) => {
-    for (const m of mutations) {
-      for (const node of m.addedNodes) {
-        if (node.nodeType !== 1) continue;
-        if (
-          node.getAttribute?.("role") === "main" ||
-          node.querySelector?.('div[role="main"], div[role="feed"]')
-        ) {
-          scheduleScan();
-          return;
-        }
-      }
-    }
-  });
-  bodyScanObserver.observe(document.body, { childList: true, subtree: false });
-  observers.push(bodyScanObserver);
-}
 window.buildCommentText = buildCommentText;
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {

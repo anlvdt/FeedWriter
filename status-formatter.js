@@ -12,9 +12,9 @@ const StatusFormatter = {
       unicodeBold: true,
       unicodeItalic: true,
       titleUppercase: true,
-      titleEmoji: true,
-      bulletChar: "▸",
-      numberStyle: "circled",   // ① ② ③
+      titleEmoji: false,
+      bulletChar: "·",
+      numberStyle: "plain",
       sectionSeparator: "",
       footer: true,
       maxLength: 0,             // no limit
@@ -23,7 +23,7 @@ const StatusFormatter = {
       unicodeBold: false,
       unicodeItalic: false,
       titleUppercase: false,
-      titleEmoji: true,
+      titleEmoji: false,
       bulletChar: "·",
       numberStyle: "plain",     // 1. 2. 3.
       sectionSeparator: "",
@@ -34,8 +34,8 @@ const StatusFormatter = {
       unicodeBold: false,
       unicodeItalic: false,
       titleUppercase: false,
-      titleEmoji: true,
-      bulletChar: "→",
+      titleEmoji: false,
+      bulletChar: "·",
       numberStyle: "plain",
       sectionSeparator: "",
       footer: false,
@@ -46,7 +46,7 @@ const StatusFormatter = {
       unicodeItalic: true,
       titleUppercase: false,
       titleEmoji: false,
-      bulletChar: "▪",
+      bulletChar: "·",
       numberStyle: "plain",
       sectionSeparator: "—",
       footer: true,
@@ -90,9 +90,9 @@ const StatusFormatter = {
     // Must be aggressive — AI sometimes copies footer from examples or prior output
     text = text.replace(/\s*(?:[—-]\s*\n\s*)?Nguồn\s+dưới\s+(?:cmt|bình\s+luận|binh\s+luan)\s+đầu(?:\s+tiên)?\s*$/gi, "");
     text = text.replace(/━━━━━━━━━━\s*/g, "");
-    text = text.replace(/👉\s*(?:Link gốc|Chi tiết)[\s&]*(?:nguồn|mã nguồn)?.*dưới\s+(?:bình\s+luận|cmt)\s+đầu(?:\s+tiên)?\s*$/gim, "");
-    text = text.replace(/👉\s*(?:Chi tiết|Link gốc|Nguồn)\s*&?\s*$/gim, ""); // truncated footer like "👉 Chi tiết &"
-    text = text.replace(/(?:_{5,}|━━━━━━━━━━)\s*(?:👉|•)?\s*(?:Chi\s+tiết|Link\s+gốc|Nguồn)?.*$/gi, "");
+    text = text.replace(/\s*(?:Link gốc|Chi tiết)[\s&]*(?:nguồn|mã nguồn)?.*dưới\s+(?:bình\s+luận|cmt)\s+đầu(?:\s+tiên)?\s*$/gim, "");
+    text = text.replace(/\s*(?:Chi tiết|Link gốc|Nguồn)\s*&?\s*$/gim, ""); // truncated footer like "Chi tiết &"
+    text = text.replace(/(?:_{5,}|━━━━━━━━━━)\s*(?:|•)?\s*(?:Chi\s+tiết|Link\s+gốc|Nguồn)?.*$/gi, "");
 
     // Normalize markdown artifacts
     text = text.replace(/^\*{3}\s*/gm, "**");
@@ -115,7 +115,7 @@ const StatusFormatter = {
       }
       if (inGlossary) {
         // End glossary on: empty line, footer-like content, or separator
-        const isFooterLike = /^👉|^━━|^_{5,}|Chi\s+tiết.*dưới|Link\s+gốc|Nguồn\s+dưới/i.test(trimmed);
+        const isFooterLike = /^|^━━|^_{5,}|Chi\s+tiết.*dưới|Link\s+gốc|Nguồn\s+dưới/i.test(trimmed);
         if (!trimmed || isFooterLike) {
           if (glossaryItems.length > 0) {
             blocks.push({ type: "glossary", items: [...glossaryItems] });
@@ -148,7 +148,7 @@ const StatusFormatter = {
       }
 
       // Skip footer-like lines (renderer adds its own footer)
-      if (/^👉\s*(?:Chi tiết|Link gốc|Nguồn)/i.test(trimmed)) continue;
+      if (/^\s*(?:Chi tiết|Link gốc|Nguồn)/i.test(trimmed)) continue;
       if (/^━━━/.test(trimmed)) continue;
 
       // Title (first non-empty line)
@@ -197,7 +197,7 @@ const StatusFormatter = {
         continue;
       }
 
-      // Bullet: · • - * ✓ ▸ ▪ →
+      // Bullet: · • - * · ▸ ▪ →
       if (trimmed.match(/^[·•\-*✓▸▪→]\s+/)) {
         const bulletText = trimmed.replace(/^[·•\-*✓▸▪→]\s+/, "").trim();
         // Skip empty bullets (marker + whitespace only)
@@ -208,7 +208,7 @@ const StatusFormatter = {
         // Fall through to standalone marker handling below
       }
 
-      // Standalone bullet marker (✓ or · etc. on its own line) — merge with next line
+      // Standalone bullet marker (· or · etc. on its own line) — merge with next line
       if (trimmed.match(/^[·•✓▸▪→]$/) || trimmed.match(/^[·•✓▸▪→]\s*$/)) {
         // Look ahead for the next non-empty line
         let j = i + 1;
@@ -282,10 +282,7 @@ const StatusFormatter = {
           if (profile.titleUppercase) {
             t = t.toUpperCase();
           }
-          if (profile.titleEmoji) {
-            const emoji = this._detectEmoji(block.text);
-            t = emoji + " " + t;
-          }
+          /* title emojis disabled */
           // Skip unicode bold on titles — uppercase already provides emphasis,
           // and mixed Vietnamese + bold-ASCII looks broken.
           lines.push(t);
@@ -413,8 +410,8 @@ const StatusFormatter = {
     const hasRepo = !!options.hasRepo;
     const separator = "━━━━━━━━━━";
     const cta = hasRepo
-      ? "👉 Link gốc & mã nguồn dưới bình luận đầu tiên"
-      : "👉 Chi tiết & nguồn dưới bình luận đầu tiên";
+      ? "Link gốc & mã nguồn dưới bình luận đầu tiên"
+      : "Chi tiết & nguồn dưới bình luận đầu tiên";
     return separator + "\n" + cta;
   },
 
@@ -462,66 +459,9 @@ const StatusFormatter = {
     return n + ".";
   },
 
-  // ── Emoji detection ────────────────────────────────────────────────
-
-  _detectEmoji(title) {
-    const l = title.toLowerCase();
-
-    // Dev / Code
-    if (l.match(/github|gitlab|git|repo|code|coding|lập trình|react|typescript|javascript|python|c\+\+|rust|go\b|java|sql|postgres|database|mã nguồn|framework|library|npm|package/)) return "💻";
-
-    // UI/UX / Design
-    if (l.match(/ui\b|ux\b|design|giao diện|css|tailwind|color|typography|font|figma|thẩm mỹ|phối màu/)) return "🎨";
-
-    // Performance / Speed
-    if (l.match(/performance|speed|optimization|fast|lcp|cwv|memory|leak|tốc độ|tối ưu|benchmark/)) return "⚡";
-
-    // Security
-    if (l.match(/security|privacy|auth|encryption|secure|hack|leak|bảo mật|quyền riêng tư|vulnerability/)) return "🔒";
-
-    // Mobile
-    if (l.match(/ios|android|mobile|swift|kotlin|flutter|react native|di động|smartphone/)) return "📱";
-
-    // Web / Browser
-    if (l.match(/web|chrome|extension|browser|firefox|edge|manifest|trình duyệt|tiện ích/)) return "🌐";
-
-    // DevOps
-    if (l.match(/docker|ci\b|cd\b|devops|deploy|build|setup|npm|yarn|pip|triển khai|kubernetes|k8s/)) return "🔧";
-
-    // Analytics / SEO
-    if (l.match(/analytics|chart|graph|growth|seo|traffic|thống kê|biểu đồ|conversion/)) return "📈";
-
-    // Deep Learning / Research
-    if (l.match(/paper|research|science|brain|cognitive|deep learning|neural|nghiên cứu|khoa học|trí não|model|training/)) return "🧠";
-
-    // AI / Tech
-    if (l.match(/ai\b|công nghệ|tech|phần mềm|app|tool|software|digital|chatgpt|claude|gemini|llm|gpt|copilot/)) return "🤖";
-
-    // Business / Money
-    if (l.match(/kinh doanh|tiền|thu nhập|doanh thu|marketing|bán hàng|business|money|revenue|startup|funding/)) return "💰";
-
-    // Education / Learning
-    if (l.match(/học|giáo dục|khóa học|kiến thức|kỹ năng|education|learning|course|skill|tutorial/)) return "📚";
-
-    // News
-    if (l.match(/tin tức|cập nhật|thông báo|mới|news|update|announcement|ra mắt|launch/)) return "📰";
-
-    // Tips / Guide
-    if (l.match(/tips|hướng dẫn|cách|bí quyết|mẹo|guide|how to/)) return "💡";
-
-    // Warning
-    if (l.match(/cảnh báo|quan trọng|chú ý|lưu ý|warning|important|alert|nguy hiểm|rủi ro/)) return "⚠️";
-
-    // Success
-    if (l.match(/thành công|đạt được|chiến thắng|kỷ lục|success|achievement|win|milestone/)) return "🎉";
-
-    // Comparison / Versus
-    if (l.match(/vs\b|versus|so sánh|đánh giá|review|comparison|benchmark/)) return "⚖️";
-
-    // Open Source
-    if (l.match(/open.?source|mã mở|free|miễn phí|community/)) return "🌟";
-
-    return "📌";
+  // Title prefix icons removed — keep status text clean and professional.
+  _detectEmoji(_title) {
+    return "";
   },
 
   // ── HTML rendering for panel display ───────────────────────────────
@@ -590,18 +530,20 @@ const StatusFormatter = {
           const listTypes = ["bullet", "number"];
           if (listTypes.includes(prev) && listTypes.includes(next)) break;
           if (prev === "title") break;
-          htmlParts.push('<div style="height:6px;"></div>');
+          htmlParts.push('<div class="fbs-para-break" aria-hidden="true"></div>');
           break;
         }
       }
     }
 
-    // Footer — subtle, doesn't repeat if HTML already has one
+    // Footer — class-driven (ui.css v3), no inline zinc colors
     const hasRepo = !!options.hasRepo;
     htmlParts.push(
-      '<div style="margin:10px 0 4px;border-top:1px solid rgba(255,255,255,0.08);padding-top:8px;text-align:center;font-size:11.5px;color:rgba(255,255,255,0.3);">' +
-      '👉 ' + (hasRepo ? 'Link gốc & mã nguồn dưới bình luận đầu tiên' : 'Chi tiết & nguồn dưới bình luận đầu tiên') +
-      '</div>'
+      '<div class="fbs-source-footer">' +
+      (hasRepo
+        ? "Link gốc & mã nguồn dưới bình luận đầu tiên"
+        : "Chi tiết & nguồn dưới bình luận đầu tiên") +
+      "</div>"
     );
 
     return htmlParts.join("");

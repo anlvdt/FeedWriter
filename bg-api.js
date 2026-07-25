@@ -180,12 +180,63 @@ async function markKeyRateLimited(key, retryAfterMs) {
   await chrome.storage.local.set({ keyStatus });
 }
 
+/** Soft cooldown after timeouts / transient errors (short). */
+async function markKeyCooldown(key, retryAfterMs, reason = "cooldown") {
+  const ms = Math.max(15_000, retryAfterMs || 60_000);
+  const localData = await chrome.storage.local.get(["keyStatus"]);
+  const keyStatus = localData.keyStatus || {};
+  keyStatus[key] = {
+    ...(keyStatus[key] || {}),
+    rateLimitedUntil: Date.now() + ms,
+    lastRateLimited: Date.now(),
+    lastError: reason,
+  };
+  await chrome.storage.local.set({ keyStatus });
+}
+
+/** Clear all key cooldowns (used by Test connection / user stuck). */
+async function clearAllKeyCooldowns() {
+  const localData = await chrome.storage.local.get(["keyStatus"]);
+  const keyStatus = localData.keyStatus || {};
+  let changed = false;
+  for (const key of Object.keys(keyStatus)) {
+    if (keyStatus[key]?.rateLimitedUntil) {
+      delete keyStatus[key].rateLimitedUntil;
+      keyStatus[key].lastError = null;
+      changed = true;
+    }
+  }
+  if (changed) await chrome.storage.local.set({ keyStatus });
+  return changed;
+}
+
 function parseRetryAfter(errorMessage) {
   const match = errorMessage?.match(/try again in (\d+)m([\d.]+)s/i);
   if (match) return (parseInt(match[1]) * 60 + parseFloat(match[2])) * 1000;
   const secMatch = errorMessage?.match(/retry.?after:?\s*(\d+)/i);
   if (secMatch) return parseInt(secMatch[1]) * 1000;
-  return 30 * 60 * 1000;
+  // "Please try again in 2m30s" style
+  const m2 = errorMessage?.match(/in\s+(\d+)\s*m(?:in(?:ute)?s?)?/i);
+  if (m2) return parseInt(m2[1], 10) * 60 * 1000;
+  return 15 * 60 * 1000; // default 15 min (was 30 — less sticky)
+}
+
+/** Classify provider error for cooldown + user message */
+function classifyProviderError(errMsg = "", status = 0) {
+  const m = String(errMsg || "").toLowerCase();
+  if (status === 401 || status === 403 || /invalid|unauthorized|forbidden|incorrect api key|api key not|not valid|authentication/i.test(m)) {
+    return { kind: "invalid", cooldownMs: 60 * 60 * 1000 }; // 1h
+  }
+  if (status === 429 || /rate limit|quota|too many requests|resource.?exhausted/i.test(m)) {
+    return { kind: "rate", cooldownMs: parseRetryAfter(errMsg) };
+  }
+  if (/timeout|quá chậm|aborted|network|failed to fetch|ECONN|ENOTFOUND/i.test(m)) {
+    return { kind: "timeout", cooldownMs: 45 * 1000 }; // 45s
+  }
+  if (status >= 500 || /internal|unavailable|overloaded/i.test(m)) {
+    return { kind: "server", cooldownMs: 90 * 1000 };
+  }
+  return { kind: "error", cooldownMs: 2 * 60 * 1000 }; // 2 min
 }
 
 const MAX_INPUT_CHARS = 8000;
@@ -202,7 +253,6 @@ async function getSystemPrompt(
 ) {
   const data = await chrome.storage.sync.get([
     "customSummaryPrompt",
-    "customAffPrompt",
     "outputLanguage",
     "promptStyle",
     "summaryLength",
@@ -214,38 +264,36 @@ async function getSystemPrompt(
   const summaryLength = data.summaryLength || "medium";
   const customInstructions = data.customInstructions || "";
 
-  // Determine base type for prompt lookup
-  const baseType = type.startsWith("affiliate") ? "affiliate" : "summary";
+  // Affiliate writing removed — map legacy type to summary
+  const resolvedType =
+    type && String(type).startsWith("affiliate") ? "summary" : type || "summary";
+  const baseType = "summary";
 
   let prompt;
 
   // 1. Custom user prompt takes highest priority
-  if (baseType === "affiliate" && data.customAffPrompt) {
-    prompt = data.customAffPrompt;
-  } else if (baseType === "summary" && data.customSummaryPrompt) {
+  if (data.customSummaryPrompt) {
     prompt = data.customSummaryPrompt;
   }
   // 2. promptStyle only applies to summary type
   else if (
-    baseType === "summary" &&
     promptStyle !== "default" &&
     PROMPT_TEMPLATES[promptStyle]
   ) {
     prompt = PROMPT_TEMPLATES[promptStyle];
   }
-  // 3. Length-based variant (summary_short, status_short, etc.)
+  // 3. Length-based variant (summary_short, etc.)
   else if (summaryLength !== "medium") {
     const lengthKey = baseType + "_" + summaryLength;
     prompt =
       PROMPT_TEMPLATES[lengthKey] ||
-      PROMPT_TEMPLATES[baseType] ||
+      PROMPT_TEMPLATES[resolvedType] ||
       PROMPT_TEMPLATES.summary;
   }
   // 4. Default template for the type
   else {
     prompt =
-      PROMPT_TEMPLATES[type] ||
-      PROMPT_TEMPLATES[baseType] ||
+      PROMPT_TEMPLATES[resolvedType] ||
       PROMPT_TEMPLATES.summary;
   }
 

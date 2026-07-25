@@ -1,3 +1,1229 @@
+/* ==========================================================================
+ * FeedWriter service-worker.js (GENERATED — do not edit by hand)
+ * Bundle of: utils.js + bg-prompts.js + bg-api.js + background.js
+ * Rebuild: python3 scripts/build-sw.py
+ * ========================================================================== */
+
+/* ===== BEGIN utils.js ===== */
+// FeedWriter — Utility functions and helpers
+// https://github.com/anlvdt/fb-post-summarizer
+// Author: Le An (anlvdt)
+
+/**
+ * LRU Cache implementation with size limit and byte-size awareness
+ * Prevents excessive memory usage on low-memory devices
+ */
+class LRUCache {
+  constructor(maxSize = 50, maxBytes = 10 * 1024 * 1024) { // 10MB default
+    this.maxSize = maxSize;
+    this.maxBytes = maxBytes;
+    this.cache = new Map();
+    this.totalBytes = 0;
+  }
+
+  _estimateBytes(value) {
+    try {
+      return JSON.stringify(value).length * 2; // UTF-16 chars = ~2 bytes each
+    } catch (_) {
+      return 1024; // fallback estimate
+    }
+  }
+
+  get(key) {
+    if (!this.cache.has(key)) return undefined;
+    // Move to end (most recently used)
+    const entry = this.cache.get(key);
+    this.cache.delete(key);
+    this.cache.set(key, entry);
+    return entry.value;
+  }
+
+  set(key, value) {
+    const bytes = this._estimateBytes(value);
+
+    // Delete if exists (to reinsert at end)
+    if (this.cache.has(key)) {
+      this.totalBytes -= this.cache.get(key).bytes;
+      this.cache.delete(key);
+    }
+
+    // Evict oldest entries until we have space (both count and bytes)
+    while (
+      (this.cache.size >= this.maxSize || this.totalBytes + bytes > this.maxBytes) &&
+      this.cache.size > 0
+    ) {
+      const firstKey = this.cache.keys().next().value;
+      const evicted = this.cache.get(firstKey);
+      this.totalBytes -= evicted.bytes;
+      this.cache.delete(firstKey);
+    }
+
+    this.cache.set(key, { value, bytes });
+    this.totalBytes += bytes;
+  }
+
+  has(key) {
+    return this.cache.has(key);
+  }
+
+  delete(key) {
+    if (this.cache.has(key)) {
+      this.totalBytes -= this.cache.get(key).bytes;
+    }
+    return this.cache.delete(key);
+  }
+
+  clear() {
+    this.cache.clear();
+    this.totalBytes = 0;
+  }
+
+  keys() {
+    return this.cache.keys();
+  }
+
+  get size() {
+    return this.cache.size;
+  }
+
+  get bytesUsed() {
+    return this.totalBytes;
+  }
+
+  // Delete all keys matching a prefix
+  deletePrefix(prefix) {
+    const keysToDelete = [];
+    for (const key of this.cache.keys()) {
+      if (key.startsWith(prefix)) {
+        keysToDelete.push(key);
+      }
+    }
+    keysToDelete.forEach(key => this.delete(key));
+    return keysToDelete.length;
+  }
+}
+
+/**
+ * Debounce function with configurable delay
+ */
+function debounce(func, delay) {
+  let timeoutId = null;
+  return function (...args) {
+    if (timeoutId) clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => {
+      timeoutId = null;
+      func.apply(this, args);
+    }, delay);
+  };
+}
+
+/**
+ * Throttle function with configurable delay
+ */
+function throttle(func, delay) {
+  let timeoutId = null;
+  let lastRan = 0;
+  return function (...args) {
+    const now = Date.now();
+    if (now - lastRan >= delay) {
+      func.apply(this, args);
+      lastRan = now;
+    } else {
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        func.apply(this, args);
+        lastRan = Date.now();
+        timeoutId = null;
+      }, delay - (now - lastRan));
+    }
+  };
+}
+
+/**
+ * Capitalize first letter of string
+ */
+function capitalize(str) {
+  if (!str) return '';
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+/**
+ * Efficient HTML escape without creating DOM elements
+ */
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+/**
+ * Create a fetch request with timeout
+ */
+function fetchWithTimeout(url, options = {}, timeoutMs = 30000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  return fetch(url, {
+    ...options,
+    signal: controller.signal
+  }).finally(() => clearTimeout(timeoutId));
+}
+
+/**
+ * Retry function with exponential backoff
+ */
+async function retryWithBackoff(fn, maxRetries = 3, baseDelay = 1000) {
+  let lastError;
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (i < maxRetries - 1) {
+        const delay = baseDelay * Math.pow(2, i) + Math.random() * 1000;
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+  throw lastError;
+}
+
+/**
+ * Batch multiple storage operations
+ */
+class StorageBatcher {
+  constructor(delay = 500) {
+    this.delay = delay;
+    this.pending = {};
+    this.timeoutId = null;
+    this.flushing = false;
+  }
+
+  set(key, value) {
+    this.pending[key] = value;
+    if (this.timeoutId) clearTimeout(this.timeoutId);
+    this.timeoutId = setTimeout(() => this.flush(), this.delay);
+  }
+
+  async flush() {
+    if (this.flushing || Object.keys(this.pending).length === 0) return;
+    this.flushing = true;
+    const toSave = { ...this.pending };
+    this.pending = {};
+    this.timeoutId = null;
+
+    try {
+      await chrome.storage.local.set(toSave);
+    } catch (error) {
+      console.error('Storage batch write failed:', error);
+      Object.assign(this.pending, toSave);
+      if (!this.timeoutId) {
+        this.timeoutId = setTimeout(() => this.flush(), this.delay);
+      }
+    } finally {
+      this.flushing = false;
+    }
+  }
+}
+
+/**
+ * Safe storage get with error handling
+ */
+async function safeStorageGet(storage, keys, defaultValues = {}) {
+  try {
+    const data = await storage.get(keys);
+    return { ...defaultValues, ...data };
+  } catch (error) {
+    console.error('Storage get failed:', error);
+    return defaultValues;
+  }
+}
+
+/**
+ * Safe storage set with error handling
+ */
+async function safeStorageSet(storage, data) {
+  try {
+    await storage.set(data);
+    return { success: true };
+  } catch (error) {
+    console.error('Storage set failed:', error);
+    return { success: false, error };
+  }
+}
+
+/**
+ * Check if extension context is valid
+ */
+function isContextValid() {
+  try {
+    return !!chrome.runtime?.id;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * Cleanup event listeners helper
+ */
+class EventListenerManager {
+  constructor() {
+    this.listeners = [];
+  }
+
+  add(element, event, handler, options) {
+    element.addEventListener(event, handler, options);
+    this.listeners.push({ element, event, handler, options });
+  }
+
+  removeAll() {
+    this.listeners.forEach(({ element, event, handler, options }) => {
+      element.removeEventListener(event, handler, options);
+    });
+    this.listeners = [];
+  }
+
+  remove(element, event) {
+    this.listeners = this.listeners.filter(listener => {
+      if (listener.element === element && listener.event === event) {
+        element.removeEventListener(event, listener.handler, listener.options);
+        return false;
+      }
+      return true;
+    });
+  }
+}
+
+/**
+ * Download file helper
+ */
+function downloadFile(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  // Revoke after a short delay to ensure download starts
+  setTimeout(() => URL.revokeObjectURL(url), 100);
+}
+
+/**
+ * Format date consistently
+ */
+function formatDate(date) {
+  return new Date(date).toLocaleString('vi');
+}
+
+/**
+ * Truncate text with ellipsis
+ */
+function truncate(text, maxLength) {
+  if (!text || text.length <= maxLength) return text;
+  return text.substring(0, maxLength) + '...';
+}
+
+/**
+ * Simple logger with levels
+ */
+class Logger {
+  constructor(level = 'info') {
+    this.levels = { debug: 0, info: 1, warn: 2, error: 3 };
+    this.level = this.levels[level] || 1;
+  }
+
+  debug(message, ...args) {
+    if (this.level <= 0) console.debug(`[DEBUG] ${message}`, ...args);
+  }
+
+  info(message, ...args) {
+    if (this.level <= 1) console.info(`[INFO] ${message}`, ...args);
+  }
+
+  warn(message, ...args) {
+    if (this.level <= 2) console.warn(`[WARN] ${message}`, ...args);
+  }
+
+  error(message, ...args) {
+    if (this.level <= 3) console.error(`[ERROR] ${message}`, ...args);
+  }
+}
+
+/**
+ * Feature flags for conditional features
+ */
+const featureFlags = {
+  enableLogging: true,
+  enableCache: true,
+  enableBatchStorage: true,
+  enableEventDelegation: true,
+  enableMutationObserver: true,
+  enableIntersectionObserver: false, // Experimental
+  testMode: false, // Enable test/debug features
+};
+
+const logger = new Logger(featureFlags.testMode ? 'debug' : 'info');
+
+// Export for use in other scripts
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    LRUCache,
+    debounce,
+    throttle,
+    capitalize,
+    escapeHtml,
+    fetchWithTimeout,
+    retryWithBackoff,
+    StorageBatcher,
+    safeStorageGet,
+    safeStorageSet,
+    isContextValid,
+    EventListenerManager,
+    downloadFile,
+    formatDate,
+    truncate,
+    Logger,
+    logger,
+    featureFlags
+  };
+}
+/* ===== END utils.js ===== */
+
+/* ===== BEGIN bg-prompts.js ===== */
+// === IMPROVED PROMPTS based on Vietnamese NLP research ===
+// References: VietAI ViT5, Underthesea, Vietnamese summarization best practices
+
+// TÓM TẮT TIẾNG VIỆT CHUẨN - Hybrid extractive + abstractive approach
+const SUMMARY_PROMPT = `Bạn là chuyên gia phân tích và tóm tắt tiếng Việt, giỏi viết tiêu đề hấp dẫn.
+
+NHIỆM VỤ: Đọc kỹ nội dung, xác định thông tin quan trọng, viết TIÊU ĐỀ có hook mạnh + tóm tắt ngắn gọn.
+
+QUY TRÌNH:
+1. XÁC ĐỊNH: Chủ đề chính là gì? Kết luận/điểm then chốt nhất?
+2. VIẾT TIÊU ĐỀ (HOOK): Dòng đầu tiên là tiêu đề hấp dẫn, tạo tò mò. Dùng 1 trong các kỹ thuật:
+   - CURIOSITY GAP: Thông tin chưa đầy đủ khiến người đọc muốn biết thêm
+   - CONTRARIAN: Phản bác niềm tin phổ biến
+   - DATA HOOK: Con số/chi tiết cụ thể gây ấn tượng
+   - BENEFIT HOOK: Nêu ngay giá trị người đọc nhận được
+   - QUESTION HOOK: Câu hỏi cụ thể đánh vào pain point
+   Tiêu đề tối đa 15-20 từ, PHẢI chứa thông tin cụ thể từ bài gốc.
+3. TRÍCH XUẤT: Các ý quan trọng nhất (2-5 điểm)
+4. VIẾT LẠI: Tường thuật lại nội dung — đi thẳng vào thông tin, không nhắc tên tác giả
+
+FORMAT OUTPUT:
+[Tiêu đề hook mạnh — viết bình thường, hệ thống sẽ tự viết hoa]
+
+[dòng trống]
+
+[Nội dung tóm tắt]
+
+**Giải thích thuật ngữ:**
+· Thuật ngữ: Giải thích ngắn 1 câu.
+
+YÊU CẦU:
+- Tiêu đề PHẢI ở dòng đầu, KHÔNG bọc trong ** hay ký tự đặc biệt. Viết bình thường (hệ thống tự viết hoa).
+- SAU TIÊU ĐỀ: LUÔN 1 dòng trống.
+- MẶC ĐỊNH viết đoạn văn liền mạch 3-5 câu. ĐÂY LÀ FORMAT CHÍNH.
+- CHỈ dùng bullet points khi bài gốc là DANH SÁCH rõ ràng (so sánh nhiều sản phẩm, liệt kê tính năng, các bước hướng dẫn). Nếu bài gốc là ý kiến, phân tích, tin tức, câu chuyện → BẮT BUỘC viết đoạn văn, KHÔNG bullet.
+- NẾU bài gốc là HƯỚNG DẪN/TUTORIAL: giữ nguyên các bước (Bước 1, Bước 2...) dạng list ngắn gọn. Mỗi bước tối đa 1-2 câu.
+- Tối đa 5 câu hoặc 5 bullet. KHÔNG viết dài hơn.
+- CẤM LẶP Ý: Mỗi câu phải mang thông tin MỚI. Không diễn đạt lại ý cũ bằng từ khác. Kiểm tra lại trước khi output.
+- Nếu muốn tách đoạn cho dễ đọc, cách bằng 1 dòng trống. Nhưng mỗi đoạn phải là ý KHÁC NHAU.
+- GIẢI THÍCH THUẬT NGỮ: CHỈ thêm mục "**Giải thích thuật ngữ:**" khi có thuật ngữ THẬT SỰ chuyên ngành mà người đọc phổ thông chưa biết. TUYỆT ĐỐI KHÔNG giải thích: app, addon, update, plugin, extension, post, link, share, like, comment, feed, API, Chrome, Firefox, Google, Facebook, YouTube, TikTok, iPhone, Android, AI, ChatGPT, Wi-Fi, internet, website, server, cloud, crypto, NFT, CEO, startup — đây là từ người Việt dùng hàng ngày. Nếu không có thuật ngữ thực sự khó → BỎ QUA hoàn toàn mục này.
+- KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống sẽ tự thêm footer chuẩn.
+- GIỌNG VĂN: Viết như TƯỜNG THUẬT / ĐƯA TIN dựa trên nguồn tham khảo. Bài gốc là nguồn tin, bạn là người đưa tin.
+  + CẤM ngôi thứ nhất copy từ bài gốc: "mình", "tôi", "tui", "chúng mình".
+  + CẤM nhắc tên tác giả: KHÔNG viết "Danh Nguyen chia sẻ...", "Anh X cho biết...", "Tác giả nói...". Thông tin tự nói — không cần gán cho ai.
+  + VD SAI: "Danh Nguyen đã chia sẻ về cấu trúc logic của hệ thống Affiliate AI"
+  + VD ĐÚNG: "Hệ thống Affiliate AI có cấu trúc logic giúp tự động hóa quy trình từ nội dung đến chuyển đổi."
+  + Đi thẳng vào NỘI DUNG, không qua trung gian người nói. "Hệ thống này giải quyết..." thay vì "Tác giả chỉ ra rằng hệ thống này giải quyết..."
+- Giọng tự nhiên, dễ hiểu, đi thẳng vào thông tin
+- Giữ thông tin có giá trị thực, dữ liệu, kết luận
+- Bỏ ví dụ dài, chi tiết lan man, rào đón
+- CHỈ dùng thông tin CÓ TRONG bài gốc, KHÔNG bịa thêm số liệu/thông số/phiên bản
+- CẤM tiêu đề nhạt không có thông tin: "Tin mới", "Có một điều thú vị..."
+- CẤM câu dẫn dắt rỗng: "Mình vừa đọc...", "Gần đây..."
+- CẤM lạm dụng sở hữu "của bạn", "của mình", "của chúng ta". Viết trực tiếp: "iPhone báo đầy bộ nhớ" thay vì "iPhone của bạn báo đầy bộ nhớ". Chỉ dùng khi thật sự cần phân biệt sở hữu.
+- Trả lời bằng tiếng Việt`;
+
+// TÓM TẮT NGẮN - Quick overview
+const SUMMARY_SHORT_PROMPT = `Tóm tắt cực ngắn nội dung sau:
+
+Yêu cầu:
+- Dòng đầu tiên: tiêu đề có hook mạnh (con số, phản bác, tò mò), tối đa 15 từ. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
+- Sau tiêu đề: 1 dòng trống, rồi 1-2 câu tóm tắt
+- Nắm bắt thông điệp cốt lõi nhất
+- Viết như tường thuật/đưa tin. CẤM ngôi thứ nhất từ bài gốc ("mình", "tôi"). CẤM nhắc tên tác giả. Đi thẳng vào nội dung.
+- Giọng tự nhiên
+- GIẢI THÍCH THUẬT NGỮ: CHỈ thêm mục này khi có thuật ngữ THẬT SỰ chuyên ngành khó (không giải thích: AI, API, app, plugin, extension, link, website, server, v.v.). Thêm trước dòng nguồn theo cấu trúc sau:
+**Giải thích thuật ngữ:**
+· Thuật ngữ: Giải thích ngắn 1 câu.
+- KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống tự thêm`;
+
+// TÓM TẮT CHI TIẾT - Detailed với cấu trúc (dùng cho status_share type)
+const SUMMARY_DETAILED_PROMPT = `Bạn là chuyên gia phân tích và tóm tắt có cấu trúc.
+
+NHIỆM VỤ: Viết tiêu đề hook mạnh + tóm tắt chi tiết, giữ cấu trúc logic.
+
+YÊU CẦU:
+- Dòng đầu tiên: tiêu đề có hook mạnh (con số, phản bác, tò mò), tối đa 20 từ. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
+- Sau tiêu đề: 1 dòng trống
+- Xác định thesis/luận điểm chính
+- Các luận điểm hỗ trợ quan trọng nhất
+- Kết luận và hàm ý
+- Cấu trúc rõ ràng: Tiêu đề → Điểm chính → Kết luận
+- Mỗi đoạn cách nhau 1 dòng trống
+- Tối đa 150 từ
+- Viết như tường thuật/đưa tin. CẤM ngôi thứ nhất từ bài gốc ("mình", "tôi"). CẤM nhắc tên tác giả. Đi thẳng vào nội dung.
+- GIẢI THÍCH THUẬT NGỮ: CHỈ thêm mục này khi có thuật ngữ THẬT SỰ chuyên ngành khó (không giải thích: AI, API, app, plugin, extension, link, website, server, v.v.). Thêm trước dòng nguồn theo cấu trúc sau:
+**Giải thích thuật ngữ:**
+· Thuật ngữ: Giải thích ngắn 1 câu.
+- KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống tự thêm`;
+
+// TÓM TẮT DẠNG BULLET - Easy to scan
+const SUMMARY_BULLET_PROMPT = `Tóm tắt thành các bullet points ngắn gọn.
+
+Quy tắc:
+- Dòng đầu tiên: tiêu đề có hook mạnh (con số, phản bác, tò mò), tối đa 15 từ. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
+- Sau tiêu đề: 1 dòng trống
+- Mỗi bullet bắt đầu bằng · tối đa 15 từ
+- Ưu tiên thông tin có giá trị, dữ liệu, kết luận
+- Bỏ ví dụ, chỉ giữ kết quả
+- Viết như tường thuật/đưa tin. CẤM ngôi thứ nhất từ bài gốc ("mình", "tôi"). CẤM nhắc tên tác giả
+- 5-7 bullet max
+- GIẢI THÍCH THUẬT NGỮ: CHỈ thêm mục này khi có thuật ngữ THẬT SỰ chuyên ngành khó (không giải thích: AI, API, app, plugin, extension, link, website, server, v.v.). Thêm trước dòng nguồn theo cấu trúc sau:
+**Giải thích thuật ngữ:**
+· Thuật ngữ: Giải thích ngắn 1 câu.
+- KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống tự thêm`;
+
+// === QUY TẮC CHÍNH TẢ VNREVIEW (áp dụng cho mọi output tiếng Việt) ===
+const VNREVIEW_RULES = `
+QUY TẮC CHÍNH TẢ VÀ HÀNH VĂN BẮT BUỘC:
+
+CẤM MỞ ĐẦU BẰNG CÂU DẪN DẮT RỖNG:
+- TUYỆT ĐỐI KHÔNG bắt đầu bằng: "Mình vừa đọc được...", "Gần đây...", "Như chúng ta đã biết...", "Mới đây...", "Theo như mình được biết...", "Hôm nay mình đọc được..."
+- Câu đầu tiên PHẢI chứa thông tin thực, đi thẳng vào nội dung chính.
+- VD SAI: "Mình vừa đọc được tin tức về giá điện thoại cao cấp..."
+- VD ĐÚNG: "Huawei thay đổi chiến lược: bản Pro Max giá ngang Xiaomi Ultra."
+
+HẠN CHẾ SỞ HỮU THỪA:
+- KHÔNG lạm dụng "của bạn", "của mình", "của chúng ta", "của Apple", "của Google" khi không cần thiết.
+- Viết trực tiếp: "iPhone báo đầy bộ nhớ" thay vì "iPhone của bạn báo đầy bộ nhớ".
+- "Cập nhật iOS" thay vì "Cập nhật iOS của bạn". "Tài khoản Google" thay vì "Tài khoản Google của bạn".
+- Chỉ dùng sở hữu khi thật sự cần phân biệt (VD: "ảnh của bạn" vs "ảnh của người khác").
+
+TIỀN VIỆT NAM:
+- Viết gọn bằng đơn vị triệu/tỷ: "45 triệu đồng", "1,2 tỷ đồng"
+- KHÔNG viết dạng đầy đủ: "44.990.000 đồng" → viết "gần 45 triệu đồng" hoặc "44,99 triệu đồng"
+
+KHÔNG LẶP CẢM XÚC:
+- Mỗi cảm xúc/nhận xét chỉ nói MỘT lần. Không lặp "thật sự ngạc nhiên", "thật sự không hiểu", "quá đắt đỏ" trong cùng bài.
+
+CẤM EMOJI:
+- TUYỆT ĐỐI KHÔNG dùng emoji, icon, hay ký tự đặc biệt Unicode trong output (📌🔗✅⚠️🔥💡⚡🎯🚀❌👍...).
+- Dùng text thuần: "Nguồn:" thay vì "📌 Nguồn:", "Link:" thay vì "🔗".
+
+CHỐNG BỊA THÔNG TIN (HALLUCINATION):
+- TUYỆT ĐỐI KHÔNG bịa số liệu, tên sản phẩm, phiên bản, thông số kỹ thuật, giá cả mà KHÔNG có trong bài gốc.
+- Nếu bài gốc không nêu con số cụ thể, KHÔNG được tự thêm con số.
+- Nếu không chắc chắn thông tin, KHÔNG viết. Bỏ qua còn hơn bịa.
+- Chỉ sử dụng thông tin CÓ TRONG bài gốc được cung cấp.
+
+QUY TẮC CHÍNH TẢ:
+- Câu ngắn, từ ngắn. Mỗi đoạn văn thể hiện MỘT ý.
+- THUẬT NGỮ CÔNG NGHỆ: "code/coding" dịch là "lập trình" hoặc giữ nguyên "code", TUYỆT ĐỐI KHÔNG dịch thành "mã hóa". "coder" = "lập trình viên". "source code" = "mã nguồn".
+- Chữ số: dấu chấm (.) chỉ hàng nghìn (VD: 1.500), dấu phẩy (,) chỉ phần thập phân (VD: 2,2 mm).
+- Dấu chấm (.) cho inch, pixel, GHz: 8.9 inch, 18.2 megapixel, 2.2 GHz.
+- Viết bằng chữ số dưới 10 trước danh từ chỉ người/địa danh: "hai tỉnh", "năm nhóm người".
+- Dùng con số cho tuổi, số lượng, khoảng cách, %, tỷ lệ, nhiệt độ, tốc độ, tiền tệ, model máy.
+- Ngoặc đơn () để giải thích: Steve Jobs (1955-2011). Ngoặc kép "" để trích dẫn nguyên văn.
+- Đơn vị: mm, cm, m, kg, độ C, inch, megapixel, lít.
+- Tiền tệ: USD (không viết "đô-la"), euro, yên. Ngoại tệ phải kèm quy đổi VND tương đương.
+- Ngày tháng: dùng gạch chéo (13/10/2011). Viết hoa tên tháng chữ (tháng Sáu), tháng 10 trở đi dùng số. Viết hoa tên ngày (thứ Hai, Chủ nhật).
+- Viết hoa: tên người, tên công ty, địa danh, chức danh.
+- KHÔNG viết tắt địa danh ngắn: Việt Nam, Hà Nội (không viết VN, HN).`;
+
+// TÓM TẮT GIỮ CẤU TRÚC - Preserve original structure
+const SUMMARY_STRUCTURED_PROMPT = `Bạn là chuyên gia tóm tắt có cấu trúc.
+
+NHIỆM VỤ: Viết tiêu đề hook mạnh, giữ nguyên cấu trúc bài viết, chỉ rút gọn nội dung.
+
+YÊU CẦU:
+- Dòng đầu tiên: tiêu đề có hook mạnh, tối đa 20 từ. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
+- Sau tiêu đề: 1 dòng trống
+- Giữ headings, bullet points, numbering từ bài gốc
+- Mỗi section: rút còn 1-3 ý quan trọng nhất
+- Giảm 50-70% nội dung
+- Viết như tường thuật/đưa tin. CẤM ngôi thứ nhất từ bài gốc ("mình", "tôi"). CẤM nhắc tên tác giả
+- GIẢI THÍCH THUẬT NGỮ: CHỈ thêm mục này khi có thuật ngữ THẬT SỰ chuyên ngành khó (không giải thích: AI, API, app, plugin, extension, link, website, server, v.v.). Thêm trước dòng nguồn theo cấu trúc sau:
+**Giải thích thuật ngữ:**
+· Thuật ngữ: Giải thích ngắn 1 câu.
+- KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống tự thêm`;
+
+// TÓM TẮT BÌNH LUẬN - Summarize community comment discussions
+const COMMENT_SUMMARY_PROMPT = `Bạn là chuyên gia phân tích thảo luận mạng xã hội, giỏi tổng hợp ý kiến cộng đồng.
+
+NHIỆM VỤ: Đọc kỹ thread bình luận dưới đây, tổng hợp các luồng ý kiến, quan điểm khác nhau của người đọc một cách khách quan và súc tích.
+
+QUY TRÌNH:
+1. XÁC ĐỊNH: Chủ đề thảo luận chính là gì? Đám đông đang phản ứng tích cực, tiêu cực, hoài nghi hay đa chiều?
+2. VIẾT TIÊU ĐỀ: Dòng đầu tiên là tiêu đề phản ánh đúng thái độ/chủ đề thảo luận chính của cộng đồng (tối đa 15-20 từ). Viết bình thường, hệ thống tự viết hoa. Dòng tiếp theo cách 1 dòng trống.
+3. TRÍCH XUẤT LUỒNG Ý KIẾN:
+   - Ý kiến đồng tình/ủng hộ nổi bật
+   - Ý kiến phản đối/trái chiều/hoài nghi nổi bật (nếu có)
+   - Những thắc mắc chung hoặc thông tin bổ sung hữu ích từ bình luận
+4. VIẾT LẠI: Hoàn toàn bằng lời của bạn dưới dạng phân tích đám đông, khách quan, không copy.
+
+FORMAT OUTPUT:
+[Tiêu đề thảo luận chính — viết bình thường, hệ thống sẽ tự viết hoa]
+
+[dòng trống]
+
+**Tổng quan thái độ:** [Tích cực/Tiêu cực/Tranh cãi/Đa chiều]
+
+**Các luồng ý kiến nổi bật:**
+· [Luồng ý kiến 1]: Mô tả ngắn gọn kèm dẫn chứng chung từ cmt
+· [Luồng ý kiến 2]: Mô tả ngắn gọn kèm dẫn chứng chung từ cmt
+· [Luồng ý kiến 3]: Mô tả ngắn gọn kèm dẫn chứng chung từ cmt (nếu có)
+
+YÊU CẦU:
+- Tiêu đề PHẢI ở dòng đầu, KHÔNG bọc trong ** hay ký tự đặc biệt. Viết bình thường (hệ thống tự viết hoa).
+- SAU TIÊU ĐỀ: LUÔN 1 dòng trống.
+- CẤM EMOJI trong output.
+- Trả lời bằng tiếng Việt.`;
+
+// PROMPT MAP - All available templates
+const PROMPT_TEMPLATES = {
+  // Summary variants
+  summary: SUMMARY_PROMPT,
+  summary_short: SUMMARY_SHORT_PROMPT,
+  summary_detailed: SUMMARY_DETAILED_PROMPT,
+  summary_bullet: SUMMARY_BULLET_PROMPT,
+  summary_structured: SUMMARY_STRUCTURED_PROMPT,
+  comment_summary: COMMENT_SUMMARY_PROMPT,
+
+  // Status share uses detailed prompt
+  status_share: SUMMARY_DETAILED_PROMPT,
+};
+/* ===== END bg-prompts.js ===== */
+
+/* ===== BEGIN bg-api.js ===== */
+// === API KEY ROTATION ===
+// Supports multiple API keys per provider with automatic rotation on rate limit
+// Cross-provider fallback: if all keys of one provider are limited, try another provider
+
+const PROVIDER_PRIORITY = [
+  "groq",
+  "cerebras",
+  "sambanova",
+  "gemini",
+  "openrouter",
+];
+
+/**
+ * Pure key selection — keep in sync with lib/provider-rotation.js
+ * (SW cannot import CommonJS modules; this is the production copy).
+ */
+function selectAvailableKey(opts) {
+  const {
+    legacyApiKey = null,
+    legacyProvider = "groq",
+    preferredProvider = null,
+    now,
+  } = opts;
+
+  let apiKeys = opts.apiKeys;
+  let hasAnyKey = false;
+  if (apiKeys) {
+    for (const p in apiKeys) {
+      if (apiKeys[p] && apiKeys[p].length > 0) hasAnyKey = true;
+    }
+  }
+
+  if (!apiKeys) {
+    apiKeys = {
+      groq: [],
+      gemini: [],
+      cerebras: [],
+      sambanova: [],
+      openrouter: [],
+    };
+  } else {
+    apiKeys = { ...apiKeys };
+    for (const p of Object.keys(apiKeys)) {
+      if (Array.isArray(apiKeys[p])) apiKeys[p] = apiKeys[p].slice();
+    }
+  }
+
+  // Fallback to legacy single key when no multi-key entries
+  if (!hasAnyKey && legacyApiKey) {
+    const provider = legacyProvider || "groq";
+    if (!apiKeys[provider]) apiKeys[provider] = [];
+    if (!apiKeys[provider].includes(legacyApiKey)) {
+      apiKeys[provider].push(legacyApiKey);
+    }
+  }
+
+  const keyStatus = { ...(opts.keyStatus || {}) };
+  const rotationIndex = { ...(opts.rotationIndex || {}) };
+
+  const orderedProviders =
+    preferredProvider && PROVIDER_PRIORITY.includes(preferredProvider)
+      ? [
+          preferredProvider,
+          ...PROVIDER_PRIORITY.filter((p) => p !== preferredProvider),
+        ]
+      : PROVIDER_PRIORITY;
+
+  for (const provider of orderedProviders) {
+    const keys = apiKeys[provider] || [];
+    if (keys.length === 0) continue;
+
+    const startIdx = (rotationIndex[provider] || 0) % keys.length;
+    for (let i = 0; i < keys.length; i++) {
+      const idx = (startIdx + i) % keys.length;
+      const key = keys[idx];
+      const status = keyStatus[key] || {};
+
+      if (!status.rateLimitedUntil || now >= status.rateLimitedUntil) {
+        const newRotationIndex = {
+          ...rotationIndex,
+          [provider]: (idx + 1) % keys.length,
+        };
+        const newKeyStatus = {
+          ...keyStatus,
+          [key]: { ...(keyStatus[key] || {}), lastUsed: now },
+        };
+        return {
+          key,
+          provider,
+          index: idx,
+          newRotationIndex,
+          newKeyStatus,
+        };
+      }
+    }
+  }
+
+  let soonestTime = Infinity;
+  let totalKeys = 0;
+  for (const provider of PROVIDER_PRIORITY) {
+    const keys = apiKeys[provider] || [];
+    totalKeys += keys.length;
+    for (const key of keys) {
+      const until = (keyStatus[key] || {}).rateLimitedUntil || 0;
+      if (until < soonestTime) soonestTime = until;
+    }
+  }
+
+  if (totalKeys === 0) return { key: null, provider: null, noKeys: true };
+  const waitMinutes = Math.max(1, Math.ceil((soonestTime - now) / 60000));
+  return {
+    key: null,
+    provider: null,
+    allLimited: true,
+    waitMinutes,
+    total: totalKeys,
+  };
+}
+
+// Get the best available key across ALL providers
+async function getAvailableKey(preferredProvider = null) {
+  const data = await chrome.storage.sync.get(["apiKeys", "apiKey", "provider"]);
+  const localData = await chrome.storage.local.get([
+    "keyStatus",
+    "keyRotationIndex",
+    "backupApiKeys",
+  ]);
+
+  let apiKeys = data.apiKeys;
+  let hasAnyKey = false;
+  if (apiKeys) {
+    for (const p in apiKeys) {
+      if (apiKeys[p] && apiKeys[p].length > 0) hasAnyKey = true;
+    }
+  }
+
+  // 1. Fallback for sync wipe -> use local backup
+  if (!hasAnyKey && localData.backupApiKeys) {
+    apiKeys = localData.backupApiKeys;
+    hasAnyKey = true;
+    chrome.storage.sync.set({ apiKeys });
+  }
+
+  const result = selectAvailableKey({
+    apiKeys,
+    legacyApiKey: hasAnyKey ? null : data.apiKey || null,
+    legacyProvider: data.provider || "groq",
+    keyStatus: localData.keyStatus || {},
+    rotationIndex: localData.keyRotationIndex || {},
+    preferredProvider,
+    now: Date.now(),
+  });
+
+  if (result.key) {
+    await chrome.storage.local.set({
+      keyRotationIndex: result.newRotationIndex,
+      keyStatus: result.newKeyStatus,
+    });
+    return { key: result.key, provider: result.provider, index: result.index };
+  }
+
+  if (result.noKeys) return { key: null, provider: null, noKeys: true };
+  return {
+    key: null,
+    provider: null,
+    allLimited: true,
+    waitMinutes: result.waitMinutes,
+    total: result.total,
+  };
+}
+
+async function markKeyRateLimited(key, retryAfterMs) {
+  const localData = await chrome.storage.local.get(["keyStatus"]);
+  const keyStatus = localData.keyStatus || {};
+  keyStatus[key] = {
+    ...(keyStatus[key] || {}),
+    rateLimitedUntil: Date.now() + (retryAfterMs || 30 * 60 * 1000),
+    lastRateLimited: Date.now(),
+  };
+  await chrome.storage.local.set({ keyStatus });
+}
+
+/** Soft cooldown after timeouts / transient errors (short). */
+async function markKeyCooldown(key, retryAfterMs, reason = "cooldown") {
+  const ms = Math.max(15_000, retryAfterMs || 60_000);
+  const localData = await chrome.storage.local.get(["keyStatus"]);
+  const keyStatus = localData.keyStatus || {};
+  keyStatus[key] = {
+    ...(keyStatus[key] || {}),
+    rateLimitedUntil: Date.now() + ms,
+    lastRateLimited: Date.now(),
+    lastError: reason,
+  };
+  await chrome.storage.local.set({ keyStatus });
+}
+
+/** Clear all key cooldowns (used by Test connection / user stuck). */
+async function clearAllKeyCooldowns() {
+  const localData = await chrome.storage.local.get(["keyStatus"]);
+  const keyStatus = localData.keyStatus || {};
+  let changed = false;
+  for (const key of Object.keys(keyStatus)) {
+    if (keyStatus[key]?.rateLimitedUntil) {
+      delete keyStatus[key].rateLimitedUntil;
+      keyStatus[key].lastError = null;
+      changed = true;
+    }
+  }
+  if (changed) await chrome.storage.local.set({ keyStatus });
+  return changed;
+}
+
+function parseRetryAfter(errorMessage) {
+  const match = errorMessage?.match(/try again in (\d+)m([\d.]+)s/i);
+  if (match) return (parseInt(match[1]) * 60 + parseFloat(match[2])) * 1000;
+  const secMatch = errorMessage?.match(/retry.?after:?\s*(\d+)/i);
+  if (secMatch) return parseInt(secMatch[1]) * 1000;
+  // "Please try again in 2m30s" style
+  const m2 = errorMessage?.match(/in\s+(\d+)\s*m(?:in(?:ute)?s?)?/i);
+  if (m2) return parseInt(m2[1], 10) * 60 * 1000;
+  return 15 * 60 * 1000; // default 15 min (was 30 — less sticky)
+}
+
+/** Classify provider error for cooldown + user message */
+function classifyProviderError(errMsg = "", status = 0) {
+  const m = String(errMsg || "").toLowerCase();
+  if (status === 401 || status === 403 || /invalid|unauthorized|forbidden|incorrect api key|api key not|not valid|authentication/i.test(m)) {
+    return { kind: "invalid", cooldownMs: 60 * 60 * 1000 }; // 1h
+  }
+  if (status === 429 || /rate limit|quota|too many requests|resource.?exhausted/i.test(m)) {
+    return { kind: "rate", cooldownMs: parseRetryAfter(errMsg) };
+  }
+  if (/timeout|quá chậm|aborted|network|failed to fetch|ECONN|ENOTFOUND/i.test(m)) {
+    return { kind: "timeout", cooldownMs: 45 * 1000 }; // 45s
+  }
+  if (status >= 500 || /internal|unavailable|overloaded/i.test(m)) {
+    return { kind: "server", cooldownMs: 90 * 1000 };
+  }
+  return { kind: "error", cooldownMs: 2 * 60 * 1000 }; // 2 min
+}
+
+const MAX_INPUT_CHARS = 8000;
+const MAX_OUTPUT_TOKENS = 1024;
+
+async function getSystemPrompt(
+  type,
+  site,
+  author,
+  sourceUrl,
+  postTitle,
+  postSource,
+  tone = null,
+) {
+  const data = await chrome.storage.sync.get([
+    "customSummaryPrompt",
+    "outputLanguage",
+    "promptStyle",
+    "summaryLength",
+    "customInstructions",
+  ]);
+
+  const lang = data.outputLanguage || "auto";
+  const promptStyle = data.promptStyle || "default";
+  const summaryLength = data.summaryLength || "medium";
+  const customInstructions = data.customInstructions || "";
+
+  // Affiliate writing removed — map legacy type to summary
+  const resolvedType =
+    type && String(type).startsWith("affiliate") ? "summary" : type || "summary";
+  const baseType = "summary";
+
+  let prompt;
+
+  // 1. Custom user prompt takes highest priority
+  if (data.customSummaryPrompt) {
+    prompt = data.customSummaryPrompt;
+  }
+  // 2. promptStyle only applies to summary type
+  else if (
+    promptStyle !== "default" &&
+    PROMPT_TEMPLATES[promptStyle]
+  ) {
+    prompt = PROMPT_TEMPLATES[promptStyle];
+  }
+  // 3. Length-based variant (summary_short, etc.)
+  else if (summaryLength !== "medium") {
+    const lengthKey = baseType + "_" + summaryLength;
+    prompt =
+      PROMPT_TEMPLATES[lengthKey] ||
+      PROMPT_TEMPLATES[resolvedType] ||
+      PROMPT_TEMPLATES.summary;
+  }
+  // 4. Default template for the type
+  else {
+    prompt =
+      PROMPT_TEMPLATES[resolvedType] ||
+      PROMPT_TEMPLATES.summary;
+  }
+
+  // === SMART CONTEXT: Adapt prompt based on source platform ===
+  const siteHints = {
+    facebook:
+      "\n\nNGỮ CẢNH: Bài viết từ Facebook. Giọng văn thường casual, cá nhân. Nếu là bài chia sẻ link/tin tức, tập trung vào thông tin. Nếu là status cá nhân, giữ cảm xúc và quan điểm.",
+    linkedin:
+      "\n\nNGỮ CẢNH: Bài viết từ LinkedIn. Giọng văn chuyên nghiệp. Tập trung vào insight nghề nghiệp, bài học kinh doanh, dữ liệu.",
+    x: "\n\nNGỮ CẢNH: Bài viết từ X/Twitter. Nội dung thường ngắn, có thể là thread. Tập trung vào ý chính, bỏ qua hashtag và mention.",
+    threads: "\n\nNGỮ CẢNH: Bài viết từ Threads. Giọng casual, ngắn gọn.",
+    reddit:
+      "\n\nNGỮ CẢNH: Bài viết từ Reddit. Có thể là discussion dài. Tập trung vào luận điểm chính và kết luận của tác giả, bỏ qua comment.",
+  };
+  if (site && siteHints[site]) {
+    prompt += siteHints[site];
+  }
+
+  // === SMART CONTEXT: Auto-detect content type ===
+  prompt +=
+    "\n\nTRƯỚC KHI VIẾT, hãy tự xác định loại nội dung (tin tức/ý kiến cá nhân/review sản phẩm/hướng dẫn/câu chuyện) và điều chỉnh giọng văn phù hợp.";
+
+  if (baseType === "summary") {
+    prompt +=
+      "\n- Tiêu đề (dòng đầu tiên) viết bình thường, hệ thống sẽ tự động viết hoa.";
+  }
+
+  // Tone override (from overlay tone buttons)
+  // All tones inherit the narrative voice rule from the base prompt
+  if (tone) {
+    const toneMap = {
+      short: "\n\nGHI ĐÈ — RÚT NGẮN TỐI ĐA:\n" +
+        "- Tiêu đề + 2-3 bullets, KHÔNG cần đoạn mở đầu.\n" +
+        "- Mỗi bullet tối đa 10 từ. Tổng tối đa 60 từ.\n" +
+        "- KHÔNG chia section headers. Giọng tường thuật ngôi thứ ba.",
+      academic: "\n\nGHI ĐÈ — PHONG CÁCH HỌC THUẬT:\n" +
+        "- Giọng phân tích khách quan ngôi thứ ba, dùng thuật ngữ chuyên ngành chính xác.\n" +
+        "- Bullets nêu dữ liệu, trích dẫn, kết luận — không dùng ngôn ngữ casual.\n" +
+        "- Vẫn giữ format: tiêu đề → 1-2 câu → · bullets",
+      viral: "\n\nGHI ĐÈ — PHONG CÁCH VIRAL:\n" +
+        "- Tiêu đề gây sốc hoặc tò mò mạnh.\n" +
+        "- Bullets nhấn điểm WOW, bỏ chi tiết nhàm chán.\n" +
+        "- Kết thúc bằng 1 câu hỏi mở. Vẫn giữ giọng tường thuật, CẤM ngôi thứ nhất/hai.",
+      bullet: "\n\nGHI ĐÈ — BULLET POINTS THUẦN:\n" +
+        "- Chỉ tiêu đề + bullets (·), KHÔNG viết đoạn văn.\n" +
+        "- 5-7 bullets, mỗi bullet format: · Keyword: giải thích ngắn\n" +
+        "- Tối đa 15 từ/bullet. KHÔNG chia section headers. Giọng tường thuật.",
+    };
+    if (toneMap[tone]) prompt += toneMap[tone];
+  }
+
+  // Add custom instructions if provided
+  if (customInstructions) {
+    prompt += "\n\nYÊU CẦU BỔ SUNG:\n" + customInstructions;
+  }
+
+  // Add language instruction
+  const languageInstructions = {
+    vi: "\n- Luôn trả lời bằng tiếng Việt, dịch nếu bài viết bằng ngôn ngữ khác.",
+    en: "\n- Always respond in English, translate if the post is in another language.",
+    zh: "\n- 始终使用中文回答。如果原文不是中文，请翻译后再总结。",
+    ja: "\n- 常に日本語で回答してください。原文が日本語以外の場合は翻訳して要約してください。",
+    ko: "\n- 항상 한국어로 답변하세요. 원문이 한국어가 아니면 번역하여 요약하세요.",
+    th: "\n- ตอบเป็นภาษาไทยเสมอ หากต้นฉบับไม่ใช่ภาษาไทย ให้แปลและสรุปเป็นภาษาไทย",
+    id: "\n- Selalu jawab dalam Bahasa Indonesia. Terjemahkan terlebih dahulu jika sumber menggunakan bahasa lain.",
+  };
+  if (languageInstructions[lang]) {
+    prompt += languageInstructions[lang];
+  } else {
+    prompt +=
+      "\n- Nếu bài viết bằng tiếng Anh hoặc ngôn ngữ khác tiếng Việt, dịch tóm tắt sang tiếng Việt. Nếu bằng tiếng Việt, giữ nguyên.";
+  }
+
+  return prompt;
+}
+
+// === STREAMING HELPERS ===
+async function processStream(response, port, signal, parseLine, onToken = null) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let fullText = "";
+  let buffer = "";
+  while (true) {
+    if (signal.aborted) {
+      reader.cancel();
+      return { error: "Đã hủy." };
+    }
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop();
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data: ") && trimmed !== "data:") continue;
+      const dataStr = trimmed.replace(/^data:\s*/, "");
+      if (dataStr === "[DONE]" || !dataStr) continue;
+      try {
+        const token = parseLine(JSON.parse(dataStr));
+        if (token) {
+          if (onToken) onToken();
+          fullText += token;
+          try {
+            port.postMessage({ action: "chunk", text: token, full: fullText });
+          } catch (_) {}
+        }
+      } catch (e) {}
+    }
+  }
+  return fullText
+    ? { summary: fullText }
+    : { error: "Provider không trả về nội dung." };
+}
+
+async function callGroqStream(
+  apiKey,
+  text,
+  systemPrompt,
+  port,
+  signal,
+  maxTokens = 512,
+) {
+  return callStreamAPI({
+    url: "https://api.groq.com/openai/v1/chat/completions",
+    headers: { Authorization: "Bearer " + apiKey },
+    body: {
+      model: "llama-3.3-70b-versatile",
+      stream: true,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: text },
+      ],
+      temperature: 0.3,
+      max_tokens: maxTokens,
+    },
+    extractFn: (d) => d.choices?.[0]?.delta?.content || "",
+    port,
+    signal,
+    maxTokens,
+    provider: "Groq",
+  });
+}
+
+async function callGeminiStream(
+  apiKey,
+  text,
+  systemPrompt,
+  port,
+  signal,
+  maxTokens = 512,
+) {
+  return callStreamAPI({
+    url: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse&key=" + apiKey,
+    headers: {},
+    body: {
+      system_instruction: { parts: [{ text: systemPrompt }] },
+      contents: [{ parts: [{ text: text }] }],
+      generationConfig: { temperature: 0.3, maxOutputTokens: maxTokens },
+    },
+    extractFn: (d) => d.candidates?.[0]?.content?.parts?.[0]?.text || "",
+    port,
+    signal,
+    maxTokens,
+    provider: "Gemini",
+  });
+}
+
+// === CEREBRAS: OpenAI-compatible API, ultra-fast inference ===
+async function callCerebrasStream(
+  apiKey,
+  text,
+  systemPrompt,
+  port,
+  signal,
+  maxTokens = 512,
+) {
+  return callStreamAPI({
+    url: "https://api.cerebras.ai/v1/chat/completions",
+    headers: { Authorization: "Bearer " + apiKey },
+    body: {
+      model: "llama-3.3-70b",
+      stream: true,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: text },
+      ],
+      temperature: 0.3,
+      max_tokens: maxTokens,
+    },
+    extractFn: (d) => d.choices?.[0]?.delta?.content || "",
+    port,
+    signal,
+    maxTokens,
+    provider: "Cerebras",
+  });
+}
+
+async function callCerebrasNonStream(apiKey, userMessage, systemPrompt) {
+  return callNonStream(
+    "https://api.cerebras.ai/v1/chat/completions",
+    { Authorization: "Bearer " + apiKey },
+    {
+      model: "llama-3.3-70b",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage },
+      ],
+      max_tokens: 1024,
+      temperature: 0.3,
+    },
+    (d) => d?.choices?.[0]?.message?.content,
+  );
+}
+
+// === SAMBANOVA: OpenAI-compatible API, fast open-source models ===
+async function callSambanovaStream(
+  apiKey,
+  text,
+  systemPrompt,
+  port,
+  signal,
+  maxTokens = 512,
+) {
+  return callStreamAPI({
+    url: "https://api.sambanova.ai/v1/chat/completions",
+    headers: { Authorization: "Bearer " + apiKey },
+    body: {
+      model: "Meta-Llama-3.3-70B-Instruct",
+      stream: true,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: text },
+      ],
+      temperature: 0.3,
+      max_tokens: maxTokens,
+    },
+    extractFn: (d) => d.choices?.[0]?.delta?.content || "",
+    port,
+    signal,
+    maxTokens,
+    provider: "SambaNova",
+  });
+}
+
+async function callSambanovaNonStream(apiKey, userMessage, systemPrompt) {
+  return callNonStream(
+    "https://api.sambanova.ai/v1/chat/completions",
+    { Authorization: "Bearer " + apiKey },
+    {
+      model: "Meta-Llama-3.3-70B-Instruct",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage },
+      ],
+      max_tokens: 1024,
+      temperature: 0.3,
+    },
+    (d) => d?.choices?.[0]?.message?.content,
+  );
+}
+
+// === OPENROUTER: Unified API gateway, many free models ===
+async function callOpenrouterStream(
+  apiKey,
+  text,
+  systemPrompt,
+  port,
+  signal,
+  maxTokens = 512,
+) {
+  return callStreamAPI({
+    url: "https://openrouter.ai/api/v1/chat/completions",
+    headers: {
+      Authorization: "Bearer " + apiKey,
+      "HTTP-Referer": "https://github.com/anlvdt/fb-post-summarizer",
+      "X-Title": "FeedWriter",
+    },
+    body: {
+      model: "meta-llama/llama-3.3-70b-instruct",
+      stream: true,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: text },
+      ],
+      temperature: 0.3,
+      max_tokens: maxTokens,
+    },
+    extractFn: (d) => d.choices?.[0]?.delta?.content || "",
+    port,
+    signal,
+    maxTokens,
+    provider: "OpenRouter",
+  });
+}
+
+async function callOpenrouterNonStream(apiKey, userMessage, systemPrompt) {
+  return callNonStream(
+    "https://openrouter.ai/api/v1/chat/completions",
+    {
+      Authorization: "Bearer " + apiKey,
+      "HTTP-Referer": "https://github.com/anlvdt/fb-post-summarizer",
+      "X-Title": "FeedWriter",
+    },
+    {
+      model: "meta-llama/llama-3.3-70b-instruct",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage },
+      ],
+      max_tokens: 1024,
+      temperature: 0.3,
+    },
+    (d) => d?.choices?.[0]?.message?.content,
+  );
+}
+/* ===== END bg-api.js ===== */
+
+/* ===== BEGIN background.js ===== */
 // FeedWriter — Background service worker
 // https://github.com/anlvdt/fb-post-summarizer
 // Author: Le An (anlvdt)
@@ -11,7 +1237,7 @@
 // The bundle inlines utils.js + bg-prompts.js + bg-api.js instead.
 //
 // If you ever need standalone SW for debugging only:
-// importScripts("utils.js", "bg-prompts.js", "bg-api.js");
+// importScripts inlined into service-worker.js — do not re-import
 
 // Boot marker — if chrome://extensions shows "fetching the script", SW never got here
 try {
@@ -2427,3 +3653,4 @@ chrome.runtime.onStartup.addListener(async () => {
 
 // Legacy auto-GitHub removed.
 if (chrome?.alarms) chrome.alarms.clear("auto-github-post").catch(() => {});
+/* ===== END background.js ===== */

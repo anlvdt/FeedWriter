@@ -2,188 +2,113 @@
 <html lang="vi">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>FeedWriter</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <!-- Main Application View -->
-  <div id="main-view" class="popup">
+  <div id="main-view" class="popup popup-v2">
     <header class="header">
-      <div class="header-brand">
-        <span class="logo" aria-hidden="true">
-          <img src="icons/icon48.png" width="22" height="22" alt="">
-        </span>
-        <h1>FeedWriter</h1>
+      <div class="header-left">
+        <span class="logo" aria-hidden="true"><img src="icons/icon128.png" width="40" height="40" alt="" decoding="async"></span>
+        <div class="header-titles">
+          <h1>FeedWriter</h1>
+          <p class="header-sub">Tóm tắt · Status · Dịch EN→VI</p>
+        </div>
       </div>
+      <span class="header-badge" title="Phiên bản">v2.4</span>
     </header>
 
-    <div class="tabs" role="tablist" aria-label="Mục chính">
-      <button class="tab active" role="tab" aria-selected="true" aria-controls="tab-settings" id="tabbtn-settings" data-tab="settings">Cài đặt</button>
-      <button class="tab" role="tab" aria-selected="false" aria-controls="tab-apikeys" id="tabbtn-apikeys" data-tab="apikeys">Keys</button>
-      <button class="tab" role="tab" aria-selected="false" aria-controls="tab-history" id="tabbtn-history" data-tab="history">Lịch sử</button>
-      <button class="tab" role="tab" aria-selected="false" aria-controls="tab-about" id="tabbtn-about" data-tab="about">About</button>
-    </div>
+    <nav class="tabs" role="tablist" aria-label="Mục chính">
+      <button class="tab active" role="tab" aria-selected="true" aria-controls="tab-settings" id="tabbtn-settings" data-tab="settings" type="button">Cài đặt</button>
+      <button class="tab" role="tab" aria-selected="false" aria-controls="tab-apikeys" id="tabbtn-apikeys" data-tab="apikeys" type="button">Keys</button>
+      <button class="tab" role="tab" aria-selected="false" aria-controls="tab-history" id="tabbtn-history" data-tab="history" type="button">Lịch sử</button>
+      <button class="tab" role="tab" aria-selected="false" aria-controls="tab-about" id="tabbtn-about" data-tab="about" type="button">About</button>
+    </nav>
 
     
     <!-- Settings Tab -->
     <div class="tab-content active" id="tab-settings" role="tabpanel" aria-labelledby="tabbtn-settings">
-      <div class="quick-tip" id="quickTip">
-        <div class="quick-tip-icon" aria-hidden="true">💡</div>
-        <div class="quick-tip-body">
-          <strong>Bắt đầu nhanh</strong>
-          <span>Bôi đen văn bản trên Facebook → chọn Tóm tắt / Status / Affiliate. Thêm API key ở tab Keys nếu chưa có.</span>
+      <section class="card card-settings" id="accordion-basic">
+        <div class="card-head card-head-row">
+          <div>
+            <h2 class="card-title">Đầu ra AI</h2>
+            <p class="card-sub">Tuỳ chọn dùng khi tóm tắt bài viết</p>
+          </div>
+          <label class="switch-label" title="Hiện thêm tuỳ chọn nâng cao">
+            <span class="switch-text">Nâng cao</span>
+            <input type="checkbox" id="advancedModeToggle" role="switch" aria-label="Chế độ nâng cao">
+            <span class="slider-round" aria-hidden="true"></span>
+          </label>
         </div>
-        <button type="button" class="quick-tip-dismiss" id="dismissQuickTip" title="Ẩn gợi ý" aria-label="Ẩn gợi ý">×</button>
-      </div>
-
-      <div class="settings-mode-header">
-        <span class="settings-mode-title">Cài đặt cơ bản</span>
-        <label class="switch-label">
-          <input type="checkbox" id="advancedModeToggle">
-          <span class="slider-round"></span>
-          <span class="switch-text">Nâng cao</span>
-        </label>
-      </div>
-
-      <div class="accordion" id="accordion-basic">
-        <div class="accordion-header active" role="button" aria-expanded="true" tabindex="0">Tùy chỉnh Tóm tắt</div>
-        <div class="accordion-content" style="display: block;">
-          <div class="field">
-            <label for="summaryLength">Độ dài kết quả</label>
-            <select id="summaryLength">
-              <option value="short">Ngắn gọn (1-2 câu)</option>
-              <option value="medium" selected>Vừa phải (3-5 câu)</option>
-              <option value="long">Chi tiết (nhiều hơn)</option>
-            </select>
+        <div class="card-body">
+          <div class="field-grid">
+            <div class="field">
+              <label for="summaryLength">Độ dài</label>
+              <select id="summaryLength" class="field-select">
+                <option value="short">Ngắn · 1–2 câu</option>
+                <option value="medium" selected>Vừa · 3–5 câu</option>
+                <option value="long">Dài · chi tiết hơn</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="outputLanguage">Ngôn ngữ</label>
+              <select id="outputLanguage" class="field-select">
+                <option value="vi">Tiếng Việt</option>
+                <option value="en">English</option>
+                <option value="zh">中文</option>
+                <option value="ja">日本語</option>
+                <option value="ko">한국어</option>
+                <option value="th">ไทย</option>
+                <option value="id">Bahasa Indonesia</option>
+              </select>
+            </div>
           </div>
           <div class="field">
-            <label for="promptStyle">Phong cách tóm tắt</label>
-            <select id="promptStyle">
+            <label for="promptStyle">Phong cách</label>
+            <select id="promptStyle" class="field-select" title="Mỗi phong cách dùng prompt AI khác nhau">
               <option value="default">Mặc định</option>
-              <option value="summary_bullet">Bullet Points</option>
+              <option value="summary_bullet">Bullet points</option>
               <option value="summary_detailed">Chi tiết có cấu trúc</option>
               <option value="summary_structured">Giữ cấu trúc gốc</option>
             </select>
           </div>
-          <div class="field">
-            <label for="outputLanguage">
-              Ngôn ngữ đầu ra
-              <span class="fbs-hint-icon" data-tooltip="Tự động phát hiện từ Facebook. Thay đổi nếu muốn ngôn ngữ khác.">?</span>
-            </label>
-            <select id="outputLanguage">
-              <option value="vi">Tiếng Việt</option>
-              <option value="en">English</option>
-              <option value="zh">中文</option>
-              <option value="ja">日本語</option>
-              <option value="ko">한국어</option>
-              <option value="th">ไทย</option>
-              <option value="id">Bahasa Indonesia</option>
-            </select>
-            <div class="field-hint">Tự động phát hiện từ ngôn ngữ Facebook của bạn.</div>
-          </div>
           <div class="field advanced-field">
-            <label for="minLength">
-              Độ dài tối thiểu (ký tự)
-              <span class="fbs-hint-icon" data-tooltip="Chỉ tóm tắt bài viết có ít nhất số ký tự này. Bỏ qua bài ngắn.">?</span>
-            </label>
-            <input type="number" id="minLength" value="400" min="100" max="5000" step="100">
+            <label for="minLength">Độ dài tối thiểu (ký tự)</label>
+            <input type="number" id="minLength" class="field-input" value="400" min="100" max="5000" step="100">
           </div>
-          <div class="field">
+          <div class="field field-check">
             <label class="checkbox-label">
               <input type="checkbox" id="enableUnicodeBold" checked>
-              <span>
-                Sử dụng chữ đậm Unicode khi copy/post
-                <span class="fbs-hint-icon" data-tooltip="Tự động convert **chữ đậm** thành các ký tự Unicode Bold đẹp mắt để hiển thị đậm trên Facebook status.">?</span>
-              </span>
+              <span>Chữ đậm Unicode khi copy / đăng</span>
             </label>
           </div>
         </div>
-      </div>
+      </section>
 
       <div class="accordion advanced-accordion">
         <div class="accordion-header" role="button" aria-expanded="false" tabindex="0">Hỗ trợ đăng bài</div>
         <div class="accordion-content">
-          <div class="callout callout-info">
-            Workflow: lọc feed → Batch chọn bài → preview / sửa → đăng thủ công.
-          </div>
+          <div class="field-hint" style="margin-bottom:12px">Workflow đề xuất: lọc feed → dùng Batch để chọn bài đáng đọc → preview, chỉnh sửa và đăng thủ công.</div>
           <div class="field">
             <label class="checkbox-label">
               <input type="checkbox" id="hideAffiliatePosts">
               <span>Ẩn bài viết có link Affiliate</span>
             </label>
-            <div class="field-hint">Tự động ẩn Shopee, Lazada, Tiki, TikTok Shop và affiliate khác.</div>
+            <div class="field-hint">Ẩn bài chứa link shopping (Shopee, Lazada, Tiki, TikTok Shop…).</div>
           </div>
           <div class="fbs-shopee-settings">
-            <div class="fbs-shopee-settings-title">Shopee Affiliate</div>
-            <div class="field-hint">Link hợp lệ do Shopee sinh. Gặp <code>shope.ee</code> → bấm <strong>Bóc Link</strong> → tạo tại <a href="https://affiliate.shopee.vn" target="_blank" rel="noopener">affiliate.shopee.vn</a>.</div>
+            <div class="fbs-shopee-settings-title">Bóc link Shopee</div>
+            <div class="field-hint">Bôi link <code>shope.ee</code> → chuột phải → <strong>Bóc Link Shopee</strong> để mở trang tạo link chính thức.</div>
           </div>
           <div class="field">
             <label for="sourceTemplate">
               Thông tin nguồn & tham khảo
-              <span class="fbs-hint-icon" data-tooltip="Tùy chỉnh dòng nguồn. Dùng {author}, {platform}, {source}, {link}, {repo}. Link Github/download/tham khảo cho từng bài có thể bổ sung ở màn hình đăng status.">?</span>
             </label>
             <textarea id="sourceTemplate" rows="3" placeholder="• Nguồn bài viết: {platform} {author} {source}&#10;• Link gốc: {link}&#10;• Repo mặc định: {repo}"></textarea>
             <div class="field-hint">{author} = tác giả, {platform} = nền tảng, {source} = nhóm/page, {link} = URL gốc, {repo} = repo mặc định nếu đã cấu hình</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="accordion">
-        <div class="accordion-header" role="button" aria-expanded="false" tabindex="0">
-          Tự động đăng repo GitHub
-          <span class="fbs-hint-icon" data-tooltip="Tự động lấy repo hot trên GitHub, viết tóm tắt bằng AI và đăng status Facebook theo lịch.">?</span>
-        </div>
-        <div class="accordion-content">
-          <div class="callout callout-warn">
-            <strong>Rủi ro tài khoản:</strong> Auto-post Facebook có thể bị hạn chế. Mỗi lần mở tab nền, đăng 1 repo rồi đóng. Cần API key + đang đăng nhập Facebook.
-          </div>
-
-          <div id="labsGateBox" class="labs-gate">
-            <div class="labs-gate-title">Labs / Rủi ro</div>
-            <div class="field-hint labs-gate-desc">
-              Xác nhận hiểu rủi ro trước khi bật lịch hoặc chạy thử.
-            </div>
-            <div class="field">
-              <label class="checkbox-label">
-                <input type="checkbox" id="labsAutomationEnabled">
-                <span>Tôi hiểu rủi ro bị hạn chế tài khoản Facebook</span>
-              </label>
-            </div>
-            <div class="field">
-              <label for="labsConfirmInput">Gõ xác nhận: <code>TOI HIEU RUI RO</code></label>
-              <input type="text" id="labsConfirmInput" class="labs-confirm-input" placeholder="TOI HIEU RUI RO" autocomplete="off" spellcheck="false">
-              <div class="field-hint">Phải gõ đúng (không dấu, chữ hoa).</div>
-            </div>
-            <button type="button" id="disableLabsBtn" class="btn btn-secondary btn-block btn-danger-outline">Tắt Labs ngay</button>
-          </div>
-
-          <div class="field">
-            <label class="checkbox-label">
-              <input type="checkbox" id="autoGithubEnabled" disabled>
-              <span>Bật tự động đăng theo lịch</span>
-            </label>
-          </div>
-          <div class="field">
-            <label for="autoGithubTime">Giờ chạy hằng ngày</label>
-            <input type="time" id="autoGithubTime" value="09:00">
-            <div class="field-hint">Theo giờ máy. Trình duyệt phải đang mở.</div>
-          </div>
-          <div class="field">
-            <label for="autoGithubFocus">Chủ đề repo</label>
-            <select id="autoGithubFocus">
-              <option value="ai">Thiên về AI / tooling</option>
-              <option value="all">Tất cả chủ đề</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="autoGithubMinStars">Số sao tối thiểu</label>
-            <input type="number" id="autoGithubMinStars" min="1" max="100000" step="1" value="30">
-            <div class="field-hint">Repo tạo trong 21 ngày gần đây.</div>
-          </div>
-          <button id="runGithubNowBtn" class="btn btn-secondary btn-block" disabled>Chạy ngay (test 1 repo)</button>
-          <div id="githubAutopostStatus" class="status" role="status" aria-live="polite"></div>
-          <div class="log-block">
-            <div class="log-block-label">Nhật ký gần đây</div>
-            <div id="githubAutopostLog" class="backup-list"></div>
           </div>
         </div>
       </div>
@@ -192,22 +117,13 @@
         <div class="accordion-header" role="button" aria-expanded="false" tabindex="0">Nâng cao</div>
         <div class="accordion-content">
           <div class="field">
-            <label for="scoringProfile">Lọc nội dung feed (điểm heuristic)</label>
-            <select id="scoringProfile">
-              <option value="tech" selected>Thiên AI/Tech (mặc định)</option>
-              <option value="general">Tổng quát</option>
-              <option value="affiliate">Ưu tiên review/sản phẩm</option>
-            </select>
-            <div class="field-hint">Profile chấm điểm nhanh khi agent lọc bài đáng tóm tắt/đăng. Không tốn API call.</div>
-          </div>
-          <div class="field">
-            <label for="adDisplayMode">Hiển thị bài quảng cáo</label>
+            <label for="adDisplayMode">Bài Được tài trợ / Sponsored</label>
             <select id="adDisplayMode">
-              <option value="hide">Ẩn hoàn toàn</option>
-              <option value="collapse" selected>Thu gọn (có lý do)</option>
+              <option value="hide" selected>Ẩn hoàn toàn</option>
+              <option value="collapse">Thu gọn (có lý do)</option>
               <option value="mark">Chỉ đánh dấu</option>
             </select>
-            <div class="field-hint">Cách hiển thị bài viết được phát hiện là quảng cáo.</div>
+            <div class="field-hint">Luôn lọc bài nhãn <strong>Được tài trợ</strong> / <strong>Sponsored</strong>. Mặc định ẩn hẳn.</div>
           </div>
           <div class="field">
             <label for="affiliateDisplayMode">Hiển thị bài affiliate / yêu cầu comment</label>
@@ -221,7 +137,6 @@
           <div class="field">
             <label for="customInstructions">
               Hướng dẫn bổ sung (tùy chọn)
-              <span class="fbs-hint-icon" data-tooltip="Thêm yêu cầu riêng cho AI. VD: 'Ưu tiên số liệu', 'Bỏ ví dụ'">?</span>
             </label>
             <textarea id="customInstructions" rows="2" placeholder="VD: Ưu tiên số liệu, bỏ ví dụ..."></textarea>
           </div>
@@ -230,13 +145,8 @@
             <textarea id="customSummaryPrompt" rows="2" placeholder="VD: Tóm tắt chi tiết hơn..."></textarea>
           </div>
           <div class="field">
-            <label for="customAffPrompt">Prompt Affiliate</label>
-            <textarea id="customAffPrompt" rows="2" placeholder="VD: Viết review 1 câu..."></textarea>
-          </div>
-          <div class="field">
             <label for="blockedDomains">
               Tắt extension trên (mỗi dòng 1 domain)
-              <span class="fbs-hint-icon" data-tooltip="Extension sẽ không hoạt động trên các URL chứa chuỗi này.">?</span>
             </label>
             <textarea id="blockedDomains" rows="3" placeholder="VD:&#10;groups.facebook.com&#10;x.com/notifications"></textarea>
             <div class="field-hint">Extension sẽ không hoạt động trên các URL chứa chuỗi này.</div>
@@ -247,7 +157,6 @@
       <div class="accordion advanced-accordion">
         <div class="accordion-header" role="button" aria-expanded="false" tabindex="0">
           Template Library
-          <span class="fbs-hint-icon" data-tooltip="Lưu và tái sử dụng các prompt template yêu thích của bạn.">?</span>
         </div>
         <div class="accordion-content">
           <div class="field">
@@ -256,9 +165,8 @@
           </div>
           <div class="field">
             <label for="templateType">Loại template</label>
-            <select id="templateType">
+            <select id="templateType" class="field-select">
               <option value="summary">Tóm tắt</option>
-              <option value="affiliate">Affiliate</option>
               <option value="status">Status</option>
             </select>
           </div>
@@ -266,136 +174,164 @@
             <label for="templatePrompt">Nội dung prompt</label>
             <textarea id="templatePrompt" rows="3" placeholder="VD: Viết review ngắn gọn 2-3 câu, tập trung vào ưu điểm chính..."></textarea>
           </div>
-          <div class="btn-row">
-            <button id="saveTemplateBtn" class="btn btn-primary btn-flex">Lưu Template</button>
-            <button id="clearTemplateFormBtn" class="btn btn-secondary btn-flex">Xóa Form</button>
+          <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+            <button id="saveTemplateBtn" class="btn btn-primary" style="flex: 1;">Lưu Template</button>
+            <button id="clearTemplateFormBtn" class="btn btn-secondary" style="flex: 1;">Xóa Form</button>
           </div>
           <div id="templateStatus" class="status" role="status" aria-live="polite"></div>
 
-          <div class="subblock">
-            <div class="subblock-label">Templates đã lưu</div>
+          <div style="margin-top: 16px;">
+            <label style="display: block; margin-bottom: 8px; font-weight: 600;">Templates đã lưu</label>
             <div id="templateList" class="template-list"></div>
           </div>
         </div>
       </div>
 
+      <div class="settings-footer sticky-save">
+        <button id="saveBtn" class="btn btn-primary btn-block" type="button">Lưu cài đặt</button>
+        <div id="status" class="status" role="status" aria-live="polite" hidden></div>
+      </div>
+
       <!-- Settings Management -->
-      <div class="accordion advanced-accordion">
+      <div class="accordion advanced-accordion" style="margin-top:15px">
         <div class="accordion-header" role="button" aria-expanded="false" tabindex="0">
           Quản lý cài đặt
-          <span class="fbs-hint-icon" data-tooltip="Backup và restore cài đặt của bạn.">?</span>
         </div>
         <div class="accordion-content">
           <div class="field">
-            <label>Backup &amp; Restore</label>
-            <div class="btn-row">
-              <button id="backupSettingsBtn" class="btn btn-secondary btn-flex">Backup ngay</button>
-              <button id="restoreSettingsBtn" class="btn btn-secondary btn-flex">Restore</button>
+            <label>Backup & Restore</label>
+            <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+              <button id="backupSettingsBtn" class="btn btn-secondary" style="flex: 1;">Backup ngay</button>
+              <button id="restoreSettingsBtn" class="btn btn-secondary" style="flex: 1;">Restore</button>
             </div>
-            <div class="field-hint">Tự động backup khi đổi cài đặt. Giữ 5 bản gần nhất.</div>
+            <div class="field-hint">Tự động backup khi cài đặt thay đổi. Giữ 5 backup gần nhất.</div>
           </div>
           <div id="backupList" class="backup-list"></div>
           <div id="settingsManagementStatus" class="status" role="status" aria-live="polite"></div>
         </div>
       </div>
 
-      <div class="sticky-actions">
-        <button id="saveBtn" class="btn btn-primary btn-block">Lưu cài đặt</button>
-        <div id="status" class="status status-inline" role="status" aria-live="polite"></div>
-      </div>
-
-      <div id="debugPanel" class="debug-panel" style="display:none">
-        <h4 class="debug-panel-title">Test Mode Debug</h4>
-        <div class="btn-row">
-          <button id="debugTestBtn" class="btn btn-secondary btn-flex">Test kết nối</button>
-          <button id="clearCacheBtn" class="btn btn-secondary btn-flex">Clear Cache</button>
-        </div>
-        <div id="debugInfo" class="debug-info"></div>
+<!-- Debug Panel (Test Mode) -->
+      <div id="debugPanel" class="debug-panel" style="display:none;margin-top:20px;padding:15px;border:1px solid #ddd;border-radius:8px;background:#f9f9f9;">
+        <h4 style="margin:0 0 10px 0;color:#666;"> Test Mode Debug</h4>
+        <button id="debugTestBtn" class="btn btn-secondary" style="margin-right:10px;">Test kết nối</button>
+        <button id="clearCacheBtn" class="btn btn-secondary">Clear Cache</button>
+        <div id="debugInfo" style="margin-top:10px;font-size:12px;color:#666;"></div>
       </div>
     </div>
-
     <!-- API Keys Tab -->
-    <div class="tab-content" id="tab-apikeys" role="tabpanel" aria-labelledby="tabbtn-apikeys">
-      <div class="section-intro">
-        <strong>API Keys</strong>
-        <span>Thêm ít nhất 1 key miễn phí (Groq khuyến nghị). Tự xoay key khi rate limit.</span>
-      </div>
-
-      <div class="panel-card">
-        <div class="field field-tight">
-          <label for="newApiKey">Thêm API Key</label>
-          <div class="input-group">
-            <input type="password" id="newApiKey" placeholder="Dán API key vào đây" autocomplete="off" autocapitalize="off" spellcheck="false">
-            <button type="button" id="toggleNewApiKey" class="icon-btn" title="Hiện / ẩn key" aria-label="Hiện hoặc ẩn API key" aria-pressed="false">👁</button>
-            <button type="button" id="addKeyBtn" class="icon-btn icon-btn-primary" title="Thêm" aria-label="Thêm key">+</button>
+    <div class="tab-content" id="tab-apikeys" role="tabpanel" aria-labelledby="tabbtn-apikeys" hidden>
+      <section class="card keys-add-card">
+        <div class="card-head">
+          <h2 class="card-title">Thêm API Key</h2>
+          <p class="card-sub">Tự nhận diện provider từ prefix (gsk_, csk-, AI…)</p>
+        </div>
+        <div class="card-body">
+          <div class="input-group keys-input-group">
+            <div class="keys-input-wrap">
+              <input type="password" id="newApiKey" class="field-input keys-input" placeholder="Dán API key vào đây" autocomplete="off" autocapitalize="off" spellcheck="false">
+              <button type="button" id="toggleNewApiKey" class="keys-reveal-btn" title="Hiện / ẩn key" aria-label="Hiện hoặc ẩn API key" aria-pressed="false">
+                <svg class="icon-eye" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg class="icon-eye-off" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" hidden><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+              </button>
+            </div>
+            <button type="button" id="addKeyBtn" class="icon-btn keys-add-btn" title="Thêm key" aria-label="Thêm API key">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
           </div>
-          <div class="field-hint">Tự nhận provider từ prefix: Groq, Gemini, Cerebras, SambaNova, OpenRouter.</div>
+          <p class="field-hint keys-hint">Hỗ trợ Groq · Gemini · Cerebras · SambaNova · OpenRouter. Rotate key khi rate limit.</p>
+        </div>
+      </section>
+
+      <div id="keyEmptyState" class="empty keys-empty" style="display:none" hidden>
+        <div class="keys-empty-title">Chưa có API key</div>
+        <p class="keys-empty-text">Dán key vào ô trên, hoặc <strong>Import</strong> file JSON đã export / recovery. Reload extension (ID mới) sẽ mất key nếu chưa backup.</p>
+        <div class="keys-empty-actions">
+          <button type="button" class="btn btn-secondary btn-sm" id="emptyImportBtn">Import JSON</button>
         </div>
       </div>
 
-      <div class="callout callout-info">
-        Tự rotate key khi rate limit; chuyển provider khi hết key khả dụng.
-      </div>
-      <div class="callout callout-muted">
-        Clipboard, cookie Shopee, fetch host ngoài cần <strong>quyền tùy chọn</strong> — Chrome hỏi lần đầu dùng.
-      </div>
-
-      <div id="keyEmptyState" class="empty-state" style="display:none">Chưa có key. Dán key vào ô trên để bắt đầu.</div>
-
-      <div class="key-lists">
+      <div id="keysStack" class="keys-stack">
         <div id="keyListGroq" class="key-list" style="display:none">
-          <div class="key-list-header">Groq <span class="key-limit-badge">100K token/ngày</span></div>
+          <div class="key-list-header">
+            <span class="key-list-name">Groq</span>
+            <span class="key-limit-badge">100K tok/ngày</span>
+          </div>
           <div id="keyListGroqItems" class="key-list-items"></div>
         </div>
         <div id="keyListGemini" class="key-list" style="display:none">
-          <div class="key-list-header">Gemini <span class="key-limit-badge">1500 req/ngày</span></div>
+          <div class="key-list-header">
+            <span class="key-list-name">Gemini</span>
+            <span class="key-limit-badge">1500 req/ngày</span>
+          </div>
           <div id="keyListGeminiItems" class="key-list-items"></div>
         </div>
         <div id="keyListCerebras" class="key-list" style="display:none">
-          <div class="key-list-header">Cerebras <span class="key-limit-badge">1M token/ngày</span></div>
+          <div class="key-list-header">
+            <span class="key-list-name">Cerebras</span>
+            <span class="key-limit-badge">1M tok/ngày</span>
+          </div>
           <div id="keyListCerebrasItems" class="key-list-items"></div>
         </div>
         <div id="keyListSambanova" class="key-list" style="display:none">
-          <div class="key-list-header">SambaNova <span class="key-limit-badge">20M token/ngày</span></div>
+          <div class="key-list-header">
+            <span class="key-list-name">SambaNova</span>
+            <span class="key-limit-badge">20M tok/ngày</span>
+          </div>
           <div id="keyListSambanovaItems" class="key-list-items"></div>
         </div>
         <div id="keyListOpenrouter" class="key-list" style="display:none">
-          <div class="key-list-header">OpenRouter <span class="key-limit-badge">50 req/ngày free</span></div>
+          <div class="key-list-header">
+            <span class="key-list-name">OpenRouter</span>
+            <span class="key-limit-badge">50 req/ngày</span>
+          </div>
           <div id="keyListOpenrouterItems" class="key-list-items"></div>
         </div>
       </div>
 
-      <button id="testBtn" class="btn btn-secondary btn-block">Test kết nối</button>
-      <div id="keyStatus" class="status" role="status" aria-live="polite"></div>
-
-      <div id="providerHealth" class="provider-health panel-card">
-        <div class="provider-health-header">
-          <span class="provider-health-title">Trạng thái key</span>
-          <div class="provider-health-actions">
-            <button type="button" id="refreshProviderHealthBtn" class="btn btn-secondary btn-sm">Làm mới</button>
-            <button type="button" id="clearRateLimitBtn" class="btn btn-secondary btn-sm" title="Xóa cờ rate-limit, không xóa API key">Xóa rate-limit</button>
-          </div>
+      <div class="keys-actions">
+        <button id="testBtn" class="btn btn-primary btn-block" type="button">Test kết nối</button>
+        <div class="keys-io-row">
+          <button id="exportKeysBtn" class="btn btn-secondary keys-io-btn" type="button" title="Tải file backup keys">Export</button>
+          <button id="importKeysBtn" class="btn btn-secondary keys-io-btn" type="button" title="Khôi phục từ file JSON">Import</button>
+          <input type="file" id="importKeysFile" accept="application/json,.json" hidden>
         </div>
-        <div id="providerHealthList" class="provider-health-list">
-          <div class="field-hint">Chưa có dữ liệu. Thêm key và dùng thử.</div>
-        </div>
+        <div id="keyStatus" class="status" role="status" aria-live="polite" hidden></div>
       </div>
 
-      <div class="provider-guide panel-card">
-        <div class="provider-guide-title">Lấy API Key miễn phí</div>
-        <a class="guide-step" href="https://console.groq.com/keys" target="_blank" rel="noopener"><strong>Groq</strong><span>gsk_… · 100K token/ngày</span></a>
-        <a class="guide-step" href="https://cloud.cerebras.ai" target="_blank" rel="noopener"><strong>Cerebras</strong><span>csk-… · 1M token/ngày</span></a>
-        <a class="guide-step" href="https://cloud.sambanova.ai" target="_blank" rel="noopener"><strong>SambaNova</strong><span>$5 credit · 20M token/ngày</span></a>
-        <a class="guide-step" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener"><strong>Gemini</strong><span>AI… · 1500 req/ngày</span></a>
-        <a class="guide-step" href="https://openrouter.ai/keys" target="_blank" rel="noopener"><strong>OpenRouter</strong><span>sk-or-… · 50 req/ngày free</span></a>
-      </div>
+      <details class="provider-guide">
+        <summary class="provider-guide-title">Lấy API Key miễn phí</summary>
+        <div class="provider-guide-body">
+          <a class="guide-row" href="https://console.groq.com/keys" target="_blank" rel="noopener">
+            <span class="guide-name">Groq</span>
+            <span class="guide-meta">gsk_… · 100K tok/ngày</span>
+          </a>
+          <a class="guide-row" href="https://cloud.cerebras.ai" target="_blank" rel="noopener">
+            <span class="guide-name">Cerebras</span>
+            <span class="guide-meta">csk-… · 1M tok/ngày</span>
+          </a>
+          <a class="guide-row" href="https://cloud.sambanova.ai" target="_blank" rel="noopener">
+            <span class="guide-name">SambaNova</span>
+            <span class="guide-meta">$5 free · 20M tok/ngày</span>
+          </a>
+          <a class="guide-row" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">
+            <span class="guide-name">Gemini</span>
+            <span class="guide-meta">AIza… · 1500 req/ngày</span>
+          </a>
+          <a class="guide-row" href="https://openrouter.ai/keys" target="_blank" rel="noopener">
+            <span class="guide-name">OpenRouter</span>
+            <span class="guide-meta">sk-or-… · 50 req/ngày</span>
+          </a>
+        </div>
+      </details>
     </div>
 
     <!-- History Tab -->
-    <div class="tab-content" id="tab-history" role="tabpanel" aria-labelledby="tabbtn-history">
+    <div class="tab-content" id="tab-history" role="tabpanel" aria-labelledby="tabbtn-history" hidden>
+      <!-- Agent Stats (Feature 7) - Redesigned -->
       <div id="agentStatsBox" class="agent-stats-widget">
         <div class="agent-stats-header">
-          <span class="agent-stats-title">Thống kê phát hiện</span>
+          <span class="agent-stats-title">Thống kê feed</span>
         </div>
         <div class="agent-stats-grid">
           <div class="agent-stat-item">
@@ -412,102 +348,81 @@
           </div>
           <div class="agent-stat-item agent-stat-item-wide">
             <div class="agent-stat-label">Lý do chính</div>
-            <div class="agent-stat-value agent-stat-value-small" id="statLastPost">–</div>
+            <div class="agent-stat-value agent-stat-value-small" id="statLastPost" title="">–</div>
           </div>
         </div>
       </div>
       <div id="postTimeSuggestBox" class="post-time-suggest" style="display:none"></div>
       <div id="historyList" class="history-list"></div>
       <div id="historyDetail" class="history-detail" style="display:none">
-        <button id="historyBack" class="btn btn-secondary btn-sm history-back">← Quay lại</button>
+        <button id="historyBack" class="btn btn-secondary" style="margin-bottom:6px">Quay lại</button>
         <div class="history-detail-date" id="historyDetailDate"></div>
         <div class="history-detail-body" id="historyDetailBody"></div>
-        <button id="historyDetailCopy" class="btn btn-secondary btn-block">Copy</button>
+        <button id="historyDetailCopy" class="btn btn-secondary" style="margin-top:6px">Copy</button>
       </div>
-      <div id="historyActions" class="history-actions">
-        <button id="rescanBtn" class="btn btn-secondary btn-sm">Quét lại</button>
-        <button id="exportBtn" class="btn btn-secondary btn-sm">JSON</button>
-        <button id="exportMdBtn" class="btn btn-secondary btn-sm">Markdown</button>
-        <button id="clearBtn" class="btn btn-danger btn-sm">Xóa</button>
+      <div id="historyActions">
+        <button id="rescanBtn" class="btn btn-secondary">Quét lại feed</button>
+        <button id="exportBtn" class="btn btn-secondary">Export JSON</button>
+        <button id="exportMdBtn" class="btn btn-secondary">Export Markdown</button>
+        <button id="clearBtn" class="btn btn-danger">Xóa lịch sử</button>
       </div>
       <div id="historyStatus" class="status" role="status" aria-live="polite"></div>
     </div>
 
     <!-- About Tab -->
-    <div class="tab-content" id="tab-about" role="tabpanel" aria-labelledby="tabbtn-about">
-      <div class="about-section">
-        <h2 class="about-section-title">Tác giả</h2>
-        <div class="about-card about-author-card">
+    <div class="tab-content" id="tab-about" role="tabpanel" aria-labelledby="tabbtn-about" hidden>
+      <section class="about-section">
+        <div class="about-section-title">Tác giả</div>
+        <div class="about-card">
           <div class="about-author">
-            <div class="about-avatar-wrap" aria-hidden="true">
-              <img class="about-avatar" src="icons/icon48.png" alt="">
-            </div>
+            <img class="about-avatar" src="icons/icon128.png" alt="avatar">
             <div class="about-author-info">
               <div class="about-author-name">Le An (anlvdt)</div>
               <div class="about-author-bio">Developer / Content Creator</div>
+              <a class="about-link" href="https://github.com/anlvdt" target="_blank" rel="noopener">github.com/anlvdt</a>
             </div>
           </div>
-          <a class="about-github-link" href="https://github.com/anlvdt" target="_blank" rel="noopener">github.com/anlvdt</a>
         </div>
-      </div>
+      </section>
 
-      <div class="about-section">
-        <h2 class="about-section-title">Phím tắt</h2>
+      <section class="about-section">
+        <div class="about-section-title">Phím tắt</div>
         <div class="about-card about-shortcuts">
-          <div class="about-shortcut">
-            <span class="about-shortcut-label">Tóm tắt</span>
-            <kbd class="about-shortcut-key">Ctrl+Shift+S</kbd>
-          </div>
-          <div class="about-shortcut">
-            <span class="about-shortcut-label">Affiliate</span>
-            <kbd class="about-shortcut-key">Ctrl+Shift+A</kbd>
-          </div>
-          <div class="about-shortcut">
-            <span class="about-shortcut-label">Copy kết quả</span>
-            <kbd class="about-shortcut-key">Ctrl+C</kbd>
-          </div>
-          <div class="about-shortcut">
-            <span class="about-shortcut-label">Sửa kết quả</span>
-            <kbd class="about-shortcut-key">Ctrl+E</kbd>
-          </div>
-          <p class="about-footnote">Đổi phím: <span class="about-mono">chrome://extensions/shortcuts</span></p>
+          <div class="about-shortcut"><span>Tóm tắt vùng chọn</span><kbd class="about-shortcut-key">⌃⇧S</kbd></div>
+          <div class="about-shortcut"><span>Dịch EN→VI</span><kbd class="about-shortcut-key">⌃⇧T</kbd></div>
+          <div class="about-shortcut"><span>Double-click từ EN</span><span class="about-shortcut-note">Tooltip dịch</span></div>
+          <div class="about-shortcut"><span>Toolbar trên FB</span><span class="about-shortcut-note">Slang · Cụm · Shadow</span></div>
+          <p class="field-hint about-hint">Đổi phím: chrome://extensions/shortcuts</p>
         </div>
-      </div>
+      </section>
 
-      <div class="about-section">
-        <h2 class="about-section-title">Hướng dẫn</h2>
-        <div class="about-card about-howto">
-          <ol class="about-howto-list">
-            <li>Bôi đen chữ trên feed → chọn <strong>Tóm tắt / Status / Affiliate</strong>.</li>
-            <li>Chỉnh sửa hoặc đổi tone → <strong>Copy</strong> hoặc <strong>Đăng Status</strong>.</li>
-            <li>Paste link nguồn vào comment đầu (nút Paste trong panel).</li>
+      <section class="about-section">
+        <div class="about-section-title">Hướng dẫn nhanh</div>
+        <div class="about-card about-steps">
+          <ol class="about-ol">
+            <li>Bôi đen text → toolbar hoặc chuột phải</li>
+            <li>Tóm tắt / Dịch / Slang / Cụm từ / Shadow</li>
+            <li>Sửa → Copy Status → Đăng + nguồn</li>
           </ol>
-          <p class="about-footnote">Hỗ trợ: Facebook · Threads · X · LinkedIn · Reddit</p>
+          <p class="field-hint">Facebook · Threads · X · LinkedIn · Reddit · dịch mọi trang https</p>
         </div>
-      </div>
+      </section>
 
-      <div class="about-section">
-        <h2 class="about-section-title">Quyền tùy chọn</h2>
-        <div class="about-card about-note">
-          Chỉ xin clipboard, cookies Shopee và host HTTPS rộng <strong>khi bạn dùng tính năng đó lần đầu</strong>. Từ chối vẫn dùng được tóm tắt / status.
-        </div>
-      </div>
-
-      <div class="about-section">
-        <h2 class="about-section-title">Giao diện</h2>
-        <div class="theme-row">
-          <span class="theme-row-label">Theme</span>
-          <select id="themeSelect" class="theme-select" aria-label="Chọn theme">
+      <section class="about-section">
+        <div class="about-section-title">Giao diện</div>
+        <div class="about-card theme-toggle-row">
+          <label for="themeSelect">Theme</label>
+          <select id="themeSelect" class="field-select">
             <option value="auto">Tự động</option>
             <option value="dark">Dark</option>
             <option value="light">Light</option>
           </select>
         </div>
-      </div>
+      </section>
 
-      <footer class="about-footer">
-        <a id="aboutVersion" href="https://github.com/anlvdt/FeedWriter" target="_blank" rel="noopener">FeedWriter</a>
-      </footer>
+      <div class="about-footer">
+        <a id="aboutVersion" href="https://github.com/anlvdt/fb-post-summarizer" target="_blank" rel="noopener">FeedWriter v2.4</a>
+      </div>
     </div>
   </div>
 
@@ -515,7 +430,7 @@
   <div id="wizard-view" class="wizard-container" style="display: none; padding: var(--space-4);">
     <div class="wizard-header" style="text-align: center; margin-bottom: var(--space-5);">
       <div class="wizard-logo" style="display: flex; justify-content: center; margin-bottom: var(--space-3);">
-        <img src="icons/icon48.png" width="48" height="48" alt="FeedWriter Logo">
+        <img src="icons/icon128.png" width="56" height="56" alt="FeedWriter Logo" style="border-radius:14px">
       </div>
       <h1 class="wizard-title" style="font-size: var(--text-xl); font-weight: 700; color: var(--text-heading); margin-bottom: var(--space-2);">Chào mừng đến FeedWriter</h1>
       <p class="wizard-subtitle" style="font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.5;">Hãy cùng thiết lập để bắt đầu sử dụng</p>
@@ -535,21 +450,22 @@
 
       <ul class="wizard-feature-list" style="list-style: none; padding: 0; margin: var(--space-4) 0;">
         <li class="wizard-feature-item" style="display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-2) 0; font-size: var(--text-sm); color: var(--text-secondary);">
-          <span class="wizard-feature-icon" style="flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: var(--success-bg); color: var(--success); display: flex; align-items: center; justify-content: center; font-size: var(--text-xs); font-weight: 700;">✓</span>
+          <span class="wizard-feature-icon" style="flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: var(--success-bg); color: var(--success); display: flex; align-items: center; justify-content: center; font-size: var(--text-xs); font-weight: 700;"></span>
           <span>Tóm tắt bài viết dài thành nội dung ngắn gọn</span>
         </li>
         <li class="wizard-feature-item" style="display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-2) 0; font-size: var(--text-sm); color: var(--text-secondary);">
-          <span class="wizard-feature-icon" style="flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: var(--success-bg); color: var(--success); display: flex; align-items: center; justify-content: center; font-size: var(--text-xs); font-weight: 700;">✓</span>
-          <span>Phát hiện và ẩn bài quảng cáo, affiliate</span>
+          <span class="wizard-feature-icon" style="flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: var(--success-bg); color: var(--success); display: flex; align-items: center; justify-content: center; font-size: var(--text-xs); font-weight: 700;"></span>
+          <span>Phát hiện và ẩn bài quảng cáo / shopping</span>
         </li>
         <li class="wizard-feature-item" style="display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-2) 0; font-size: var(--text-sm); color: var(--text-secondary);">
-          <span class="wizard-feature-icon" style="flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: var(--success-bg); color: var(--success); display: flex; align-items: center; justify-content: center; font-size: var(--text-xs); font-weight: 700;">✓</span>
+          <span class="wizard-feature-icon" style="flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: var(--success-bg); color: var(--success); display: flex; align-items: center; justify-content: center; font-size: var(--text-xs); font-weight: 700;"></span>
           <span>Hỗ trợ đa ngôn ngữ (Việt, Anh, Trung, Nhật...)</span>
         </li>
       </ul>
 
-      <div class="wizard-actions" style="display: flex; gap: var(--space-2); margin-top: var(--space-5);">
-        <button class="btn btn-primary" id="wizardStep0Next" style="width: 100%;">Bắt đầu</button>
+      <div class="wizard-actions" style="display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-5);">
+        <button type="button" class="btn btn-primary" id="wizardStep0Next" style="width: 100%;">Bắt đầu</button>
+        <button type="button" class="btn btn-secondary" id="wizardStep0Skip" style="width: 100%;">Bỏ qua, vào app ngay</button>
       </div>
     </div>
 
@@ -574,8 +490,8 @@
       <div id="wizardKeyStatus" class="status" role="status" aria-live="polite" style="margin-top: var(--space-3); display: none;"></div>
 
       <div class="wizard-actions" style="display: flex; gap: var(--space-2); margin-top: var(--space-5);">
-        <button class="btn btn-secondary" id="wizardStep1Back" style="flex: 1;">Quay lại</button>
-        <button class="btn btn-primary" id="wizardStep1Next" style="flex: 1;">Tiếp tục</button>
+        <button type="button" class="btn btn-secondary" id="wizardStep1Back" style="flex: 1;">Quay lại</button>
+        <button type="button" class="btn btn-primary" id="wizardStep1Next" style="flex: 1;">Tiếp tục</button>
       </div>
 
       <div class="wizard-skip" style="text-align: center; margin-top: var(--space-3);">
@@ -609,38 +525,38 @@
       </div>
 
       <div class="field">
-        <label class="checkbox-label" style="display: flex; align-items: center; gap: var(--space-2); cursor: pointer; font-size: var(--text-sm); color: var(--text);">
-          <input type="checkbox" id="wizardHideAffiliate" style="width: auto; cursor: pointer;">
+        <label class="checkbox-label">
+          <input type="checkbox" id="wizardHideAffiliate">
           <span>Tự động ẩn bài viết có link Affiliate</span>
         </label>
         <div class="field-hint" style="font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--space-1); line-height: 1.4;">Ẩn các bài viết chứa link Shopee, Lazada, TikTok Shop...</div>
       </div>
 
       <div class="wizard-actions" style="display: flex; gap: var(--space-2); margin-top: var(--space-5);">
-        <button class="btn btn-secondary" id="wizardStep2Back" style="flex: 1;">Quay lại</button>
-        <button class="btn btn-primary" id="wizardStep2Next" style="flex: 1;">Tiếp tục</button>
+        <button type="button" class="btn btn-secondary" id="wizardStep2Back" style="flex: 1;">Quay lại</button>
+        <button type="button" class="btn btn-primary" id="wizardStep2Next" style="flex: 1;">Tiếp tục</button>
       </div>
     </div>
 
     <!-- Step 4: Complete -->
     <div class="wizard-step" data-step="3" style="display: none;">
-      <div class="wizard-success-icon" style="width: 64px; height: 64px; margin: 0 auto var(--space-4); border-radius: 50%; background: var(--success-bg); color: var(--success); display: flex; align-items: center; justify-content: center; font-size: 32px;">✓</div>
+      <div class="wizard-success-icon" style="width: 64px; height: 64px; margin: 0 auto var(--space-4); border-radius: 50%; background: var(--success-bg); color: var(--success); display: flex; align-items: center; justify-content: center; font-size: 32px;"></div>
       <h2 class="wizard-step-title" style="text-align: center; font-size: var(--text-lg); font-weight: 700; color: var(--text-heading); margin-bottom: var(--space-3);">Hoàn tất!</h2>
       <p class="wizard-step-description" style="text-align: center; font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.6; margin-bottom: var(--space-4);">Bạn đã sẵn sàng sử dụng FeedWriter. Hãy thử tóm tắt một bài viết trên Facebook hoặc mạng xã hội khác.</p>
 
       <ul class="wizard-feature-list" style="list-style: none; padding: 0; margin: var(--space-4) 0;">
         <li class="wizard-feature-item" style="display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-2) 0; font-size: var(--text-sm); color: var(--text-secondary);">
-          <span class="wizard-feature-icon" style="flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: var(--success-bg); color: var(--success); display: flex; align-items: center; justify-content: center; font-size: var(--text-xs); font-weight: 700;">💡</span>
+          <span class="wizard-feature-icon" style="flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: var(--success-bg); color: var(--success); display: flex; align-items: center; justify-content: center; font-size: var(--text-xs); font-weight: 700;"></span>
           <span>Bôi đen văn bản → Chuột phải → Chọn tính năng</span>
         </li>
         <li class="wizard-feature-item" style="display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-2) 0; font-size: var(--text-sm); color: var(--text-secondary);">
           <span class="wizard-feature-icon" style="flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: var(--success-bg); color: var(--success); display: flex; align-items: center; justify-content: center; font-size: var(--text-xs); font-weight: 700;">⌨️</span>
-          <span>Phím tắt: Ctrl/⌘+Shift+S (Tóm tắt), Ctrl/⌘+Shift+A (Affiliate)</span>
+          <span>Phím tắt: Ctrl+Shift+S (Tóm tắt), Ctrl+Shift+T (Dịch EN→VI)</span>
         </li>
       </ul>
 
       <div class="wizard-actions" style="display: flex; gap: var(--space-2); margin-top: var(--space-5);">
-        <button class="btn btn-primary" id="wizardStep3Finish" style="width: 100%;">Bắt đầu sử dụng</button>
+        <button type="button" class="btn btn-primary" id="wizardStep3Finish" style="width: 100%;">Bắt đầu sử dụng</button>
       </div>
     </div>
   </div>
