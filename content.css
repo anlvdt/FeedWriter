@@ -2,10 +2,12 @@
 .fbs-chip-host {
   position: absolute !important;
   top: 10px !important;
-  right: 10px !important;
+  /* Keep Facebook's close and overflow controls clickable. Their top-right
+     action cluster occupies roughly 88px, including its outer spacing. */
+  right: 104px !important;
   bottom: auto !important;
   left: auto !important;
-  inset: 10px 10px auto auto !important;
+  inset: 10px 104px auto auto !important;
   width: max-content !important;
   height: 32px !important;
   min-height: 32px !important;
@@ -4143,4 +4145,3 @@ button.fbs-allpost-btn:hover,
   --fbs-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
   --fbs-font: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
-

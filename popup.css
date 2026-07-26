@@ -8,6 +8,7 @@
   --text-base: 13px;
   --text-md: 14px;
   --text-lg: 16px;
+  --text-xl: 20px;
 
   /* 4px grid */
   --space-1: 4px;
@@ -1584,14 +1585,13 @@ label:not(.switch-label),
   }
 }
 
-/* Sticky save bar — always reachable on long settings */
+/* Save bar lives at the end of Settings; keeping it in normal flow prevents
+   it from covering accordion rows in Chrome's short popup viewport. */
 .settings-footer.sticky-save {
-  position: sticky;
-  bottom: 0;
-  z-index: 5;
+  position: static;
   margin: 12px -4px 0;
   padding: 10px 4px 2px;
-  background: linear-gradient(180deg, transparent 0%, var(--bg) 28%, var(--bg) 100%);
+  background: var(--bg);
 }
 .settings-footer.sticky-save .btn-primary {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
@@ -1697,9 +1697,9 @@ label:not(.switch-label),
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 99px; }
 
-/* Light theme: sticky save gradient */
+/* Light theme save surface */
 body.light .settings-footer.sticky-save {
-  background: linear-gradient(180deg, transparent 0%, var(--bg) 28%, var(--bg) 100%);
+  background: var(--bg);
 }
 
 /* Ensure hidden tabpanels stay fully out of flow */

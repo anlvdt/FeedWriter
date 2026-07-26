@@ -107,4 +107,13 @@ describe("StatusFormatter.format", () => {
     assert.ok(!out.includes("━━━━━━━━━━"), out);
     assert.ok(!/bình luận đầu tiên/i.test(out), out);
   });
+
+  it("keeps glossary items instead of treating every line as a footer", () => {
+    const raw =
+      "Thuật ngữ AI cần biết\n\nNội dung chính.\n\n" +
+      "Giải thích thuật ngữ:\n· RAG: Truy xuất dữ liệu trước khi sinh câu trả lời";
+    const out = StatusFormatter.format(raw, "facebook", { hasRepo: false });
+    assert.match(out, /GIẢI THÍCH THUẬT NGỮ/i);
+    assert.match(out, /Truy xuất dữ liệu trước khi sinh câu trả lời/);
+  });
 });

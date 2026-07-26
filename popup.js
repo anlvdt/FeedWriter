@@ -137,6 +137,12 @@ function initWizard() {
       step.classList.toggle("active", on);
       step.hidden = !on;
     });
+    const activeStep = steps[currentStep];
+    const heading = activeStep?.querySelector("h2");
+    if (heading) {
+      heading.setAttribute("tabindex", "-1");
+      requestAnimationFrame(() => heading.focus({ preventScroll: true }));
+    }
   }
 
   const wizardApiKey = document.getElementById("wizardApiKey");
@@ -1413,6 +1419,20 @@ const ver = chrome.runtime.getManifest().version;
 const verEl = document.getElementById("aboutVersion");
 if (verEl) verEl.textContent = "FeedWriter v" + ver;
 
+const isMacPlatform = /Mac|iPhone|iPad|iPod/i.test(
+  navigator.platform || navigator.userAgent || "",
+);
+document.querySelectorAll("[data-shortcut-key]").forEach((el) => {
+  const key = el.getAttribute("data-shortcut-key") || "";
+  el.textContent = isMacPlatform ? "⌘⇧" + key : "Ctrl+Shift+" + key;
+});
+const wizardShortcutHint = document.getElementById("wizardShortcutHint");
+if (wizardShortcutHint) {
+  const prefix = isMacPlatform ? "⌘⇧" : "Ctrl+Shift+";
+  wizardShortcutHint.textContent =
+    "Phím tắt: " + prefix + "S (Tóm tắt), " + prefix + "T (Dịch EN→VI)";
+}
+
 // === ACCORDION LOGIC ===
 function toggleAccordion(header) {
   header.classList.toggle('active');
@@ -1690,4 +1710,3 @@ function showSettingsManagementStatus(message, type) {
     settingsManagementStatus.style.display = "none";
   }, 3000);
 }
-

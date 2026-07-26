@@ -503,22 +503,36 @@ function isInNonPostArea(el) {
 function _findSharedPostArticle(postContainer) {
   if (!postContainer) return null;
 
-  // Method 1: Look for nested article with own header
-  const nestedArticles = postContainer.querySelectorAll('[role="article"]');
-  for (const nested of nestedArticles) {
-    if (nested === postContainer) continue;
+  // Virtualized/FeedUnit wrappers often contain one top-level role=article.
+  // Treat that node as the post root rather than mistaking it for a share.
+  let articleRoot = postContainer;
+  if (postContainer.getAttribute?.("role") !== "article") {
+    const articles = Array.from(postContainer.querySelectorAll('[role="article"]'));
+    const topArticle = articles.find((article) => {
+      const parentArticle = article.parentElement?.closest?.('[role="article"]');
+      return !parentArticle || !postContainer.contains(parentArticle);
+    });
+    if (topArticle) articleRoot = topArticle;
+  }
 
-    // Must have parent article
-    const parentArticle = nested.closest('[role="article"]');
-    if (parentArticle && parentArticle !== postContainer) continue;
+  // Method 1: Look for nested article with own header
+  const nestedArticles = articleRoot.querySelectorAll('[role="article"]');
+  for (const nested of nestedArticles) {
+    if (nested === articleRoot) continue;
+
+    // Must be a direct nested article of this post. `nested.closest()` returns
+    // the node itself, so start from its parent to avoid accepting comments or
+    // a deeper article inside another embedded unit.
+    const parentArticle = nested.parentElement?.closest?.('[role="article"]');
+    if (parentArticle && parentArticle !== articleRoot) continue;
 
     // Skip comments
-    if (nested.closest("form")) continue;
+    if (_fbIsCommentArticle(nested, articleRoot)) continue;
 
     // Skip list items (reactions, comments list)
     let el = nested.parentElement;
     let isInList = false;
-    for (let i = 0; i < 10 && el && el !== postContainer; i++) {
+    for (let i = 0; i < 10 && el && el !== articleRoot; i++) {
       const role = (el.getAttribute("role") || "").toLowerCase();
       if (role === "list" || role === "listitem" || el.tagName === "UL") {
         isInList = true;
@@ -537,7 +551,7 @@ function _findSharedPostArticle(postContainer) {
   }
 
   // Method 2: Look for "shared a post" text
-  const allText = postContainer.innerText || postContainer.textContent || "";
+  const allText = articleRoot.innerText || articleRoot.textContent || "";
   const sharedPatterns = [
     "shared a post", "chia sẻ bài viết", "đã chia sẻ",
     "shared a memory", "chia sẻ kỷ niệm",
@@ -550,7 +564,7 @@ function _findSharedPostArticle(postContainer) {
 
   if (hasSharedText) {
     // Find the nested article after "shared" text
-    const nestedArticles = postContainer.querySelectorAll('[role="article"]');
+    const nestedArticles = articleRoot.querySelectorAll('[role="article"]');
     if (nestedArticles.length > 1) {
       return nestedArticles[1]; // Second article is usually the shared content
     }
@@ -1581,6 +1595,13 @@ function _fbFindOriginalAuthor(postContainer) {
 function _fbExtractAuthorFromContainer(container) {
   if (!container) return "";
 
+  const headerText = _fbCleanName(
+    container.querySelector("h2, h3, h4")?.innerText || "",
+  );
+  if (/\b(?:anonymous participant|anonymous member|thành viên ẩn danh|người tham gia ẩn danh)\b/i.test(headerText)) {
+    return /anonymous/i.test(headerText) ? "Anonymous participant" : "Thành viên ẩn danh";
+  }
+
   // 1) Semantic headers
   const headers = container.querySelectorAll("h2, h3, h4");
   for (const h of headers) {
@@ -2305,13 +2326,63 @@ function _getPrimaryPostText(container) {
     // (Like / Comment / Share buttons next to words like "link" in body)
     clone
       .querySelectorAll(
-        'form, [role="article"] [role="article"], [role="toolbar"], [aria-label="Actions for this post"], [aria-label*="Thích"], [aria-label*="Like"], [aria-label*="Bình luận"], [aria-label*="Comment"], [aria-label*="Chia sẻ"], [aria-label*="Share"], [data-ad-comet-preview], ul[role="listbox"]',
+        'form, [role="article"] [role="article"], [role="toolbar"], [aria-label="Actions for this post"], [aria-label*="Thích"], [aria-label*="Like"], [aria-label*="Bình luận"], [aria-label*="Comment"], [aria-label*="Chia sẻ"], [aria-label*="Share"], [data-ad-comet-preview], ul[role="listbox"], [data-fbs-ui], .fbs-chip-host, .fbs-batch-checkbox',
       )
       .forEach((node) => node.remove());
     return clone.innerText || clone.textContent || "";
   } catch (_) {
     return container.innerText || container.textContent || "";
   }
+}
+
+function _normalizePostBodyText(raw) {
+  const uiOnly = /^(?:like|thích|comment|bình luận|share|chia sẻ|send|gửi|follow|theo dõi|see more|xem thêm|show less|ẩn bớt|tóm tắt)$/i;
+  const lines = String(raw || "")
+    .split(/\n+/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter((line) => line && !uiOnly.test(line));
+  return lines.join("\n").trim();
+}
+
+/**
+ * Extract the actual post body used by summary and Batch flows.
+ * Prefer Facebook's semantic message node; fall back to a chrome/comment-free
+ * clone. For shares, keep the sharer's note followed by the original body.
+ */
+function extractPostContent(element) {
+  if (!element) return "";
+  const postContainer = _findPostContainer(element) || element;
+  const sharedInner = SITE === "facebook" ? _findSharedPostArticle(postContainer) : null;
+  const messageSelector =
+    '[data-ad-preview="message"], [data-ad-comet-preview="message"], [data-testid="post_message"], [data-testid="post-message"]';
+
+  const extractOne = (container, excluded) => {
+    if (!container) return "";
+    const candidates = [];
+    for (const node of container.querySelectorAll(messageSelector)) {
+      if (excluded && excluded.contains(node)) continue;
+      if (node.closest("form")) continue;
+      const text = _normalizePostBodyText(node.innerText || node.textContent || "");
+      if (!text) continue;
+      let articleDepth = 0;
+      let parent = node.parentElement;
+      while (parent && parent !== container) {
+        if (parent.getAttribute?.("role") === "article") articleDepth++;
+        parent = parent.parentElement;
+      }
+      candidates.push({ text, articleDepth });
+    }
+    if (candidates.length) {
+      candidates.sort((a, b) => a.articleDepth - b.articleDepth || b.text.length - a.text.length);
+      return candidates[0].text;
+    }
+    return _normalizePostBodyText(_getPrimaryPostText(container));
+  };
+
+  const outerText = extractOne(postContainer, sharedInner);
+  const innerText = sharedInner ? extractOne(sharedInner, null) : "";
+  if (outerText && innerText && outerText !== innerText) return outerText + "\n\n" + innerText;
+  return innerText || outerText;
 }
 
 /**
@@ -3177,6 +3248,7 @@ window.fbsPermalinkFamilyRank = _permalinkFamilyRank;
 window.fbsCleanFbUrl = _cleanFbUrl;
 window.fbsExtractImage = extractPostImage;
 window.fbsExtractImages = extractPostImages;
+window.fbsExtractPostContent = extractPostContent;
 window.fbsEvaluatePostSignals = evaluatePostSignals;
 window.fbsDetectSponsoredSignals = detectSponsoredSignals;
 window.fbsIsSponsored = isSponsored;

@@ -90,7 +90,7 @@ const StatusFormatter = {
     // Must be aggressive — AI sometimes copies footer from examples or prior output
     text = text.replace(/\s*(?:[—-]\s*\n\s*)?Nguồn\s+dưới\s+(?:cmt|bình\s+luận|binh\s+luan)\s+đầu(?:\s+tiên)?\s*$/gi, "");
     text = text.replace(/━━━━━━━━━━\s*/g, "");
-    text = text.replace(/\s*(?:Link gốc|Chi tiết)[\s&]*(?:nguồn|mã nguồn)?.*dưới\s+(?:bình\s+luận|cmt)\s+đầu(?:\s+tiên)?\s*$/gim, "");
+    text = text.replace(/\s*(?:👉\s*)?(?:Link gốc|Chi tiết)[\s&]*(?:nguồn|mã nguồn)?.*dưới\s+(?:bình\s+luận|cmt)\s+đầu(?:\s+tiên)?\s*$/gim, "");
     text = text.replace(/\s*(?:Chi tiết|Link gốc|Nguồn)\s*&?\s*$/gim, ""); // truncated footer like "Chi tiết &"
     text = text.replace(/(?:_{5,}|━━━━━━━━━━)\s*(?:|•)?\s*(?:Chi\s+tiết|Link\s+gốc|Nguồn)?.*$/gi, "");
 
@@ -115,7 +115,7 @@ const StatusFormatter = {
       }
       if (inGlossary) {
         // End glossary on: empty line, footer-like content, or separator
-        const isFooterLike = /^|^━━|^_{5,}|Chi\s+tiết.*dưới|Link\s+gốc|Nguồn\s+dưới/i.test(trimmed);
+        const isFooterLike = /^(?:👉\s*)?(?:━━|_{5,}|Chi\s+tiết.*dưới|Link\s+gốc|Nguồn\s+dưới)/i.test(trimmed);
         if (!trimmed || isFooterLike) {
           if (glossaryItems.length > 0) {
             blocks.push({ type: "glossary", items: [...glossaryItems] });
@@ -148,7 +148,7 @@ const StatusFormatter = {
       }
 
       // Skip footer-like lines (renderer adds its own footer)
-      if (/^\s*(?:Chi tiết|Link gốc|Nguồn)/i.test(trimmed)) continue;
+      if (/^\s*(?:👉\s*)?(?:Chi tiết|Link gốc|Nguồn)/i.test(trimmed)) continue;
       if (/^━━━/.test(trimmed)) continue;
 
       // Title (first non-empty line)
@@ -412,7 +412,7 @@ const StatusFormatter = {
     const cta = hasRepo
       ? "Link gốc & mã nguồn dưới bình luận đầu tiên"
       : "Chi tiết & nguồn dưới bình luận đầu tiên";
-    return separator + "\n" + cta;
+    return separator + "\n👉 " + cta;
   },
 
   // ── Unicode transforms ─────────────────────────────────────────────

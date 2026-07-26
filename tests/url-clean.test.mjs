@@ -68,4 +68,21 @@ describe("cleanSourceUrl", () => {
     const clean = cleanSourceUrl(raw);
     assert.equal(clean, "https://www.facebook.com/groups/123/posts/456/");
   });
+
+  it("preserves identity params for Facebook photo permalinks", () => {
+    const raw =
+      "https://www.facebook.com/photo.php?fbid=123456789012345&set=a.99&fbclid=tracking";
+    const clean = cleanSourceUrl(raw);
+    assert.match(clean, /fbid=123456789012345/);
+    assert.match(clean, /set=a\.99/);
+    assert.ok(!clean.includes("fbclid"), clean);
+  });
+
+  it("preserves the video id for Facebook Watch links", () => {
+    const raw =
+      "https://www.facebook.com/watch/?v=123456789012345&ref=sharing";
+    const clean = cleanSourceUrl(raw);
+    assert.match(clean, /[?&]v=123456789012345/);
+    assert.ok(!clean.includes("ref="), clean);
+  });
 });
