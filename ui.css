@@ -555,36 +555,52 @@ article:hover > .fbs-chip-host .fbs-allpost-btn,
   text-transform: uppercase !important;
   letter-spacing: 0.05em !important;
   color: var(--fw-text-2) !important;
-  margin: 0 0 8px !important;
+  margin: 0 0 10px !important;
 }
 .fbs-panel[data-fbs-ui="v3"] .fbs-result .fbs-glossary-item,
 .fbs-panel.fbs-ui-v3 .fbs-result .fbs-glossary-item {
   font-size: 12.5px !important;
   line-height: 1.5 !important;
   color: var(--fw-text-2) !important;
-  padding: 3px 0 !important;
-  display: flex !important;
+  padding: 6px 0 !important;
+  display: grid !important;
+  grid-template-columns: 8px minmax(0, 1fr) !important;
+  grid-template-rows: auto auto !important;
   align-items: flex-start !important;
-  gap: 8px !important;
+  column-gap: 9px !important;
+  row-gap: 3px !important;
+}
+.fbs-panel[data-fbs-ui="v3"] .fbs-result .fbs-glossary-item + .fbs-glossary-item,
+.fbs-panel.fbs-ui-v3 .fbs-result .fbs-glossary-item + .fbs-glossary-item {
+  margin-top: 4px !important;
+  padding-top: 10px !important;
+  border-top: 1px solid var(--fw-border) !important;
 }
 .fbs-panel[data-fbs-ui="v3"] .fbs-result .fbs-glossary-bullet,
 .fbs-panel.fbs-ui-v3 .fbs-result .fbs-glossary-bullet {
-  color: var(--fw-text-3) !important;
-  flex-shrink: 0 !important;
+  grid-column: 1 !important;
+  grid-row: 1 / span 2 !important;
+  color: var(--fw-accent) !important;
+  font-weight: 800 !important;
+  line-height: 1.35 !important;
 }
 .fbs-panel[data-fbs-ui="v3"] .fbs-result .fbs-glossary-item strong,
 .fbs-panel.fbs-ui-v3 .fbs-result .fbs-glossary-item strong {
   color: var(--fw-text) !important;
-  flex: 0 0 auto !important;
-  max-width: 42% !important;
-  white-space: nowrap !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
+  grid-column: 2 !important;
+  display: block !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+  line-height: 1.4 !important;
 }
 .fbs-panel[data-fbs-ui="v3"] .fbs-result .fbs-glossary-def,
 .fbs-panel.fbs-ui-v3 .fbs-result .fbs-glossary-def {
-  flex: 1 1 auto !important;
+  grid-column: 2 !important;
+  display: block !important;
   min-width: 0 !important;
+  color: var(--fw-text-2) !important;
   overflow-wrap: anywhere !important;
 }
 

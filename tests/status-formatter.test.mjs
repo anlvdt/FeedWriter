@@ -125,4 +125,17 @@ describe("StatusFormatter.format", () => {
     assert.match(out, /Quá trình tái cấu trúc code/);
     assert.doesNotMatch(out, /· : Quá trình/);
   });
+
+  it("renders long glossary terms above definitions without a leading colon", () => {
+    const html = StatusFormatter.toDisplayHTML(
+      "Giải thích thuật ngữ:\n· Mô hình trí tuệ nhân tạo mã nguồn mở: Là loại mô hình cho phép người dùng xem và chỉnh sửa mã nguồn.",
+    );
+    assert.match(
+      html,
+      /<strong>Mô hình trí tuệ nhân tạo mã nguồn mở<\/strong>/,
+    );
+    assert.match(html, /class="fbs-glossary-def">Là loại mô hình/);
+    assert.doesNotMatch(html, /class="fbs-glossary-def">:\s/);
+    assert.match(html, /class="fbs-glossary-bullet"/);
+  });
 });

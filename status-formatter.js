@@ -573,9 +573,10 @@ const StatusFormatter = {
     html += '<div class="fbs-glossary-heading">Giải thích thuật ngữ</div>';
     for (const item of items) {
       html += '<div class="fbs-glossary-item">';
+      html += '<span class="fbs-glossary-bullet" aria-hidden="true">·</span>';
       html += '<strong>' + this._escHtml(item.term) + '</strong>';
       if (item.def) {
-        html += '<span class="fbs-glossary-def">: ' + this._escHtml(item.def) + '</span>';
+        html += '<span class="fbs-glossary-def">' + this._escHtml(item.def) + '</span>';
       }
       html += '</div>';
     }

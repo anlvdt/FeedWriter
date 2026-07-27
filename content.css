@@ -515,32 +515,53 @@ button.fbs-btn:focus-visible,
   color: #A8C0B4;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .fbs-result .fbs-glossary-item {
   font-size: 13px;
   line-height: 1.55;
   color: #c8ccd4;
-  padding: 2px 0;
-  display: flex;
+  padding: 6px 0;
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  grid-template-rows: auto auto;
   align-items: flex-start;
-  gap: 8px;
+  column-gap: 9px;
+  row-gap: 3px;
+}
+
+.fbs-result .fbs-glossary-item + .fbs-glossary-item {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.fbs-result .fbs-glossary-bullet {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  color: #8b93f7;
+  font-weight: 800;
+  line-height: 1.35;
 }
 
 .fbs-result .fbs-glossary-item strong {
   color: #e9d5ff;
-  font-weight: 600;
-  flex: 0 0 auto;
-  max-width: 42%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-weight: 650;
+  grid-column: 2;
+  display: block;
+  min-width: 0;
+  max-width: none;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
 }
 
 .fbs-result .fbs-glossary-def {
-  flex: 1 1 auto;
+  grid-column: 2;
+  display: block;
   min-width: 0;
+  color: #c8ccd4;
   overflow-wrap: anywhere;
 }
 

@@ -1947,7 +1947,7 @@ function renderGlossaryCard(items) {
       return (
         '<div class="fbs-glossary-item"><span class="fbs-glossary-bullet">·</span>' +
         "<strong>" + item.term + "</strong>" +
-        (item.def ? '<span class="fbs-glossary-def">: ' + item.def + "</span>" : "") +
+        (item.def ? '<span class="fbs-glossary-def">' + item.def + "</span>" : "") +
         "</div>"
       );
     })
