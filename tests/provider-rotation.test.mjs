@@ -28,6 +28,7 @@ function emptyKeys() {
   return {
     groq: [],
     cerebras: [],
+    nvidia: [],
     sambanova: [],
     gemini: [],
     openrouter: [],
@@ -39,6 +40,7 @@ describe("PROVIDER_PRIORITY", () => {
     assert.deepEqual(PROVIDER_PRIORITY, [
       "groq",
       "cerebras",
+      "nvidia",
       "sambanova",
       "gemini",
       "openrouter",

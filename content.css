@@ -1,31 +1,7 @@
-/* Fixed-size host — isolates chip from FB flex/image stretch */
-.fbs-chip-host {
-  position: absolute !important;
-  top: 10px !important;
-  /* Keep Facebook's close and overflow controls clickable. Their top-right
-     action cluster occupies roughly 88px, including its outer spacing. */
-  right: 104px !important;
-  bottom: auto !important;
-  left: auto !important;
-  inset: 10px 104px auto auto !important;
-  width: max-content !important;
-  height: 32px !important;
-  min-height: 32px !important;
-  max-height: 32px !important;
-  max-width: 160px !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  z-index: 50 !important;
-  display: block !important;
-  overflow: visible !important;
-  pointer-events: none !important;
-  flex: 0 0 auto !important;
-  align-self: flex-start !important;
-  transform: none !important;
-  line-height: 1 !important;
-  box-sizing: border-box !important;
-  contain: layout !important;
-}
+/* .fbs-chip-host is styled in ui.css (loaded after this file — it wins
+   the cascade). Positioning is set inline by _mountPostChip() in
+   content.js, which measures each post's header. Do NOT re-add rules
+   for it here: they will be silently overridden and look like a fix. */
 
 /* Legacy wrap — only used for inline after "Xem thêm" */
 .fbs-wrap {
@@ -547,11 +523,25 @@ button.fbs-btn:focus-visible,
   line-height: 1.55;
   color: #c8ccd4;
   padding: 2px 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
 }
 
 .fbs-result .fbs-glossary-item strong {
   color: #e9d5ff;
   font-weight: 600;
+  flex: 0 0 auto;
+  max-width: 42%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fbs-result .fbs-glossary-def {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* Source footer */

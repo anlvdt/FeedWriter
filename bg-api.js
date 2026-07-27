@@ -5,6 +5,7 @@
 const PROVIDER_PRIORITY = [
   "groq",
   "cerebras",
+  "nvidia",
   "sambanova",
   "gemini",
   "openrouter",
@@ -35,6 +36,7 @@ function selectAvailableKey(opts) {
       groq: [],
       gemini: [],
       cerebras: [],
+      nvidia: [],
       sambanova: [],
       openrouter: [],
     };
@@ -497,6 +499,53 @@ async function callCerebrasNonStream(apiKey, userMessage, systemPrompt) {
     { Authorization: "Bearer " + apiKey },
     {
       model: "llama-3.3-70b",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage },
+      ],
+      max_tokens: 1024,
+      temperature: 0.3,
+    },
+    (d) => d?.choices?.[0]?.message?.content,
+  );
+}
+
+// === NVIDIA NIM: NVIDIA-hosted, OpenAI-compatible inference ===
+async function callNvidiaStream(
+  apiKey,
+  text,
+  systemPrompt,
+  port,
+  signal,
+  maxTokens = 512,
+) {
+  return callStreamAPI({
+    url: "https://integrate.api.nvidia.com/v1/chat/completions",
+    headers: { Authorization: "Bearer " + apiKey },
+    body: {
+      model: "meta/llama-3.3-70b-instruct",
+      stream: true,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: text },
+      ],
+      temperature: 0.3,
+      max_tokens: maxTokens,
+    },
+    extractFn: (d) => d.choices?.[0]?.delta?.content || "",
+    port,
+    signal,
+    maxTokens,
+    provider: "NVIDIA NIM",
+  });
+}
+
+async function callNvidiaNonStream(apiKey, userMessage, systemPrompt) {
+  return callNonStream(
+    "https://integrate.api.nvidia.com/v1/chat/completions",
+    { Authorization: "Bearer " + apiKey },
+    {
+      model: "meta/llama-3.3-70b-instruct",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userMessage },

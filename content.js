@@ -423,18 +423,30 @@ function _isNestedFeedUnit(article) {
 }
 
 function _feedCandidates(root) {
-  return [
-    ...root.querySelectorAll('article[role="article"]'),
-    ...root.querySelectorAll("[data-virtualized]"),
-    ...root.querySelectorAll('div[data-pagelet^="FeedUnit"]'),
-  ];
+  const candidates = [];
+  if (
+    root?.nodeType === 1 &&
+    (root.matches?.('article[role="article"]') ||
+      root.matches?.("[data-virtualized]") ||
+      root.matches?.('div[data-pagelet^="FeedUnit"]'))
+  ) {
+    candidates.push(root);
+  }
+  if (root?.querySelectorAll) {
+    candidates.push(
+      ...root.querySelectorAll(
+        'article[role="article"], [data-virtualized], div[data-pagelet^="FeedUnit"]',
+      ),
+    );
+  }
+  return [...new Set(candidates)];
 }
 
 /**
  * Fast path: sponsored only — no fingerprint lock, re-checks until hidden.
  * Called on every new DOM node so ads die before user scrolls past.
  */
-function scanSponsoredFast(rootEl) {
+function scanSponsoredFast(rootEl, skipClutterScan = false) {
   if (SITE !== "facebook") return;
   const root =
     rootEl ||
@@ -442,8 +454,9 @@ function scanSponsoredFast(rootEl) {
     document.querySelector('div[id^="mount_0_0"]') ||
     document.body;
 
-  // Portal-based hide (detached "Được tài trợ" labels)
-  if (typeof hideFeedClutter === "function") {
+  // Portal-based hide (detached "Được tài trợ" labels). Skip this expensive
+  // document-wide pass when scanning a single newly-added post subtree.
+  if (!skipClutterScan && typeof hideFeedClutter === "function") {
     try {
       hideFeedClutter();
     } catch (_) {}
@@ -846,17 +859,17 @@ function ensureOverlay() {
     '</div>';
   document.body.appendChild(panel);
   panelBody = panel.querySelector(".fbs-panel-body");
-  panel.querySelector(".fbs-close").addEventListener("click", closeOverlay);
-  panel.querySelector(".fbs-min").addEventListener("click", toggleMinimize);
-  panel.querySelector(".fbs-copy-btn").addEventListener("click", copyResult);
+  panel.querySelector(".fbs-close")?.addEventListener("click", closeOverlay);
+  panel.querySelector(".fbs-min")?.addEventListener("click", toggleMinimize);
+  panel.querySelector(".fbs-copy-btn")?.addEventListener("click", copyResult);
   panel
     .querySelector(".fbs-post-status-btn")
-    .addEventListener("click", handlePostStatus);
+    ?.addEventListener("click", handlePostStatus);
   panel
     .querySelector(".fbs-stop-btn")
-    .addEventListener("click", stopSummarize);
-  panel.querySelector(".fbs-regen-btn").addEventListener("click", regenerate);
-  panel.querySelector(".fbs-edit-btn").addEventListener("click", toggleEdit);
+    ?.addEventListener("click", stopSummarize);
+  panel.querySelector(".fbs-regen-btn")?.addEventListener("click", regenerate);
+  panel.querySelector(".fbs-edit-btn")?.addEventListener("click", toggleEdit);
   panel.addEventListener("keydown", (e) => {
     if (e.key !== "Tab" || !panel.classList.contains("fbs-visible")) return;
     const focusable = Array.from(
@@ -1768,9 +1781,12 @@ async function _fbCopyLinkViaShareMenu(postContainer) {
 
 // === HELPERS ===
 function esc(s) {
+  // textContent→innerHTML escapes & < > but NOT quotes; esc() is used in
+  // attribute positions (value="", title="", data-url="") with data scraped
+  // from Facebook posts, so quotes must be escaped to stop attribute breakout.
   const d = document.createElement("div");
-  d.textContent = s;
-  return d.innerHTML;
+  d.textContent = s == null ? "" : String(s);
+  return d.innerHTML.replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 // Display structured error with actions
@@ -1907,16 +1923,31 @@ function fmt(t) {
 }
 
 function renderGlossaryCard(items) {
-  const itemsHtml = items
+  const normalizedItems = [];
+  for (const rawItem of items) {
+    const item = rawItem
+      .replace(/<span class="fbs-bullet-dot">·<\/span>\s*/g, "")
+      .replace(/^[·•\-*]\s*/, "")
+      .trim();
+    if (!item) continue;
+    const continuation = item.match(/^:\s*(.+)$/);
+    const previous = normalizedItems[normalizedItems.length - 1];
+    if (continuation && previous && !previous.def) {
+      previous.def = continuation[1].trim();
+      continue;
+    }
+    const m = item.match(/^(.+?):\s*(.+)$/);
+    normalizedItems.push(m
+      ? { term: m[1].trim(), def: m[2].trim() }
+      : { term: item, def: "" });
+  }
+
+  const itemsHtml = normalizedItems
     .map((item) => {
-      const cleanItem = item
-        .replace(/✓\s*/, "")
-        .replace(/^[·•\-*]\s*/, "")
-        .replace(/<span class="fbs-bullet-dot">·<\/span>\s*/g, "");
-      if (!cleanItem) return "";
       return (
         '<div class="fbs-glossary-item"><span class="fbs-glossary-bullet">·</span>' +
-        cleanItem +
+        "<strong>" + item.term + "</strong>" +
+        (item.def ? '<span class="fbs-glossary-def">: ' + item.def + "</span>" : "") +
         "</div>"
       );
     })
@@ -2664,22 +2695,11 @@ function inject(target, seeMoreClickable, textContainer, seeMoreOriginal) {
     }
   }
 
-  // Fallback: fixed corner chip on the post unit (never full-bleed absolute button)
-  if (!inserted) {
-    const postUnit =
-      (target && _isFeedPostCandidate(target) && target) ||
-      (textContainer && textContainer.closest?.('[data-pagelet^="FeedUnit"], [data-virtualized], article[role="article"]')) ||
-      target;
-    if (postUnit && typeof _mountPostChip === "function") {
-      _mountPostChip(postUnit);
-      inserted = true;
-    }
-  }
-
-  // Legacy absolute wrap removed — it was stretched by FB image layouts.
+  // No fallback chip: posts without Facebook's "Xem thêm" anchor do not get
+  // a second corner button. The inline chip above is the only feed action.
   if (!inserted) return;
 
-  // Chip path has its own click handler in _mountPostChip
+  // Inline chip click handler
   const inlineWrap =
     (seeMoreOriginal &&
       seeMoreOriginal.parentElement &&
@@ -3018,6 +3038,46 @@ function _mountPostChip(article) {
   host.className = "fbs-chip-host";
   host.setAttribute("data-fbs-ui", "v3");
 
+  // Header height varies per post type (Group posts, "Suggested for you"
+  // rows add extra lines), so a fixed offset can cover the X / ⋯ controls.
+  // Measure the header action cluster and sit right below it. Substring
+  // aria-label matching only — FB labels are "Ẩn bài viết"/"Hide post",
+  // never bare "Ẩn"/"Hide". Re-measured on hover because FB re-renders
+  // headers (banners, translate rows) after mount, and the X often only
+  // appears on hover; the button itself is invisible until hover anyway.
+  const positionChip = () => {
+    let chipTop = 56;
+    try {
+      const artRect = article.getBoundingClientRect();
+      const ctrls = article.querySelectorAll(
+        'div[aria-haspopup="menu"][role="button"], ' +
+        '[aria-label*="Actions for this post"], [aria-label*="Hành động"], ' +
+        '[aria-label*="Hide post"], [aria-label*="Ẩn bài viết"], ' +
+        '[aria-label*="Remove"], [aria-label*="Xóa"], [aria-label*="Tùy chọn"]'
+      );
+      let maxBottom = 0;
+      for (const c of ctrls) {
+        const r = c.getBoundingClientRect();
+        const relTop = r.top - artRect.top;
+        // Only header-zone controls count (comment/share menus sit far lower)
+        if (r.height > 0 && relTop >= 0 && relTop < 140) {
+          maxBottom = Math.max(maxBottom, r.bottom - artRect.top);
+        }
+      }
+      if (maxBottom > 0) chipTop = Math.round(maxBottom + 6);
+    } catch (_) {}
+    // Reserve the Facebook header action lane (⋯ / X) on the far right.
+    // Keeping a fixed horizontal gutter is safer than trying to infer the
+    // controls' width: Facebook often renders them only on hover and may
+    // omit aria-labels in localized/virtualized variants.
+    const safeRight = 104;
+    host.style.setProperty("top", chipTop + "px", "important");
+    host.style.setProperty("right", safeRight + "px", "important");
+    host.style.setProperty("inset", chipTop + "px " + safeRight + "px auto auto", "important");
+  };
+  positionChip();
+  article.addEventListener("mouseenter", positionChip);
+
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "fbs-allpost-btn";
@@ -3060,6 +3120,12 @@ function scanFBAllPosts() {
       postObserver.observe(article);
     }
 
+    // Remove any fallback chip left by an older content-script instance
+    // before deciding whether this post has an inline "Xem thêm" chip.
+    article.querySelectorAll(":scope > .fbs-chip-host[data-fbs-ui='v3'], :scope > .fbs-allpost-btn").forEach((el) => {
+      try { el.remove(); } catch (_) {}
+    });
+
     if (isSponsored(article)) {
       fbAllPostInjected.add(article);
       continue;
@@ -3071,22 +3137,8 @@ function scanFBAllPosts() {
       continue;
     }
 
-    // Healthy fixed host already?
-    const host = article.querySelector(":scope > .fbs-chip-host[data-fbs-ui='v3']");
-    if (host) {
-      const btn = host.querySelector(".fbs-allpost-btn");
-      if (btn && (btn.offsetHeight || 0) <= 48 && (host.offsetHeight || 0) <= 48) {
-        fbAllPostInjected.add(article);
-        continue;
-      }
-    }
-
-    if (fbAllPostInjected.has(article) && host) {
-      // was marked but broken — remount
-      fbAllPostInjected.delete(article);
-    }
-
-    _mountPostChip(article);
+    // Remove legacy/fallback corner chips. Only the inline button after
+    // Facebook's "Xem thêm" is supported now.
     fbAllPostInjected.add(article);
   }
 }
@@ -3468,6 +3520,7 @@ let fastScanPending = false;
 const scanObserver = new MutationObserver((mutations) => {
   let hasNewPost = false;
   let hasPortal = false;
+  const newPostRoots = [];
   for (const m of mutations) {
     for (const node of m.addedNodes) {
       if (node.nodeType !== 1) continue;
@@ -3480,7 +3533,10 @@ const scanObserver = new MutationObserver((mutations) => {
         node.classList?.contains("__fb-light-mode") ||
         node.classList?.contains("__fb-dark-mode") ||
         (node.id && node.tagName === "SPAN" && (node.textContent || "").length < 80);
-      if (isPost) hasNewPost = true;
+      if (isPost) {
+        hasNewPost = true;
+        if (newPostRoots.length < 12) newPostRoots.push(node);
+      }
       if (isPortal) hasPortal = true;
       if (
         !hasNewPost &&
@@ -3497,7 +3553,19 @@ const scanObserver = new MutationObserver((mutations) => {
 
   // Always prioritize sponsored path on DOM churn
   if (hasNewPost || hasPortal) {
-    scheduleSponsoredFast();
+    // MutationObserver runs immediately after Facebook commits the new DOM.
+    // Scan each new post subtree now; do not wait for the general 32ms debounce.
+    for (const postRoot of newPostRoots) {
+      try {
+        scanSponsoredFast(postRoot, true);
+      } catch (_) {}
+    }
+    // Detached "Được tài trợ" portal labels need the document-level mapping.
+    if (hasPortal) {
+      try {
+        scanSponsoredFast();
+      } catch (_) {}
+    }
     if (!fastScanPending) {
       fastScanPending = true;
       requestAnimationFrame(() => {

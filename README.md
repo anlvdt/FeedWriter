@@ -88,6 +88,7 @@ Sau mỗi lần sửa code trên EXTERNAL, chạy lại `./scripts/sync-local.sh
 | Dịch vụ | Free tier | Link |
 |---------|-----------|------|
 | **Groq** (khuyên dùng) | 14.400 request/ngày | [console.groq.com/keys](https://console.groq.com/keys) |
+| NVIDIA NIM | Free endpoint | [build.nvidia.com/settings/api-keys](https://build.nvidia.com/settings/api-keys) |
 | Google Gemini | 15 request/phút | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
 
 ## Cách sử dụng
@@ -129,7 +130,7 @@ Sau mỗi lần sửa code trên EXTERNAL, chạy lại `./scripts/sync-local.sh
 ## Privacy
 
 - API key lưu local (`chrome.storage`)
-- Nội dung gửi thẳng tới provider bạn chọn (Groq / Gemini / …)
+- Nội dung gửi thẳng tới provider bạn chọn (Groq / NVIDIA NIM / Gemini / …)
 - Không thu thập analytics riêng
 
 ## License

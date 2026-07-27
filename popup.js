@@ -161,7 +161,7 @@ function initWizard() {
       const providers =
         typeof ALL_PROVIDERS !== "undefined"
           ? ALL_PROVIDERS
-          : ["groq", "gemini", "cerebras", "sambanova", "openrouter"];
+          : ["groq", "gemini", "cerebras", "nvidia", "sambanova", "openrouter"];
       const provider =
         typeof detectProvider === "function" ? detectProvider(key) : "groq";
       const data = await chrome.storage.sync.get(["apiKeys"]);
@@ -608,11 +608,19 @@ function detectProvider(key) {
   if (key.startsWith("gsk_")) return "groq";
   if (key.startsWith("AI")) return "gemini";
   if (key.startsWith("csk-")) return "cerebras";
+  if (key.startsWith("nvapi-")) return "nvidia";
   if (key.startsWith("sk-or-")) return "openrouter";
   return "sambanova";
 }
 
-const ALL_PROVIDERS = ["groq", "gemini", "cerebras", "sambanova", "openrouter"];
+const ALL_PROVIDERS = [
+  "groq",
+  "gemini",
+  "cerebras",
+  "nvidia",
+  "sambanova",
+  "openrouter",
+];
 
 /** Count keys in an apiKeys map. */
 function _countApiKeys(apiKeys) {

@@ -129,11 +129,22 @@ const StatusFormatter = {
           if (isFooterLike) { /* fall through to normal line processing below */ }
           else continue;
         } else {
-          const m = trimmed.match(/^[·•]\s*(.+?):\s*(.+)$/);
+          // Accept the documented one-line form and AI output that wraps
+          // the definition onto the next line as ": Definition".
+          const continuation = trimmed.match(/^:\s*(.+)$/);
+          if (continuation && glossaryItems.length > 0) {
+            const previous = glossaryItems[glossaryItems.length - 1];
+            if (!previous.def) {
+              previous.def = continuation[1];
+              continue;
+            }
+          }
+          const m = trimmed.match(/^[·•]\s*(.+?):\s*(.+)$/) ||
+                    trimmed.match(/^(.+?):\s*(.+)$/);
           if (m) {
-            glossaryItems.push({ term: m[1], def: m[2] });
+            glossaryItems.push({ term: m[1].trim(), def: m[2].trim() });
           } else {
-            glossaryItems.push({ term: trimmed, def: "" });
+            glossaryItems.push({ term: trimmed.replace(/^[·•]\s*/, "").trim(), def: "" });
           }
           continue;
         }
@@ -563,7 +574,9 @@ const StatusFormatter = {
     for (const item of items) {
       html += '<div class="fbs-glossary-item">';
       html += '<strong>' + this._escHtml(item.term) + '</strong>';
-      if (item.def) html += ': ' + this._escHtml(item.def);
+      if (item.def) {
+        html += '<span class="fbs-glossary-def">: ' + this._escHtml(item.def) + '</span>';
+      }
       html += '</div>';
     }
     html += '</div>';

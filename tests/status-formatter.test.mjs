@@ -116,4 +116,13 @@ describe("StatusFormatter.format", () => {
     assert.match(out, /GIẢI THÍCH THUẬT NGỮ/i);
     assert.match(out, /Truy xuất dữ liệu trước khi sinh câu trả lời/);
   });
+
+  it("merges glossary definitions wrapped onto a colon-only line", () => {
+    const raw =
+      "Refactor là gì?\n\nNội dung chính.\n\n" +
+      "Giải thích thuật ngữ:\n· Refactor\n: Quá trình tái cấu trúc code để cải thiện chất lượng và hiệu suất.";
+    const out = StatusFormatter.format(raw, "facebook", { hasRepo: false });
+    assert.match(out, /Quá trình tái cấu trúc code/);
+    assert.doesNotMatch(out, /· : Quá trình/);
+  });
 });

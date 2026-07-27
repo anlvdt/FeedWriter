@@ -526,7 +526,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
   // Hỗ trợ cross-platform: Facebook, Threads, X, LinkedIn, Reddit.
   preview
     .querySelector(".fbs-sp-open-fb")
-    .addEventListener("click", async () => {
+    ?.addEventListener("click", async () => {
       const btn = preview.querySelector(".fbs-sp-open-fb");
 
       // Cross-platform: nếu đang ở platform khác và có adapter → dùng adapter
