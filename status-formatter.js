@@ -114,20 +114,16 @@ const StatusFormatter = {
         continue;
       }
       if (inGlossary) {
-        // End glossary on: empty line, footer-like content, or separator
+        // Glossaries are generated as the final section. Tolerate blank lines
+        // between marker, term and definition; only a footer ends the section.
         const isFooterLike = /^(?:👉\s*)?(?:━━|_{5,}|Chi\s+tiết.*dưới|Link\s+gốc|Nguồn\s+dưới)/i.test(trimmed);
-        if (!trimmed || isFooterLike) {
+        if (!trimmed) continue;
+        if (isFooterLike) {
           if (glossaryItems.length > 0) {
             blocks.push({ type: "glossary", items: [...glossaryItems] });
             glossaryItems = [];
           }
           inGlossary = false;
-          if (!trimmed) {
-            blocks.push({ type: "blank" }); // preserve spacing after glossary
-          }
-          // Don't continue — let footer-like lines fall through to be stripped/skipped
-          if (isFooterLike) { /* fall through to normal line processing below */ }
-          else continue;
         } else {
           // Accept the documented one-line form and malformed AI output such as:
           //   ·

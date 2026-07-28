@@ -104,10 +104,8 @@
 .fbs-chip-host[data-fbs-ui="v3"],
 .fbs-chip-host {
   position: absolute !important;
-  /* Fallback only — _mountPostChip() measures the post's real header
-     action cluster (X / ⋯) and overrides top/inset inline. 56px keeps
-     the chip below a standard single-line header if measuring fails;
-     10px would sit exactly on Facebook's X / ⋯ buttons. */
+  /* Deprecated corner-chip styles are retained only so a stale chip from an
+     older injected script stays bounded until the current scan removes it. */
   top: 56px !important;
   /* Keep a horizontal safety lane for Facebook's ⋯ / X controls. */
   right: 104px !important;

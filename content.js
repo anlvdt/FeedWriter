@@ -1884,7 +1884,8 @@ function fmt(t) {
     }
 
     if (inGlossary) {
-      if (!trimmed || trimmed.includes("━━━━━━━━━━") || trimmed.includes("fbs-source-footer")) {
+      if (!trimmed) continue;
+      if (trimmed.includes("━━━━━━━━━━") || trimmed.includes("fbs-source-footer")) {
         inGlossary = false;
         formattedLines.push(renderGlossaryCard(glossaryItems));
         if (trimmed && !trimmed.includes("fbs-source-footer")) formattedLines.push(line);
@@ -3001,112 +3002,12 @@ function _getTopLevelFeedPosts(root) {
   return tops;
 }
 
-/** Remove any FeedWriter chips that Facebook layout has stretched. */
-function _purgeBrokenChips(scope) {
+/** Remove deprecated corner chips; only the inline button beside "Xem thêm" remains. */
+function _removeLegacyPostChips(scope) {
   const root = scope || document;
   root.querySelectorAll(".fbs-allpost-btn, .fbs-chip-host, .fbs-wrap:not(.fbs-wrap-inline)").forEach((el) => {
-    try {
-      const h = el.offsetHeight || 0;
-      const w = el.offsetWidth || 0;
-      // Normal chip ~28–40px tall, ~70–140px wide. Anything huge = layout hijack.
-      if (h > 48 || w > 220 || h > w * 1.8) {
-        el.remove();
-      }
-    } catch (_) {}
-  });
-}
-
-/**
- * Mount a FIXED-SIZE chip host in the top-right of a post.
- * Host is isolated so FB flex/grid cannot stretch the button with the image.
- */
-function _mountPostChip(article) {
-  // Already has a healthy host?
-  const existingHost = article.querySelector(":scope > .fbs-chip-host[data-fbs-ui='v3']");
-  if (existingHost) {
-    const btn = existingHost.querySelector(".fbs-allpost-btn");
-    if (btn && (btn.offsetHeight || 0) <= 48 && (existingHost.offsetHeight || 0) <= 48) return;
-    try { existingHost.remove(); } catch (_) {}
-  }
-  // Drop any loose buttons from older builds
-  article.querySelectorAll(".fbs-allpost-btn, .fbs-chip-host, .fbs-wrap:not(.fbs-wrap-inline)").forEach((el) => {
     try { el.remove(); } catch (_) {}
   });
-
-  const pos = getComputedStyle(article).position;
-  if (pos === "static" || pos === "") {
-    // Isolate without fighting FB layout too hard
-    article.style.position = "relative";
-  }
-
-  const host = document.createElement("div");
-  host.className = "fbs-chip-host";
-  host.setAttribute("data-fbs-ui", "v3");
-
-  // Header height varies per post type (Group posts, "Suggested for you"
-  // rows add extra lines), so a fixed offset can cover the X / ⋯ controls.
-  // Measure the header action cluster and sit right below it. Substring
-  // aria-label matching only — FB labels are "Ẩn bài viết"/"Hide post",
-  // never bare "Ẩn"/"Hide". Re-measured on hover because FB re-renders
-  // headers (banners, translate rows) after mount, and the X often only
-  // appears on hover; the button itself is invisible until hover anyway.
-  const positionChip = () => {
-    let chipTop = 56;
-    try {
-      const artRect = article.getBoundingClientRect();
-      const ctrls = article.querySelectorAll(
-        'div[aria-haspopup="menu"][role="button"], ' +
-        '[aria-label*="Actions for this post"], [aria-label*="Hành động"], ' +
-        '[aria-label*="Hide post"], [aria-label*="Ẩn bài viết"], ' +
-        '[aria-label*="Remove"], [aria-label*="Xóa"], [aria-label*="Tùy chọn"]'
-      );
-      let maxBottom = 0;
-      for (const c of ctrls) {
-        const r = c.getBoundingClientRect();
-        const relTop = r.top - artRect.top;
-        // Only header-zone controls count (comment/share menus sit far lower)
-        if (r.height > 0 && relTop >= 0 && relTop < 140) {
-          maxBottom = Math.max(maxBottom, r.bottom - artRect.top);
-        }
-      }
-      if (maxBottom > 0) chipTop = Math.round(maxBottom + 6);
-    } catch (_) {}
-    // Reserve the Facebook header action lane (⋯ / X) on the far right.
-    // Keeping a fixed horizontal gutter is safer than trying to infer the
-    // controls' width: Facebook often renders them only on hover and may
-    // omit aria-labels in localized/virtualized variants.
-    const safeRight = 104;
-    host.style.setProperty("top", chipTop + "px", "important");
-    host.style.setProperty("right", safeRight + "px", "important");
-    host.style.setProperty("inset", chipTop + "px " + safeRight + "px auto auto", "important");
-  };
-  positionChip();
-  article.addEventListener("mouseenter", positionChip);
-
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = "fbs-allpost-btn";
-  btn.setAttribute("data-fbs-action", "summarize");
-  btn.setAttribute("data-fbs-ui", "v3");
-  btn.title = "Tóm tắt bài này";
-  btn.innerHTML =
-    '<img class="fbs-btn-icon" src="' + ICON_BASE64 + '" width="12" height="12" alt="" aria-hidden="true">' +
-    '<span class="fbs-btn-label">Tóm tắt</span>';
-
-  btn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    e.preventDefault();
-    const t = (
-      (typeof window.fbsExtractPostContent === "function" &&
-        window.fbsExtractPostContent(article)) ||
-      article.innerText ||
-      ""
-    ).trim();
-    if (t.length >= MIN_LEN) summarizeText(t, "summary", article);
-  });
-
-  host.appendChild(btn);
-  article.appendChild(host);
 }
 
 function scanFBAllPosts() {
@@ -3116,7 +3017,7 @@ function scanFBAllPosts() {
     document.querySelector('div[id^="mount_0_0"]') ||
     document.body;
 
-  _purgeBrokenChips(root);
+  _removeLegacyPostChips(root);
 
   const posts = _getTopLevelFeedPosts(root);
   for (const article of posts) {
@@ -3125,26 +3026,8 @@ function scanFBAllPosts() {
       postObserver.observe(article);
     }
 
-    // Remove any fallback chip left by an older content-script instance
-    // before deciding whether this post has an inline "Xem thêm" chip.
-    article.querySelectorAll(":scope > .fbs-chip-host[data-fbs-ui='v3'], :scope > .fbs-allpost-btn").forEach((el) => {
-      try { el.remove(); } catch (_) {}
-    });
-
-    if (isSponsored(article)) {
-      fbAllPostInjected.add(article);
-      continue;
-    }
-
-    // Skip if inline "Xem thêm" chip already present
-    if (article.querySelector(".fbs-wrap-inline, .fbs-btn-inline[data-fbs-ui='v3']")) {
-      fbAllPostInjected.add(article);
-      continue;
-    }
-
-    // Remove legacy/fallback corner chips. Only the inline button after
-    // Facebook's "Xem thêm" is supported now.
-    fbAllPostInjected.add(article);
+    // Do not mount a corner action. processSeeMore() owns the only supported
+    // summary control: the inline "Tóm tắt" button beside Facebook's "Xem thêm".
   }
 }
 
@@ -3443,7 +3326,7 @@ function scan() {
   // Sponsored first (fast) then rest
   scanSponsoredFast();
   try {
-    _purgeBrokenChips(document);
+    _removeLegacyPostChips(document);
   } catch (_) {}
   findNewSeeMoreElements().forEach(processSeeMore);
   scanFBAllPosts();

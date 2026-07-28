@@ -161,6 +161,19 @@ describe("StatusFormatter.format", () => {
     }
   });
 
+  it("keeps glossary context across blank lines from AI output", () => {
+    const raw =
+      "AI hoạt động ra sao?\n\nNội dung chính.\n\n" +
+      "Giải thích thuật ngữ:\n·\n\n· Mô hình AI\n\n· Là một chương trình máy tính.";
+    const out = StatusFormatter.format(raw, "facebook", { hasRepo: false });
+    const definitionLine = out.split("\n").find((line) => line.includes("Là một chương trình"));
+
+    assert.match(out, /GIẢI THÍCH THUẬT NGỮ/i);
+    assert.ok(definitionLine, out);
+    assert.match(definitionLine, /Mô hình/);
+    assert.equal(out.split("\n").filter((line) => line.startsWith("·")).length, 1, out);
+  });
+
   it("renders long glossary terms above definitions without a leading colon", () => {
     const html = StatusFormatter.toDisplayHTML(
       "Giải thích thuật ngữ:\n· Mô hình trí tuệ nhân tạo mã nguồn mở: Là loại mô hình cho phép người dùng xem và chỉnh sửa mã nguồn.",

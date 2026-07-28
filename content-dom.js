@@ -1336,24 +1336,31 @@ function extractPostMeta(element) {
   return result;
 }
 
-function _isAvatar(img) {
-    const w = img.naturalWidth || img.width || 0;
-    const h = img.naturalHeight || img.height || 0;
-    if (w > 0 && w === h && w <= 60) return true;
-    try { if (getComputedStyle(img).borderRadius === "50%") return true; } catch (_) {}
-    // Avatar thường trong link profile
-    const parentLink = img.closest("a");
-    if (parentLink) {
-      const href = parentLink.href || "";
-      // Profile pattern: /username hoặc /profile.php?id=
-      if (href.includes("/profile.php") ||
-          (href.includes("facebook.com") && /facebook\.com\/[^/?]+\/?$/.test(href) &&
-           !href.includes("/posts/") && !href.includes("/photo") && !href.includes("/pages/"))) {
-        return true;
-      }
-    }
-    return false;
-  }
+function _isLikelyAvatarCandidate(signals = {}) {
+  const renderedWidth = Number(signals.renderedWidth) || 0;
+  const renderedHeight = Number(signals.renderedHeight) || 0;
+  const href = String(signals.href || "").toLowerCase();
+  const alt = String(signals.alt || "").toLowerCase();
+  const hasRenderedSize = renderedWidth > 0 && renderedHeight > 0;
+  const renderedMax = Math.max(renderedWidth, renderedHeight);
+  const renderedSquare = hasRenderedSize &&
+    Math.abs(renderedWidth - renderedHeight) <= Math.max(4, renderedMax * 0.15);
+  const isPostMediaHref = /\/(?:posts|videos|reel)\//.test(href);
+  const isBareProfileHref =
+    /\/profile\.php(?:\?|$)/.test(href) ||
+    (/facebook\.com\/[^/?#]+\/?(?:[?#].*)?$/.test(href) &&
+      !isPostMediaHref &&
+      !/facebook\.com\/(?:photo|photos|watch|reel|videos|groups|pages)(?:\/|\?|$)/.test(href));
+  const isPhotoHref = /\/(?:photo|photos)(?:\/|\?|$)|[?&]fbid=/.test(href);
+  const hasAvatarLabel = /avatar|profile picture|profile photo|ảnh đại diện|ảnh hồ sơ/.test(alt);
+
+  if (hasAvatarLabel || isBareProfileHref) return true;
+  if (hasRenderedSize && renderedMax < 96) return true;
+  if (signals.isRound && (!hasRenderedSize || renderedSquare)) return true;
+  if (signals.isInHeader && (!hasRenderedSize || renderedMax <= 180)) return true;
+  if (isPhotoHref && renderedSquare && renderedMax <= 180) return true;
+  return false;
+}
 
 function extractPostSource(element) {
   if (!element) return "";
@@ -1727,12 +1734,6 @@ function extractPostImages(element) {
     return img.getAttribute("data-src") || img.currentSrc || img.src || "";
   }
 
-  function _isAvatar(img) {
-    if (img.width > 0 && img.width < 80) return true;
-    try { if (getComputedStyle(img).borderRadius === "50%") return true; } catch (_) {}
-    return false;
-  }
-
   function _isHeaderImg(img, container) {
     const headerEl = container.querySelector("h2, h3, h4, [data-testid='story-subtitle'], [data-testid='post-header']");
     if (headerEl && headerEl.contains(img)) return true;
@@ -1744,8 +1745,49 @@ function extractPostImages(element) {
            !href.includes("/posts/") && !href.includes("/photo") && !href.includes("/reel"))) {
         return true;
       }
+      // Facebook often wraps the actor avatar in a /photo link next to, rather
+      // than inside, the author heading. Detect their small shared header wrapper.
+      if (headerEl && /\/(?:photo|photos)(?:\/|\?|$)|[?&]fbid=/i.test(href)) {
+        let wrapper = parentLink.parentElement;
+        for (let i = 0; i < 4 && wrapper && wrapper !== container; i++, wrapper = wrapper.parentElement) {
+          if (wrapper.contains(headerEl)) return true;
+        }
+      }
     }
     return false;
+  }
+
+  function _isAvatar(img, container) {
+    let rect = { width: img.width || 0, height: img.height || 0 };
+    try {
+      const measured = img.getBoundingClientRect();
+      if (measured.width || measured.height) rect = measured;
+    } catch (_) {}
+
+    let isRound = false;
+    let node = img;
+    for (let i = 0; i < 3 && node && node !== container; i++, node = node.parentElement) {
+      try {
+        const style = getComputedStyle(node);
+        const radius = style.borderTopLeftRadius || style.borderRadius || "";
+        if (radius === "50%" || /circle\(/i.test(style.clipPath || "")) {
+          isRound = true;
+          break;
+        }
+      } catch (_) {}
+    }
+
+    const parentLink = img.closest("a");
+    return _isLikelyAvatarCandidate({
+      renderedWidth: rect.width,
+      renderedHeight: rect.height,
+      href: parentLink?.href || "",
+      alt: [img.alt, img.getAttribute("aria-label"), parentLink?.getAttribute("aria-label")]
+        .filter(Boolean)
+        .join(" "),
+      isRound,
+      isInHeader: _isHeaderImg(img, container),
+    });
   }
 
   function _extractAllImagesFromContainer(container) {
@@ -1768,10 +1810,13 @@ function extractPostImages(element) {
     for (const link of photoLinks) {
       const img = link.querySelector("img");
       if (!img) continue;
+      if (_isAvatar(img, container) || _isHeaderImg(img, container)) continue;
       const src = _imgSrc(img);
-      const w = img.naturalWidth || img.width || 0;
-      const h = img.naturalHeight || img.height || 0;
-      if (w > 0 && w < 80) continue;
+      let rect = { width: img.width || 0, height: img.height || 0 };
+      try { rect = img.getBoundingClientRect(); } catch (_) {}
+      const w = rect.width || img.naturalWidth || img.width || 0;
+      const h = rect.height || img.naturalHeight || img.height || 0;
+      if (w > 0 && h > 0 && w < 120 && h < 120) continue;
       _addIfUnique(src, w * h, 1);
     }
     // Strategy 2: Background image
@@ -1789,7 +1834,7 @@ function extractPostImages(element) {
     for (const img of allImgs) {
       const src = _imgSrc(img);
       if (!src || src.startsWith("data:")) continue;
-      if (_isAvatar(img)) continue;
+      if (_isAvatar(img, container)) continue;
       if (_isHeaderImg(img, container)) continue;
       const w = img.naturalWidth || img.width || 0;
       const h = img.naturalHeight || img.height || 0;
@@ -1840,7 +1885,7 @@ function extractPostImages(element) {
   }
 
   let allImages = _collectImages();
-  if (allImages.length === 0) {
+  if (allImages.length === 0 && SITE !== "facebook") {
     const ogImage = document.querySelector('meta[property="og:image"]');
     if (ogImage && ogImage.content) allImages = [ogImage.content];
   }
@@ -3248,6 +3293,7 @@ window.fbsPermalinkFamilyRank = _permalinkFamilyRank;
 window.fbsCleanFbUrl = _cleanFbUrl;
 window.fbsExtractImage = extractPostImage;
 window.fbsExtractImages = extractPostImages;
+window.fbsIsLikelyAvatarCandidate = _isLikelyAvatarCandidate;
 window.fbsExtractPostContent = extractPostContent;
 window.fbsEvaluatePostSignals = evaluatePostSignals;
 window.fbsDetectSponsoredSignals = detectSponsoredSignals;
