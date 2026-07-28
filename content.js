@@ -1927,13 +1927,18 @@ function renderGlossaryCard(items) {
   for (const rawItem of items) {
     const item = rawItem
       .replace(/<span class="fbs-bullet-dot">·<\/span>\s*/g, "")
-      .replace(/^[·•\-*]\s*/, "")
+      .replace(/^[·•\-*\u2713▸▪→]\s*/, "")
       .trim();
     if (!item) continue;
     const continuation = item.match(/^:\s*(.+)$/);
     const previous = normalizedItems[normalizedItems.length - 1];
     if (continuation && previous && !previous.def) {
       previous.def = continuation[1].trim();
+      continue;
+    }
+    const looksLikeDefinition = /^(?:là|là một|là việc|đây là|chỉ|quá trình|phương pháp|công nghệ|hệ thống|khả năng|cách|việc)\b/i.test(item);
+    if (previous && !previous.def && looksLikeDefinition) {
+      previous.def = item;
       continue;
     }
     const m = item.match(/^(.+?):\s*(.+)$/);

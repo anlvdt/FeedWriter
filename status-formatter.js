@@ -129,9 +129,17 @@ const StatusFormatter = {
           if (isFooterLike) { /* fall through to normal line processing below */ }
           else continue;
         } else {
-          // Accept the documented one-line form and AI output that wraps
-          // the definition onto the next line as ": Definition".
-          const continuation = trimmed.match(/^:\s*(.+)$/);
+          // Accept the documented one-line form and malformed AI output such as:
+          //   ·
+          //   · Mô hình AI
+          //   · Là một chương trình...
+          // Empty markers are discarded and definition-looking lines are merged
+          // into the preceding term instead of becoming separate glossary items.
+          const hasBullet = /^[·•\-*\u2713▸▪→](?:\s+|$)/.test(trimmed);
+          const content = trimmed.replace(/^[·•\-*\u2713▸▪→]\s*/, "").trim();
+          if (!content) continue;
+
+          const continuation = content.match(/^:\s*(.+)$/);
           if (continuation && glossaryItems.length > 0) {
             const previous = glossaryItems[glossaryItems.length - 1];
             if (!previous.def) {
@@ -139,12 +147,19 @@ const StatusFormatter = {
               continue;
             }
           }
-          const m = trimmed.match(/^[·•]\s*(.+?):\s*(.+)$/) ||
-                    trimmed.match(/^(.+?):\s*(.+)$/);
+
+          const previous = glossaryItems[glossaryItems.length - 1];
+          const looksLikeDefinition = /^(?:là|là một|là việc|đây là|chỉ|quá trình|phương pháp|công nghệ|hệ thống|khả năng|cách|việc)\b/i.test(content);
+          if (previous && !previous.def && (!hasBullet || looksLikeDefinition)) {
+            previous.def = content;
+            continue;
+          }
+
+          const m = content.match(/^(.+?):\s*(.+)$/);
           if (m) {
             glossaryItems.push({ term: m[1].trim(), def: m[2].trim() });
           } else {
-            glossaryItems.push({ term: trimmed.replace(/^[·•]\s*/, "").trim(), def: "" });
+            glossaryItems.push({ term: content, def: "" });
           }
           continue;
         }

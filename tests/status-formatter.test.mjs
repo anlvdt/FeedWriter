@@ -126,6 +126,41 @@ describe("StatusFormatter.format", () => {
     assert.doesNotMatch(out, /· : Quá trình/);
   });
 
+  it("removes empty bullets and merges a bulleted definition into its term", () => {
+    const raw =
+      "AI hoạt động ra sao?\n\nNội dung chính.\n\n" +
+      "Giải thích thuật ngữ:\n·\n· Mô hình AI\n· Là một chương trình máy tính được thiết kế để thực hiện các nhiệm vụ thông minh như con người.";
+    const out = StatusFormatter.format(raw, "facebook", { hasRepo: false });
+    const glossaryLines = out.split("\n").filter((line) => line.startsWith("·"));
+
+    assert.equal(glossaryLines.length, 1, out);
+    assert.match(glossaryLines[0], /^· Mô hình /);
+    assert.match(glossaryLines[0], /: Là một chương trình/);
+
+    const html = StatusFormatter.toDisplayHTML(raw);
+    assert.match(html, /<strong>Mô hình AI<\/strong>/);
+    assert.match(html, /class="fbs-glossary-def">Là một chương trình/);
+    assert.equal((html.match(/class="fbs-glossary-item"/g) || []).length, 1);
+  });
+
+  it("uses the same normalized glossary structure on every platform", () => {
+    const raw =
+      "AI hoạt động ra sao?\n\nNội dung chính.\n\n" +
+      "Giải thích thuật ngữ:\n·\n· Mô hình AI\n· Là một chương trình máy tính.";
+
+    for (const platform of ["facebook", "threads", "x", "linkedin", "reddit"]) {
+      const out = StatusFormatter.format(raw, platform, { hasRepo: false });
+      const definitionLine = out.split("\n").find((line) => line.includes("Là một chương trình"));
+
+      assert.ok(definitionLine, `${platform}: missing glossary definition\n${out}`);
+      assert.match(definitionLine, /Mô hình/);
+      assert.ok(
+        !out.split("\n").some((line) => /^[·-]\s*$/.test(line)),
+        `${platform}: retained an empty glossary bullet\n${out}`,
+      );
+    }
+  });
+
   it("renders long glossary terms above definitions without a leading colon", () => {
     const html = StatusFormatter.toDisplayHTML(
       "Giải thích thuật ngữ:\n· Mô hình trí tuệ nhân tạo mã nguồn mở: Là loại mô hình cho phép người dùng xem và chỉnh sửa mã nguồn.",

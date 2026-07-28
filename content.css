@@ -1217,13 +1217,16 @@ button.fbs-btn:focus-visible,
   color: #555;
 }
 
-.fbs-panel[data-fbs-theme="light"] .fbs-result .fbs-glossary-item::before {
-  background: rgba(39, 39, 42, 0.7);
-  box-shadow: none;
+.fbs-panel[data-fbs-theme="light"] .fbs-result .fbs-glossary-bullet {
+  color: #4F46E5;
 }
 
 .fbs-panel[data-fbs-theme="light"] .fbs-result .fbs-glossary-item strong {
   color: #333;
+}
+
+.fbs-panel[data-fbs-theme="light"] .fbs-result .fbs-glossary-def {
+  color: #555;
 }
 
 /* Light theme: source footer */
