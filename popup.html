@@ -224,7 +224,7 @@
       <section class="card keys-add-card">
         <div class="card-head">
           <h2 class="card-title">Thêm API Key</h2>
-          <p class="card-sub">Tự nhận diện provider từ prefix (gsk_, csk-, AI…)</p>
+          <p class="card-sub">Tự nhận diện provider từ prefix (gsk_, csk-, nvapi-, AI…)</p>
         </div>
         <div class="card-body">
           <div class="input-group keys-input-group">
@@ -239,7 +239,7 @@
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             </button>
           </div>
-          <p class="field-hint keys-hint">Hỗ trợ Groq · Gemini · Cerebras · SambaNova · OpenRouter. Rotate key khi rate limit.</p>
+          <p class="field-hint keys-hint">Hỗ trợ Groq · Gemini · Cerebras · NVIDIA NIM · SambaNova · OpenRouter. Rotate key khi rate limit.</p>
         </div>
       </section>
 
@@ -272,6 +272,13 @@
             <span class="key-limit-badge">1M tok/ngày</span>
           </div>
           <div id="keyListCerebrasItems" class="key-list-items"></div>
+        </div>
+        <div id="keyListNvidia" class="key-list" style="display:none">
+          <div class="key-list-header">
+            <span class="key-list-name">NVIDIA NIM</span>
+            <span class="key-limit-badge">Free endpoint</span>
+          </div>
+          <div id="keyListNvidiaItems" class="key-list-items"></div>
         </div>
         <div id="keyListSambanova" class="key-list" style="display:none">
           <div class="key-list-header">
@@ -309,6 +316,10 @@
           <a class="guide-row" href="https://cloud.cerebras.ai" target="_blank" rel="noopener">
             <span class="guide-name">Cerebras</span>
             <span class="guide-meta">csk-… · 1M tok/ngày</span>
+          </a>
+          <a class="guide-row" href="https://build.nvidia.com/settings/api-keys" target="_blank" rel="noopener">
+            <span class="guide-name">NVIDIA NIM</span>
+            <span class="guide-meta">nvapi-… · Free endpoint</span>
           </a>
           <a class="guide-row" href="https://cloud.sambanova.ai" target="_blank" rel="noopener">
             <span class="guide-name">SambaNova</span>
@@ -484,7 +495,8 @@
         <div class="wizard-api-guide-title" style="font-size: var(--text-sm); font-weight: 600; color: var(--text-heading); margin-bottom: var(--space-2);">Lấy API Key miễn phí:</div>
         <div class="wizard-api-guide-step" style="font-size: var(--text-xs); color: var(--text-secondary); margin-bottom: var(--space-1); line-height: 1.5;">1. <a href="https://console.groq.com/keys" target="_blank" style="color: var(--accent); text-decoration: none;">Groq</a> — 100K token/ngày</div>
         <div class="wizard-api-guide-step" style="font-size: var(--text-xs); color: var(--text-secondary); margin-bottom: var(--space-1); line-height: 1.5;">2. <a href="https://cloud.cerebras.ai" target="_blank" style="color: var(--accent); text-decoration: none;">Cerebras</a> — 1M token/ngày</div>
-        <div class="wizard-api-guide-step" style="font-size: var(--text-xs); color: var(--text-secondary); margin-bottom: var(--space-1); line-height: 1.5;">3. <a href="https://aistudio.google.com/apikey" target="_blank" style="color: var(--accent); text-decoration: none;">Gemini</a> — 1500 req/ngày</div>
+        <div class="wizard-api-guide-step" style="font-size: var(--text-xs); color: var(--text-secondary); margin-bottom: var(--space-1); line-height: 1.5;">3. <a href="https://build.nvidia.com/settings/api-keys" target="_blank" style="color: var(--accent); text-decoration: none;">NVIDIA NIM</a> — free endpoint</div>
+        <div class="wizard-api-guide-step" style="font-size: var(--text-xs); color: var(--text-secondary); margin-bottom: var(--space-1); line-height: 1.5;">4. <a href="https://aistudio.google.com/apikey" target="_blank" style="color: var(--accent); text-decoration: none;">Gemini</a> — 1500 req/ngày</div>
       </div>
 
       <div id="wizardKeyStatus" class="status" role="status" aria-live="polite" style="margin-top: var(--space-3); display: none;"></div>

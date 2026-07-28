@@ -67,8 +67,12 @@ const PosterFacebook = {
     }
 
     // Step 4: Paste text
-    const formatted = typeof applyUnicodeFormatting === "function"
-      ? applyUnicodeFormatting(text) : text;
+    const hasRepo =
+      !!(typeof globalCustomSourceLink !== "undefined" && globalCustomSourceLink) ||
+      /(?:^|\.)github\.com\//i.test(postData.sourceUrl || "");
+    const formatted = typeof StatusFormatter !== "undefined"
+      ? StatusFormatter.format(text, "facebook", { hasRepo })
+      : (typeof applyUnicodeFormatting === "function" ? applyUnicodeFormatting(text) : text);
     if (typeof pasteToLexical === "function") {
       pasteToLexical(editor, formatted, imgFiles.length > 0 ? imgFiles : null);
     } else {

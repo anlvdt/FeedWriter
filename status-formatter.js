@@ -114,26 +114,48 @@ const StatusFormatter = {
         continue;
       }
       if (inGlossary) {
-        // End glossary on: empty line, footer-like content, or separator
+        // Glossaries are generated as the final section. Tolerate blank lines
+        // between marker, term and definition; only a footer ends the section.
         const isFooterLike = /^(?:👉\s*)?(?:━━|_{5,}|Chi\s+tiết.*dưới|Link\s+gốc|Nguồn\s+dưới)/i.test(trimmed);
-        if (!trimmed || isFooterLike) {
+        if (!trimmed) continue;
+        if (isFooterLike) {
           if (glossaryItems.length > 0) {
             blocks.push({ type: "glossary", items: [...glossaryItems] });
             glossaryItems = [];
           }
           inGlossary = false;
-          if (!trimmed) {
-            blocks.push({ type: "blank" }); // preserve spacing after glossary
-          }
-          // Don't continue — let footer-like lines fall through to be stripped/skipped
-          if (isFooterLike) { /* fall through to normal line processing below */ }
-          else continue;
         } else {
-          const m = trimmed.match(/^[·•]\s*(.+?):\s*(.+)$/);
+          // Accept the documented one-line form and malformed AI output such as:
+          //   ·
+          //   · Mô hình AI
+          //   · Là một chương trình...
+          // Empty markers are discarded and definition-looking lines are merged
+          // into the preceding term instead of becoming separate glossary items.
+          const hasBullet = /^[·•\-*\u2713▸▪→](?:\s+|$)/.test(trimmed);
+          const content = trimmed.replace(/^[·•\-*\u2713▸▪→]\s*/, "").trim();
+          if (!content) continue;
+
+          const continuation = content.match(/^:\s*(.+)$/);
+          if (continuation && glossaryItems.length > 0) {
+            const previous = glossaryItems[glossaryItems.length - 1];
+            if (!previous.def) {
+              previous.def = continuation[1];
+              continue;
+            }
+          }
+
+          const previous = glossaryItems[glossaryItems.length - 1];
+          const looksLikeDefinition = /^(?:là|là một|là việc|đây là|chỉ|quá trình|phương pháp|công nghệ|hệ thống|khả năng|cách|việc)\b/i.test(content);
+          if (previous && !previous.def && (!hasBullet || looksLikeDefinition)) {
+            previous.def = content;
+            continue;
+          }
+
+          const m = content.match(/^(.+?):\s*(.+)$/);
           if (m) {
-            glossaryItems.push({ term: m[1], def: m[2] });
+            glossaryItems.push({ term: m[1].trim(), def: m[2].trim() });
           } else {
-            glossaryItems.push({ term: trimmed, def: "" });
+            glossaryItems.push({ term: content, def: "" });
           }
           continue;
         }
@@ -562,8 +584,11 @@ const StatusFormatter = {
     html += '<div class="fbs-glossary-heading">Giải thích thuật ngữ</div>';
     for (const item of items) {
       html += '<div class="fbs-glossary-item">';
+      html += '<span class="fbs-glossary-bullet" aria-hidden="true">·</span>';
       html += '<strong>' + this._escHtml(item.term) + '</strong>';
-      if (item.def) html += ': ' + this._escHtml(item.def);
+      if (item.def) {
+        html += '<span class="fbs-glossary-def">' + this._escHtml(item.def) + '</span>';
+      }
       html += '</div>';
     }
     html += '</div>';

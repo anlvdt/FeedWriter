@@ -26,7 +26,7 @@ FORMAT OUTPUT:
 [Nội dung tóm tắt]
 
 **Giải thích thuật ngữ:**
-· Thuật ngữ: Giải thích ngắn 1 câu.
+· Thuật ngữ: Giải thích ngắn 1 câu. (Mỗi mục đúng 1 dòng.)
 
 YÊU CẦU:
 - Tiêu đề PHẢI ở dòng đầu, KHÔNG bọc trong ** hay ký tự đặc biệt. Viết bình thường (hệ thống tự viết hoa).
@@ -37,7 +37,7 @@ YÊU CẦU:
 - Tối đa 5 câu hoặc 5 bullet. KHÔNG viết dài hơn.
 - CẤM LẶP Ý: Mỗi câu phải mang thông tin MỚI. Không diễn đạt lại ý cũ bằng từ khác. Kiểm tra lại trước khi output.
 - Nếu muốn tách đoạn cho dễ đọc, cách bằng 1 dòng trống. Nhưng mỗi đoạn phải là ý KHÁC NHAU.
-- GIẢI THÍCH THUẬT NGỮ: CHỈ thêm mục "**Giải thích thuật ngữ:**" khi có thuật ngữ THẬT SỰ chuyên ngành mà người đọc phổ thông chưa biết. TUYỆT ĐỐI KHÔNG giải thích: app, addon, update, plugin, extension, post, link, share, like, comment, feed, API, Chrome, Firefox, Google, Facebook, YouTube, TikTok, iPhone, Android, AI, ChatGPT, Wi-Fi, internet, website, server, cloud, crypto, NFT, CEO, startup — đây là từ người Việt dùng hàng ngày. Nếu không có thuật ngữ thực sự khó → BỎ QUA hoàn toàn mục này.
+- GIẢI THÍCH THUẬT NGỮ: MẶC ĐỊNH thêm mục "**Giải thích thuật ngữ:**" ở cuối bài khi nội dung có thuật ngữ chuyên môn/kỹ thuật. Chọn 1-3 thuật ngữ quan trọng nhất mà người đọc phổ thông có thể chưa hiểu rõ, giải thích mỗi thuật ngữ 1 câu đơn giản. Mỗi mục PHẢI nằm trọn trên đúng 1 dòng theo dạng "· Thuật ngữ: Giải thích"; KHÔNG tạo bullet rỗng, KHÔNG tách thuật ngữ và giải thích thành hai bullet. Không giải thích từ quá quen thuộc (app, link, like, share, comment, Facebook, iPhone, Wi-Fi). CHỈ bỏ qua mục này khi bài hoàn toàn không có thuật ngữ nào.
 - KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống sẽ tự thêm footer chuẩn.
 - GIỌNG VĂN: Viết như TƯỜNG THUẬT / ĐƯA TIN dựa trên nguồn tham khảo. Bài gốc là nguồn tin, bạn là người đưa tin.
   + CẤM ngôi thứ nhất copy từ bài gốc: "mình", "tôi", "tui", "chúng mình".
@@ -63,9 +63,9 @@ Yêu cầu:
 - Nắm bắt thông điệp cốt lõi nhất
 - Viết như tường thuật/đưa tin. CẤM ngôi thứ nhất từ bài gốc ("mình", "tôi"). CẤM nhắc tên tác giả. Đi thẳng vào nội dung.
 - Giọng tự nhiên
-- GIẢI THÍCH THUẬT NGỮ: CHỈ thêm mục này khi có thuật ngữ THẬT SỰ chuyên ngành khó (không giải thích: AI, API, app, plugin, extension, link, website, server, v.v.). Thêm trước dòng nguồn theo cấu trúc sau:
+- GIẢI THÍCH THUẬT NGỮ: MẶC ĐỊNH thêm mục này khi bài có thuật ngữ chuyên môn/kỹ thuật — chọn 1-3 thuật ngữ quan trọng nhất, giải thích mỗi thuật ngữ 1 câu đơn giản (bỏ qua từ quá quen thuộc như app, link, like, share). Chỉ bỏ qua khi bài hoàn toàn không có thuật ngữ. Thêm trước dòng nguồn theo cấu trúc sau:
 **Giải thích thuật ngữ:**
-· Thuật ngữ: Giải thích ngắn 1 câu.
+· Thuật ngữ: Giải thích ngắn 1 câu. (Mỗi mục đúng 1 dòng; không có bullet rỗng.)
 - KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống tự thêm`;
 
 // TÓM TẮT CHI TIẾT - Detailed với cấu trúc (dùng cho status_share type)
@@ -83,9 +83,9 @@ YÊU CẦU:
 - Mỗi đoạn cách nhau 1 dòng trống
 - Tối đa 150 từ
 - Viết như tường thuật/đưa tin. CẤM ngôi thứ nhất từ bài gốc ("mình", "tôi"). CẤM nhắc tên tác giả. Đi thẳng vào nội dung.
-- GIẢI THÍCH THUẬT NGỮ: CHỈ thêm mục này khi có thuật ngữ THẬT SỰ chuyên ngành khó (không giải thích: AI, API, app, plugin, extension, link, website, server, v.v.). Thêm trước dòng nguồn theo cấu trúc sau:
+- GIẢI THÍCH THUẬT NGỮ: MẶC ĐỊNH thêm mục này khi bài có thuật ngữ chuyên môn/kỹ thuật — chọn 1-3 thuật ngữ quan trọng nhất, giải thích mỗi thuật ngữ 1 câu đơn giản (bỏ qua từ quá quen thuộc như app, link, like, share). Chỉ bỏ qua khi bài hoàn toàn không có thuật ngữ. Thêm trước dòng nguồn theo cấu trúc sau:
 **Giải thích thuật ngữ:**
-· Thuật ngữ: Giải thích ngắn 1 câu.
+· Thuật ngữ: Giải thích ngắn 1 câu. (Mỗi mục đúng 1 dòng; không có bullet rỗng.)
 - KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống tự thêm`;
 
 // TÓM TẮT DẠNG BULLET - Easy to scan
@@ -99,9 +99,9 @@ Quy tắc:
 - Bỏ ví dụ, chỉ giữ kết quả
 - Viết như tường thuật/đưa tin. CẤM ngôi thứ nhất từ bài gốc ("mình", "tôi"). CẤM nhắc tên tác giả
 - 5-7 bullet max
-- GIẢI THÍCH THUẬT NGỮ: CHỈ thêm mục này khi có thuật ngữ THẬT SỰ chuyên ngành khó (không giải thích: AI, API, app, plugin, extension, link, website, server, v.v.). Thêm trước dòng nguồn theo cấu trúc sau:
+- GIẢI THÍCH THUẬT NGỮ: MẶC ĐỊNH thêm mục này khi bài có thuật ngữ chuyên môn/kỹ thuật — chọn 1-3 thuật ngữ quan trọng nhất, giải thích mỗi thuật ngữ 1 câu đơn giản (bỏ qua từ quá quen thuộc như app, link, like, share). Chỉ bỏ qua khi bài hoàn toàn không có thuật ngữ. Thêm trước dòng nguồn theo cấu trúc sau:
 **Giải thích thuật ngữ:**
-· Thuật ngữ: Giải thích ngắn 1 câu.
+· Thuật ngữ: Giải thích ngắn 1 câu. (Mỗi mục đúng 1 dòng; không có bullet rỗng.)
 - KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống tự thêm`;
 
 // === QUY TẮC CHÍNH TẢ VNREVIEW (áp dụng cho mọi output tiếng Việt) ===
@@ -163,9 +163,9 @@ YÊU CẦU:
 - Mỗi section: rút còn 1-3 ý quan trọng nhất
 - Giảm 50-70% nội dung
 - Viết như tường thuật/đưa tin. CẤM ngôi thứ nhất từ bài gốc ("mình", "tôi"). CẤM nhắc tên tác giả
-- GIẢI THÍCH THUẬT NGỮ: CHỈ thêm mục này khi có thuật ngữ THẬT SỰ chuyên ngành khó (không giải thích: AI, API, app, plugin, extension, link, website, server, v.v.). Thêm trước dòng nguồn theo cấu trúc sau:
+- GIẢI THÍCH THUẬT NGỮ: MẶC ĐỊNH thêm mục này khi bài có thuật ngữ chuyên môn/kỹ thuật — chọn 1-3 thuật ngữ quan trọng nhất, giải thích mỗi thuật ngữ 1 câu đơn giản (bỏ qua từ quá quen thuộc như app, link, like, share). Chỉ bỏ qua khi bài hoàn toàn không có thuật ngữ. Thêm trước dòng nguồn theo cấu trúc sau:
 **Giải thích thuật ngữ:**
-· Thuật ngữ: Giải thích ngắn 1 câu.
+· Thuật ngữ: Giải thích ngắn 1 câu. (Mỗi mục đúng 1 dòng; không có bullet rỗng.)
 - KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống tự thêm`;
 
 // TÓM TẮT BÌNH LUẬN - Summarize community comment discussions

@@ -22,9 +22,10 @@
   }
 
   function esc(s) {
+    // Quotes must be escaped too — output is interpolated into attributes.
     const d = document.createElement("div");
     d.textContent = s == null ? "" : String(s);
-    return d.innerHTML;
+    return d.innerHTML.replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
 
   function createTranslateTooltip() {

@@ -666,7 +666,14 @@ chrome.runtime.onInstalled.addListener(async () => {
       const data = await chrome.storage.sync.get(["apiKey", "apiKeys", "provider"]);
       const localData = await chrome.storage.local.get(["backupApiKeys"]);
       let apiKeys = data.apiKeys || null;
-      const providers = ["groq", "gemini", "cerebras", "sambanova", "openrouter"];
+      const providers = [
+        "groq",
+        "gemini",
+        "cerebras",
+        "nvidia",
+        "sambanova",
+        "openrouter",
+      ];
       const count = (m) =>
         m && typeof m === "object"
           ? providers.reduce((n, p) => n + (Array.isArray(m[p]) ? m[p].length : 0), 0)
@@ -1075,13 +1082,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           groq: callGroqNonStream,
           gemini: callGeminiNonStream,
           cerebras: callCerebrasNonStream,
+          nvidia: callNvidiaNonStream,
           sambanova: callSambanovaNonStream,
           openrouter: callOpenrouterNonStream,
         };
 
         const errors = [];
-        // Try up to 5 different keys/providers
-        for (let i = 0; i < 5; i++) {
+        // Try up to 6 different keys/providers
+        for (let i = 0; i < 6; i++) {
           const keyInfo = await getAvailableKey();
           if (!keyInfo.key) {
             if (keyInfo.noKeys)
@@ -1366,6 +1374,7 @@ Trả về JSON: {"score": 7}`;
     groq: callGroqNonStream,
     gemini: callGeminiNonStream,
     cerebras: callCerebrasNonStream,
+    nvidia: callNvidiaNonStream,
     sambanova: callSambanovaNonStream,
     openrouter: callOpenrouterNonStream,
   };
@@ -1469,6 +1478,7 @@ Luôn trả về ĐÚNG ĐỊNH DẠNG JSON (không có markdown code block):
     groq: callGroqNonStream,
     gemini: callGeminiNonStream,
     cerebras: callCerebrasNonStream,
+    nvidia: callNvidiaNonStream,
     sambanova: callSambanovaNonStream,
     openrouter: callOpenrouterNonStream,
   };
@@ -1648,6 +1658,7 @@ async function translateText(text, mode = "auto") {
     groq: callGroqNonStream,
     gemini: callGeminiNonStream,
     cerebras: callCerebrasNonStream,
+    nvidia: callNvidiaNonStream,
     sambanova: callSambanovaNonStream,
     openrouter: callOpenrouterNonStream,
   };
@@ -2072,6 +2083,7 @@ async function handleStream(
     groq: callGroqStream,
     gemini: callGeminiStream,
     cerebras: callCerebrasStream,
+    nvidia: callNvidiaStream,
     sambanova: callSambanovaStream,
     openrouter: callOpenrouterStream,
   };

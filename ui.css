@@ -28,6 +28,8 @@
   --fw-accent-soft: rgba(139, 147, 247, 0.22);
   --fw-accent-fg: #ffffff;
   --fw-accent-glow: rgba(139, 147, 247, 0.38);
+  --fw-icon: #b4b8c4;
+  --fw-icon-accent: #8b93f7;
 
   --fw-danger: #eb5757;
   --fw-warn: #f0c000;
@@ -41,7 +43,9 @@
   --fw-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
   --fw-chip-h: 32px;
   --fw-control-h: 32px;
-  --fw-z-chip: 50;
+  /* Low on purpose: lets Facebook's own positioned header controls win
+     hit-testing on any residual overlap; still above z-auto post content. */
+  --fw-z-chip: 2;
   --fw-z-panel: 2147483647;
   --fw-z-backdrop: 2147483646;
   --fw-z-toolbar: 2147483645;
@@ -65,17 +69,49 @@
   font-family: var(--fw-font) !important;
 }
 
+/* Unified icon language: neutral icons inherit the secondary text tone;
+   primary actions use the same violet accent as buttons and focus rings. */
+.fbs-panel svg,
+.fbs-floating-toolbar svg,
+.fbs-translate-tooltip svg,
+.fbs-batch-bar svg,
+.fbs-status-preview svg,
+.fbs-comment-summary-btn svg,
+.fbs-hidden-chip-icon {
+  color: var(--fw-icon) !important;
+  stroke: currentColor;
+}
+.fbs-panel .fbs-btn-primary svg,
+.fbs-panel .fbs-post-status-btn svg,
+.fbs-panel .fbs-tool-btn:hover svg,
+.fbs-floating-btn[data-action="summary"] svg {
+  color: var(--fw-icon-accent) !important;
+}
+.fbs-panel .fbs-tool-btn svg,
+.fbs-panel .fbs-btn-secondary svg,
+.fbs-panel .fbs-copy-btn svg,
+.fbs-panel .fbs-edit-btn svg,
+.fbs-panel .fbs-regen-btn svg,
+.fbs-panel .fbs-stop-btn svg,
+.fbs-panel .fbs-close svg,
+.fbs-panel .fbs-min svg {
+  color: var(--fw-icon) !important;
+}
+
 /* ══════════════════════════════════════════════════════════
    FEED CHIP — fixed size, never stretch with images
    ══════════════════════════════════════════════════════════ */
 .fbs-chip-host[data-fbs-ui="v3"],
 .fbs-chip-host {
   position: absolute !important;
-  top: 10px !important;
-  right: 10px !important;
+  /* Deprecated corner-chip styles are retained only so a stale chip from an
+     older injected script stays bounded until the current scan removes it. */
+  top: 56px !important;
+  /* Keep a horizontal safety lane for Facebook's ⋯ / X controls. */
+  right: 104px !important;
   bottom: auto !important;
   left: auto !important;
-  inset: 10px 10px auto auto !important;
+  inset: 56px 104px auto auto !important;
   width: max-content !important;
   height: var(--fw-chip-h) !important;
   min-height: var(--fw-chip-h) !important;
@@ -517,25 +553,53 @@ article:hover > .fbs-chip-host .fbs-allpost-btn,
   text-transform: uppercase !important;
   letter-spacing: 0.05em !important;
   color: var(--fw-text-2) !important;
-  margin: 0 0 8px !important;
+  margin: 0 0 10px !important;
 }
 .fbs-panel[data-fbs-ui="v3"] .fbs-result .fbs-glossary-item,
 .fbs-panel.fbs-ui-v3 .fbs-result .fbs-glossary-item {
   font-size: 12.5px !important;
   line-height: 1.5 !important;
   color: var(--fw-text-2) !important;
-  padding: 3px 0 !important;
-  display: flex !important;
-  gap: 8px !important;
+  padding: 6px 0 !important;
+  display: grid !important;
+  grid-template-columns: 8px minmax(0, 1fr) !important;
+  grid-template-rows: auto auto !important;
+  align-items: flex-start !important;
+  column-gap: 9px !important;
+  row-gap: 3px !important;
+}
+.fbs-panel[data-fbs-ui="v3"] .fbs-result .fbs-glossary-item + .fbs-glossary-item,
+.fbs-panel.fbs-ui-v3 .fbs-result .fbs-glossary-item + .fbs-glossary-item {
+  margin-top: 4px !important;
+  padding-top: 10px !important;
+  border-top: 1px solid var(--fw-border) !important;
 }
 .fbs-panel[data-fbs-ui="v3"] .fbs-result .fbs-glossary-bullet,
 .fbs-panel.fbs-ui-v3 .fbs-result .fbs-glossary-bullet {
-  color: var(--fw-text-3) !important;
-  flex-shrink: 0 !important;
+  grid-column: 1 !important;
+  grid-row: 1 / span 2 !important;
+  color: var(--fw-accent) !important;
+  font-weight: 800 !important;
+  line-height: 1.35 !important;
 }
 .fbs-panel[data-fbs-ui="v3"] .fbs-result .fbs-glossary-item strong,
 .fbs-panel.fbs-ui-v3 .fbs-result .fbs-glossary-item strong {
   color: var(--fw-text) !important;
+  grid-column: 2 !important;
+  display: block !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+  line-height: 1.4 !important;
+}
+.fbs-panel[data-fbs-ui="v3"] .fbs-result .fbs-glossary-def,
+.fbs-panel.fbs-ui-v3 .fbs-result .fbs-glossary-def {
+  grid-column: 2 !important;
+  display: block !important;
+  min-width: 0 !important;
+  color: var(--fw-text-2) !important;
+  overflow-wrap: anywhere !important;
 }
 
 .fbs-panel[data-fbs-ui="v3"] .fbs-result .fbs-source-footer,
