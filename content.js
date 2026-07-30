@@ -3014,6 +3014,11 @@ function _purgeBrokenChips(scope) {
  * Host is isolated so FB flex/grid cannot stretch the button with the image.
  */
 function _mountPostChip(article) {
+  if (SITE === "facebook") {
+    const textEl = _findFacebookStatusText(article);
+    if (textEl) _mountInlineStatusChip(article, textEl, MIN_LEN);
+    return;
+  }
   // Already has a healthy host?
   const existingHost = article.querySelector(":scope > .fbs-chip-host[data-fbs-ui='v3']");
   if (existingHost) {
@@ -3068,10 +3073,33 @@ function _mountPostChip(article) {
   article.appendChild(host);
 }
 
-// X tweets without a Show more control still need the action inside the
-// status body. The old fallback used an absolute corner chip, which obscured
-// the tweet and did not match the inline Facebook-style control.
-function _mountXInlineChip(post, textEl) {
+// Statuses without a Show more control still need the action inside the body.
+// The old fallback used an absolute corner chip, which obscured the post and
+// did not match the inline Facebook-style control.
+function _findFacebookStatusText(article) {
+  if (!article) return null;
+  const selectors = [
+    '[data-ad-preview="message"]',
+    '[data-ad-comet-preview="message"]',
+    '[data-testid="post_message"]',
+    '[data-testid="post-message"]',
+  ];
+  let best = null;
+  let bestLength = 0;
+  for (const selector of selectors) {
+    for (const node of article.querySelectorAll(selector)) {
+      if (node.closest("form") || node.closest("[role=dialog]")) continue;
+      const length = (node.innerText || node.textContent || "").trim().length;
+      if (length > bestLength) {
+        best = node;
+        bestLength = length;
+      }
+    }
+  }
+  return best;
+}
+
+function _mountInlineStatusChip(post, textEl, minimumLength = 50) {
   if (!post || !textEl || textEl.querySelector('.fbs-wrap-inline[data-fbs-ui="v3"]')) return;
 
   // Remove a chip left by an older content-script instance in this live DOM.
@@ -3095,7 +3123,7 @@ function _mountXInlineChip(post, textEl) {
     const clone = currentTextEl.cloneNode(true);
     clone.querySelectorAll("[data-fbs-ui]").forEach((el) => el.remove());
     const text = (clone.innerText || clone.textContent || "").trim();
-    if (text.length >= 50) summarizeText(text, "summary", post);
+    if (text.length >= minimumLength) summarizeText(text, "summary", post);
   };
   btn.addEventListener("click", summarizeTweet);
   btn.addEventListener("keydown", (event) => {
@@ -3145,7 +3173,7 @@ function scanXPosts() {
       continue;
     }
 
-    _mountXInlineChip(post, textEl);
+    _mountInlineStatusChip(post, textEl, 50);
   }
 }
 
@@ -3165,6 +3193,11 @@ function scanFBAllPosts() {
       postObserver.observe(article);
     }
 
+    // Remove the legacy corner chip so Facebook posts use the inline control.
+    article.querySelectorAll(':scope > .fbs-chip-host').forEach((el) => {
+      try { el.remove(); } catch (_) {}
+    });
+
     if (isSponsored(article)) {
       fbAllPostInjected.add(article);
       continue;
@@ -3176,22 +3209,8 @@ function scanFBAllPosts() {
       continue;
     }
 
-    // Healthy fixed host already?
-    const host = article.querySelector(":scope > .fbs-chip-host[data-fbs-ui='v3']");
-    if (host) {
-      const btn = host.querySelector(".fbs-allpost-btn");
-      if (btn && (btn.offsetHeight || 0) <= 48 && (host.offsetHeight || 0) <= 48) {
-        fbAllPostInjected.add(article);
-        continue;
-      }
-    }
-
-    if (fbAllPostInjected.has(article) && host) {
-      // was marked but broken — remount
-      fbAllPostInjected.delete(article);
-    }
-
-    _mountPostChip(article);
+    const textEl = _findFacebookStatusText(article);
+    if (textEl) _mountInlineStatusChip(article, textEl, MIN_LEN);
     fbAllPostInjected.add(article);
   }
 }
