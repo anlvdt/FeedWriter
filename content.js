@@ -3068,6 +3068,41 @@ function _mountPostChip(article) {
   article.appendChild(host);
 }
 
+// X tweets without a Show more control still need the action inside the
+// status body. The old fallback used an absolute corner chip, which obscured
+// the tweet and did not match the inline Facebook-style control.
+function _mountXInlineChip(post, textEl) {
+  if (!post || !textEl || textEl.querySelector('.fbs-wrap-inline[data-fbs-ui="v3"]')) return;
+
+  // Remove a chip left by an older content-script instance in this live DOM.
+  post.querySelectorAll(':scope > .fbs-chip-host').forEach((el) => {
+    try { el.remove(); } catch (_) {}
+  });
+
+  const wrap = document.createElement("span");
+  wrap.className = "fbs-wrap fbs-wrap-inline fbs-x-status-inline";
+  wrap.setAttribute("data-fbs-ui", "v3");
+  const btn = createInlineBtn();
+  if (btn.firstChild?.nodeType === Node.TEXT_NODE) btn.firstChild.textContent = "";
+  wrap.appendChild(btn);
+  textEl.appendChild(document.createTextNode(" "));
+  textEl.appendChild(wrap);
+
+  const summarizeTweet = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const currentTextEl = post.querySelector('[data-testid="tweetText"]') || textEl;
+    const clone = currentTextEl.cloneNode(true);
+    clone.querySelectorAll("[data-fbs-ui]").forEach((el) => el.remove());
+    const text = (clone.innerText || clone.textContent || "").trim();
+    if (text.length >= 50) summarizeText(text, "summary", post);
+  };
+  btn.addEventListener("click", summarizeTweet);
+  btn.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") summarizeTweet(event);
+  });
+}
+
 // X renders every tweet as article[data-testid="tweet"]. Unlike Facebook,
 // most tweets have no "Show more" control, so the generic expander scan never
 // sees them. Mount one summary chip per tweet and let the mutation observer
@@ -3081,6 +3116,9 @@ function scanXPosts() {
     // Tweets are intentionally short; the global Facebook-oriented default is
     // 400 characters, while summarizeText itself supports content from 50.
     if (text.length < 50) continue;
+    post.querySelectorAll(':scope > .fbs-chip-host').forEach((el) => {
+      try { el.remove(); } catch (_) {}
+    });
 
     // Prefer the same inline placement used on Facebook: immediately after
     // X's "Show more" control. Match the clickable node first so nested spans
@@ -3107,8 +3145,7 @@ function scanXPosts() {
       continue;
     }
 
-    if (post.querySelector(':scope > .fbs-chip-host[data-fbs-ui="v3"]')) continue;
-    _mountPostChip(post);
+    _mountXInlineChip(post, textEl);
   }
 }
 
