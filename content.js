@@ -2634,11 +2634,28 @@ function inject(target, seeMoreClickable, textContainer, seeMoreOriginal) {
     wrap.className = "fbs-wrap fbs-wrap-inline";
     const btnNode = createInlineBtn();
     if (btnNode.setAttribute) btnNode.setAttribute("data-fbs-ui", "v3");
+    if (SITE === "x" && btnNode.firstChild?.nodeType === Node.TEXT_NODE) {
+      // Facebook uses a middle-dot separator. On X the control is mounted
+      // inside the Show more row, so spacing alone is cleaner and cannot wrap
+      // the separator onto its own line.
+      btnNode.firstChild.textContent = "";
+    }
     wrap.appendChild(btnNode);
-    try {
-      seeMoreOriginal.parentElement.insertBefore(wrap, seeMoreOriginal.nextSibling);
-      inserted = true;
-    } catch (e) {}
+    if (SITE === "x" && seeMoreClickable) {
+      try {
+        // X renders Show more as a block-level role=button. Inserting after
+        // that block forces a new line; appending to the control keeps both
+        // labels in the same inline formatting context.
+        seeMoreClickable.appendChild(wrap);
+        inserted = true;
+      } catch (e) {}
+    }
+    if (!inserted) {
+      try {
+        seeMoreOriginal.parentElement.insertBefore(wrap, seeMoreOriginal.nextSibling);
+        inserted = true;
+      } catch (e) {}
+    }
     if (!inserted && seeMoreClickable && seeMoreClickable.parentElement) {
       try {
         seeMoreClickable.parentElement.insertBefore(wrap, seeMoreClickable.nextSibling);
@@ -2692,6 +2709,7 @@ function inject(target, seeMoreClickable, textContainer, seeMoreOriginal) {
 
   btnEl.addEventListener("click", async (e) => {
     e.stopPropagation();
+    e.preventDefault();
     const type = "summary";
     openOverlay(
       '<div class="fbs-loading"><div class="fbs-spinner"></div><span>Đang tóm tắt...</span></div>',
@@ -3031,17 +3049,67 @@ function _mountPostChip(article) {
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
     e.preventDefault();
+    const platformText =
+      SITE === "x"
+        ? article.querySelector('[data-testid="tweetText"]')
+        : null;
     const t = (
+      (platformText && (platformText.innerText || platformText.textContent)) ||
       (typeof window.fbsExtractPostContent === "function" &&
         window.fbsExtractPostContent(article)) ||
       article.innerText ||
       ""
     ).trim();
-    if (t.length >= MIN_LEN) summarizeText(t, "summary", article);
+    const minimumLength = SITE === "x" ? 50 : MIN_LEN;
+    if (t.length >= minimumLength) summarizeText(t, "summary", article);
   });
 
   host.appendChild(btn);
   article.appendChild(host);
+}
+
+// X renders every tweet as article[data-testid="tweet"]. Unlike Facebook,
+// most tweets have no "Show more" control, so the generic expander scan never
+// sees them. Mount one summary chip per tweet and let the mutation observer
+// pick up newly virtualized timeline items.
+function scanXPosts() {
+  if (SITE !== "x") return;
+  const posts = document.querySelectorAll('article[data-testid="tweet"]');
+  for (const post of posts) {
+    const textEl = post.querySelector('[data-testid="tweetText"]');
+    const text = (textEl?.innerText || textEl?.textContent || "").trim();
+    // Tweets are intentionally short; the global Facebook-oriented default is
+    // 400 characters, while summarizeText itself supports content from 50.
+    if (text.length < 50) continue;
+
+    // Prefer the same inline placement used on Facebook: immediately after
+    // X's "Show more" control. Match the clickable node first so nested spans
+    // do not produce duplicate buttons.
+    const controls = post.querySelectorAll('[role="button"], button, a, span');
+    let showMore = null;
+    for (const control of controls) {
+      const label = (control.innerText || control.textContent || "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase();
+      if (label !== "show more" && label !== "xem thêm") continue;
+      const clickable = findClickable(control);
+      if (clickable && post.contains(clickable)) {
+        showMore = control;
+        break;
+      }
+    }
+
+    if (showMore) {
+      if (!post.querySelector('.fbs-wrap-inline[data-fbs-ui="v3"]')) {
+        inject(post, findClickable(showMore), textEl, showMore);
+      }
+      continue;
+    }
+
+    if (post.querySelector(':scope > .fbs-chip-host[data-fbs-ui="v3"]')) continue;
+    _mountPostChip(post);
+  }
 }
 
 function scanFBAllPosts() {
@@ -3383,6 +3451,7 @@ function scan() {
   if (!isContextValid() || isBlocked) return;
   if (document.hidden) return;
   if (SITE === "reddit") scanRedditPosts();
+  if (SITE === "x") scanXPosts();
   // Sponsored first (fast) then rest
   scanSponsoredFast();
   try {
@@ -3528,6 +3597,53 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
   return false;
 });
+
+// A status summarized on X can be handed to a newly opened Facebook tab.
+// The query token keeps the payload out of the URL; storage is consumed once
+// so refreshing Facebook cannot reopen the composer with stale content.
+async function consumePendingFacebookPost() {
+  if (SITE !== "facebook") return;
+  let url;
+  try {
+    url = new URL(location.href);
+  } catch (_) {
+    return;
+  }
+  const id = url.searchParams.get("feedwriter_compose");
+  if (!id || !/^[0-9a-f-]{20,}$/i.test(id)) return;
+
+  const key = "pendingFacebookPost:" + id;
+  try {
+    const stored = await chrome.storage.local.get(key);
+    await chrome.storage.local.remove(key);
+    url.searchParams.delete("feedwriter_compose");
+    history.replaceState(history.state, "", url.pathname + url.search + url.hash);
+
+    const pending = stored[key];
+    if (!pending?.postData || Date.now() - Number(pending.createdAt || 0) > 5 * 60 * 1000) {
+      throw new Error("Bài chờ đăng đã hết hạn. Hãy quay lại X và thử lại.");
+    }
+
+    for (let i = 0; i < 30 && !document.querySelector('div[role="main"]'); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    if (typeof PosterFacebook === "undefined") {
+      throw new Error("Không tải được bộ đăng Facebook");
+    }
+    const result = await PosterFacebook.post(pending.postData);
+    if (!result?.ok) {
+      throw new Error("Không mở được composer Facebook: " + (result?.reason || "unknown"));
+    }
+  } catch (error) {
+    console.error("[FeedWriter] Facebook handoff failed:", error);
+    openOverlay(
+      '<div class="fbs-error">' + esc(error?.message || String(error)) + "</div>",
+      false,
+    );
+  }
+}
+
+consumePendingFacebookPost();
 
 // Note: the auto-generated Shopee affiliate suggestion (search URL + aff_sid)
 // was removed — that link format does not earn commission. Affiliate links are

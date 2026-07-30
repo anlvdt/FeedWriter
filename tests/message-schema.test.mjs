@@ -162,6 +162,15 @@ describe("validate / ACTION_SCHEMAS", () => {
     assert.equal(r.ok, true);
   });
 
+  it("accepts Facebook composer handoff only from a content tab", () => {
+    const request = {
+      action: "open-facebook-composer",
+      postData: { content: "A summarized X post" },
+    };
+    assert.equal(validate(request, contentTabSender).ok, true);
+    assert.equal(validate(request, extensionPageSender).ok, false);
+  });
+
   it("rejects enrich-related-source-links without urls", () => {
     const r = validate(
       { action: "enrich-related-source-links" },
@@ -221,6 +230,19 @@ describe("validate / ACTION_SCHEMAS", () => {
       validate({ action: "translate-word", word: "  " }, contentTabSender).ok,
       false,
     );
+  });
+
+  it("accepts contextual technical translation requests", () => {
+    const r = validate(
+      {
+        action: "translate-text",
+        text: "archive",
+        mode: "word",
+        context: "Extract the downloaded archive file before running the code.",
+      },
+      contentTabSender,
+    );
+    assert.equal(r.ok, true);
   });
 
   it("validateMessage rejects when schemas map is empty for action", () => {

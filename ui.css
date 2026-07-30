@@ -225,6 +225,15 @@ article:hover > .fbs-chip-host .fbs-allpost-btn,
   vertical-align: baseline !important;
 }
 
+/* X: the wrapper is appended inside its block-level Show more control so the
+   two actions stay on one row instead of placing the chip underneath. */
+article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"] {
+  display: inline-flex !important;
+  align-items: baseline !important;
+  margin-left: 8px !important;
+  vertical-align: baseline !important;
+}
+
 /* Kill legacy absolute wraps that caused full-height bars */
 .fbs-wrap:not(.fbs-wrap-inline) {
   display: none !important;

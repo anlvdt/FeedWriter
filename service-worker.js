@@ -2121,6 +2121,55 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.action === "open-facebook-composer") {
+    (async () => {
+      const raw = request.postData;
+      if (!sender.tab || !raw || typeof raw !== "object") {
+        throw new Error("Dữ liệu bài đăng không hợp lệ");
+      }
+      const content = String(raw.content || "").trim().slice(0, 50000);
+      if (!content) throw new Error("Nội dung bài đăng đang trống");
+
+      const id = crypto.randomUUID();
+      const images = Array.isArray(raw.images)
+        ? raw.images.slice(0, 10).map((image, index) => ({
+            name: String(image?.name || `image-${index}.jpg`).slice(0, 120),
+            url: String(image?.url || "").slice(0, 8000),
+            type: String(image?.type || "image/jpeg").slice(0, 80),
+          })).filter((image) => /^https?:\/\//i.test(image.url))
+        : [];
+      const postData = {
+        title: String(raw.title || "").slice(0, 500),
+        content,
+        images,
+        videos: [],
+        tags: Array.isArray(raw.tags) ? raw.tags.slice(0, 20).map(String) : [],
+        sourceUrl: String(raw.sourceUrl || "").slice(0, 8000),
+        author: String(raw.author || "").slice(0, 200),
+        source: String(raw.source || "").slice(0, 200),
+        autoPublish: false,
+      };
+      const storageKey = "pendingFacebookPost:" + id;
+      await chrome.storage.local.set({
+        [storageKey]: {
+          createdAt: Date.now(),
+          postData,
+        },
+      });
+      try {
+        await chrome.tabs.create({
+          url: "https://www.facebook.com/?feedwriter_compose=" + encodeURIComponent(id),
+          active: true,
+        });
+      } catch (error) {
+        await chrome.storage.local.remove(storageKey);
+        throw error;
+      }
+      sendResponse({ ok: true });
+    })().catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
   if (request.action === "disable-github-autopost") {
     // Legacy cleanup: clear old alarm + force flag off
     (async () => {
@@ -2367,7 +2416,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const payload = request.text || request.word;
     const mode =
       request.mode || (request.action === "translate-word" ? "word" : "auto");
-    translateText(payload, mode)
+    translateText(payload, mode, request.context || "")
       .then((r) => sendResponse(r))
       .catch((e) => sendResponse({ error: e.message }));
     return true;
@@ -2755,13 +2804,33 @@ Luôn trả về ĐÚNG ĐỊNH DẠNG JSON (không có markdown code block):
 
 // === TRANSLATE: word · passage · slang · collocation · shadowing ===
 const translateCache = new LRUCache(200);
+const TRANSLATE_PROMPT_VERSION = "tech-context-v2";
 
-function buildTranslatePrompt(text, mode) {
+const TECH_TRANSLATION_GUIDE = `
+TECH/AI TERMINOLOGY RULES:
+- Detect the domain from the supplied context. In software, IT, developer, and AI contexts, use the established Vietnamese technical meaning, not a literal everyday translation.
+- If a bare word is ambiguous and no useful context is available, present the software/AI meaning first and label other common meanings separately. Do not pretend an ambiguous word has only one meaning.
+- Preserve familiar English terms when Vietnamese professionals normally use them: API, prompt, token, model, framework, library, runtime, pipeline, cache, repository/repo, commit, branch, build, deploy, server, client, cloud, container, dataset, benchmark, embedding, fine-tuning, agent.
+- code (software noun) = "code" or "mã nguồn"; code/coding (activity) = "lập trình" or "viết code"; source code = "mã nguồn". NEVER translate code as "mã hóa". "Mã hóa" means encode/encrypt.
+- archive + file/.zip/.tar/compressed/extract/unpack/package = "tệp nén" or "gói nén". archive as a verb for email/data/logs = "lưu trữ". archived repository/project = "đưa vào trạng thái lưu trữ". Choose from context.
+- image in Docker/container context = "image" or "ảnh hệ thống", not "hình ảnh"; thread in programming = "luồng"; issue in a repository = "issue/vấn đề"; model in AI = "mô hình"; training/inference = "huấn luyện/suy luận".
+- Keep product names, commands, identifiers, file extensions, code snippets, paths, API names, and UI labels unchanged.
+- Translate consistently across the whole passage and do not expand acronyms incorrectly.`;
+
+function buildTranslatePrompt(text, mode, context = "") {
   const src = String(text || "").trim().slice(0, 2500);
+  const surroundingContext = String(context || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 1200);
+  const contextBlock = surroundingContext && surroundingContext !== src
+    ? `\n\nNgữ cảnh chứa input (chỉ dùng để chọn đúng nghĩa, không dịch toàn bộ phần này):\n"""${surroundingContext}"""`
+    : "";
   const systemBase =
-    "You are an expert English→Vietnamese language coach for learners. " +
+    "You are an expert English→Vietnamese translator specializing in software engineering, IT, and AI, as well as a language coach. " +
     "Focus on natural usage: slang, idioms, collocations, register. " +
-    "Be concise. Use Vietnamese for explanations. No emoji.";
+    "Be concise. Use Vietnamese for explanations. No emoji." +
+    TECH_TRANSLATION_GUIDE;
 
   if (mode === "passage") {
     return {
@@ -2773,7 +2842,7 @@ function buildTranslatePrompt(text, mode) {
         `**Slang / Informal:**\n(các từ lóng, thành ngữ, cách nói không trang trọng — nếu có; không thì viết "Không có")\n\n` +
         `**Collocations:**\n(cụm từ hay đi kèm trong đoạn, dạng: word + collocation — nghĩa)\n\n` +
         `**Ghi chú:**\n(1–2 lưu ý ngữ cảnh/register nếu hữu ích)\n\n` +
-        `Đoạn:\n"""${src}"""`,
+        `Đoạn:\n"""${src}"""` + contextBlock,
     };
   }
 
@@ -2789,7 +2858,7 @@ function buildTranslatePrompt(text, mode) {
         `**Tương đương tiếng Việt:**\n(cách nói tự nhiên tương đương)\n\n` +
         `**Ví dụ:**\n(1 câu EN + 1 câu VI)\n\n` +
         `**Lưu ý:**\n(khi nào nên/không nên dùng)\n\n` +
-        `Input:\n"""${src}"""`,
+        `Input:\n"""${src}"""` + contextBlock,
     };
   }
 
@@ -2807,7 +2876,7 @@ function buildTranslatePrompt(text, mode) {
         `(liệt kê 5–10 cụm, mỗi dòng: collocation — nghĩa VI ngắn)\n\n` +
         `**Cụm hay nhầm:**\n(nếu có)\n\n` +
         `**Ví dụ ngắn:**\n(2 câu EN)\n\n` +
-        `Input:\n"""${src}"""`,
+        `Input:\n"""${src}"""` + contextBlock,
     };
   }
 
@@ -2825,7 +2894,7 @@ function buildTranslatePrompt(text, mode) {
         `(3–8 chunks, giữ nguyên wording gốc)\n\n` +
         `**Nhịp & nhấn:**\n(từ nào nhấn, chỗ ngắt hơi)\n\n` +
         `**Mẹo luyện:**\n(1–2 câu)\n\n` +
-        `Input:\n"""${src}"""`,
+        `Input:\n"""${src}"""` + contextBlock,
     };
   }
 
@@ -2834,6 +2903,7 @@ function buildTranslatePrompt(text, mode) {
     system: systemBase,
     prompt:
       `Dịch từ/cụm tiếng Anh sang tiếng Việt cho người học.\n` +
+      `Ưu tiên đúng nghĩa CNTT/AI khi ngữ cảnh thuộc lĩnh vực kỹ thuật. Nếu input đứng riêng và đa nghĩa, đưa nghĩa CNTT/AI lên trước rồi mới nêu nghĩa phổ thông.\n` +
       `Ưu tiên: nghĩa thực tế, slang nếu có, collocations hay đi kèm.\n\n` +
       `Format:\n` +
       `**Phiên âm:** /.../\n\n` +
@@ -2843,7 +2913,7 @@ function buildTranslatePrompt(text, mode) {
       `**Collocations:** (3–6 cụm: collocation — nghĩa)\n\n` +
       `**Ví dụ:** (1 câu EN + 1 câu VI)\n\n` +
       `**Shadowing tip:** (chia 1–2 chunk ngắn để đọc to)\n\n` +
-      `Input: "${src}"`,
+      `Input: "${src}"` + contextBlock,
   };
 }
 
@@ -2860,16 +2930,24 @@ function resolveTranslateMode(text, mode) {
   return "passage";
 }
 
-async function translateText(text, mode = "auto") {
+async function translateText(text, mode = "auto", context = "") {
   const source = String(text || "").replace(/\s+/g, " ").trim();
   if (!source) return { error: "Không có văn bản để dịch." };
   if (source.length > 2500) return { error: "Đoạn quá dài (tối đa ~2500 ký tự)." };
 
   const resolved = resolveTranslateMode(source, mode);
-  const cacheKey = resolved + "::" + source.toLowerCase();
+  const normalizedContext = String(context || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 1200);
+  const cacheKey =
+    TRANSLATE_PROMPT_VERSION +
+    "::" + resolved +
+    "::" + source.toLowerCase() +
+    "::" + normalizedContext.toLowerCase();
   if (translateCache.has(cacheKey)) return translateCache.get(cacheKey);
 
-  const { system, prompt } = buildTranslatePrompt(source, resolved);
+  const { system, prompt } = buildTranslatePrompt(source, resolved, normalizedContext);
   const nonStreamFns = {
     groq: callGroqNonStream,
     gemini: callGeminiNonStream,

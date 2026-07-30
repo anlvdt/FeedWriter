@@ -117,7 +117,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
     '<button type="button" class="fbs-sp-copy-comment" title="Copy nội dung nguồn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy nguồn</button>' +
     "</div>" +
     '<div class="fbs-sp-actions">' +
-    '<button class="fbs-sp-open-fb"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg> Đăng status</button>' +
+    '<button class="fbs-sp-open-fb"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg> ' + (SITE === "x" ? "Đăng lên Facebook" : "Đăng status") + '</button>' +
     "</div>";
 
   panelBody.appendChild(preview);
@@ -528,6 +528,46 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
     .querySelector(".fbs-sp-open-fb")
     .addEventListener("click", async () => {
       const btn = preview.querySelector(".fbs-sp-open-fb");
+
+      // X is the source platform, while Facebook is the requested publishing
+      // destination. Hand the prepared status to the background worker so it
+      // can open a Facebook tab and let that tab fill the native composer.
+      if (SITE === "x") {
+        btn.disabled = true;
+        btn.innerHTML = '<div class="fbs-spinner" style="width:14px;height:14px;border-width:2px"></div> Đang mở Facebook...';
+
+        let selectedUrls = [];
+        const thumbCheckboxes = preview.querySelectorAll(".fbs-sp-thumb-cb");
+        if (thumbCheckboxes.length > 0) {
+          selectedUrls = Array.from(thumbCheckboxes)
+            .filter((cb) => cb.checked)
+            .map((cb) => cb.dataset.url)
+            .filter(Boolean);
+        } else if (imageList.length > 0) {
+          selectedUrls = imageList;
+        }
+
+        try {
+          const response = await chrome.runtime.sendMessage({
+            action: "open-facebook-composer",
+            postData: PostData.fromFeedWriter(
+              text,
+              linkField.value.trim() || sourceUrl,
+              imageUrl,
+              authorField.value.trim() || cleanAuthor,
+              cleanSource,
+              selectedUrls,
+            ),
+          });
+          if (!response?.ok) throw new Error(response?.error || "Không mở được Facebook");
+          btn.disabled = false;
+          btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Đã mở Facebook';
+        } catch (err) {
+          btn.disabled = false;
+          btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> Lỗi: ' + esc(err?.message || String(err));
+        }
+        return;
+      }
 
       // Cross-platform: nếu đang ở platform khác và có adapter → dùng adapter
       if (SITE !== "facebook" && typeof CrossPoster !== "undefined") {
@@ -1346,4 +1386,3 @@ window.fbsAgentPost = async function (summaryText, imageUrl, rawSourceUrl, postE
 
   return { ok: true };
 };
-

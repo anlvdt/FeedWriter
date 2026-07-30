@@ -170,7 +170,7 @@
    * @param {DOMRect} rect
    * @param {string} mode auto|word|passage|slang|collocation|shadowing
    */
-  function showTranslateTooltip(text, rect, mode = "auto") {
+  function showTranslateTooltip(text, rect, mode = "auto", context = "") {
     createTranslateTooltip();
     lastRect = rect;
     const token = ++requestToken;
@@ -186,7 +186,12 @@
 
     try {
       chrome.runtime.sendMessage(
-        { action: "translate-text", text: source, mode: mode || "auto" },
+        {
+          action: "translate-text",
+          text: source,
+          mode: mode || "auto",
+          context: String(context || "").slice(0, 1200),
+        },
         (resp) => {
           if (token !== requestToken) return;
           if (chrome.runtime.lastError) {
@@ -267,6 +272,23 @@
     return rect;
   }
 
+  function selectionContext(text) {
+    const selection = window.getSelection();
+    const node = selection?.anchorNode;
+    const element = node?.nodeType === Node.ELEMENT_NODE
+      ? node
+      : node?.parentElement;
+    if (!element) return "";
+    const container = element.closest(
+      '[data-testid="tweetText"], article[data-testid="tweet"], [data-ad-preview="message"], [data-ad-comet-preview="message"], [role="article"], p, li',
+    );
+    const surrounding = (container?.innerText || container?.textContent || "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!surrounding || surrounding === String(text || "").trim()) return "";
+    return surrounding.slice(0, 1200);
+  }
+
   function runTranslate(text, mode, rect) {
     if (!isContextValid() || !isTranslatable(text)) return;
     const r = rect || selectionRect();
@@ -274,7 +296,7 @@
     try {
       chrome.runtime.sendMessage({ action: "ping" }, () => {
         if (chrome.runtime.lastError) return;
-        showTranslateTooltip(text, r, mode || "auto");
+        showTranslateTooltip(text, r, mode || "auto", selectionContext(text));
       });
     } catch (_) {}
   }
