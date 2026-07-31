@@ -79,7 +79,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
     imgHtml +
     '<div class="fbs-sp-source-card">' +
     '<div class="fbs-sp-source-card-head">' +
-    '<span class="fbs-sp-source-card-title">Nguồn bài viết</span>' +
+    '<span class="fbs-sp-source-card-title">Nguồn</span>' +
     '<span class="fbs-sp-link-quality ' + q0.cls + '" data-role="link-quality">' + esc(q0.text) + "</span>" +
     "</div>" +
     '<div class="fbs-sp-author-row">' +
@@ -133,7 +133,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
   }
   panel.classList.add("is-composer");
   const subtitle = panel.querySelector('[data-role="panel-subtitle"]');
-  if (subtitle) subtitle.textContent = "Nguồn & đăng bài";
+  if (subtitle) subtitle.textContent = "Đăng Facebook";
 
   const linkField = preview.querySelector(".fbs-sp-link-field");
   const authorField = preview.querySelector(".fbs-sp-author-field");

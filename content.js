@@ -2634,10 +2634,9 @@ function inject(target, seeMoreClickable, textContainer, seeMoreOriginal) {
     wrap.className = "fbs-wrap fbs-wrap-inline";
     const btnNode = createInlineBtn();
     if (btnNode.setAttribute) btnNode.setAttribute("data-fbs-ui", "v3");
-    if (SITE === "x" && btnNode.firstChild?.nodeType === Node.TEXT_NODE) {
-      // Facebook uses a middle-dot separator. On X the control is mounted
-      // inside the Show more row, so spacing alone is cleaner and cannot wrap
-      // the separator onto its own line.
+    if ((SITE === "x" || SITE === "facebook") && btnNode.firstChild?.nodeType === Node.TEXT_NODE) {
+      // Keep the pill as one unit. The separator otherwise wraps onto the
+      // previous line and makes the button look glued to the status text.
       btnNode.firstChild.textContent = "";
     }
     wrap.appendChild(btnNode);

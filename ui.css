@@ -178,16 +178,17 @@ article:hover > .fbs-chip-host .fbs-allpost-btn,
 .fbs-wrap-inline[data-fbs-ui="v3"],
 .fbs-wrap.fbs-wrap-inline {
   position: relative !important;
-  display: inline !important;
+  display: inline-block !important;
   width: auto !important;
   height: auto !important;
   max-height: none !important;
-  margin: 0 0 0 4px !important;
+  margin: 4px 0 0 6px !important;
   padding: 0 !important;
   inset: auto !important;
   top: auto !important;
   right: auto !important;
-  vertical-align: baseline !important;
+  vertical-align: middle !important;
+  white-space: nowrap !important;
   z-index: 2 !important;
   background: none !important;
   border: none !important;
@@ -196,7 +197,7 @@ article:hover > .fbs-chip-host .fbs-allpost-btn,
 
 .fbs-wrap-inline .fbs-btn-inline,
 .fbs-btn-inline[data-fbs-ui="v3"] {
-  display: inline !important;
+  display: inline-block !important;
   position: relative !important;
   width: auto !important;
   height: auto !important;
@@ -207,22 +208,43 @@ article:hover > .fbs-chip-host .fbs-allpost-btn,
   padding: 0 !important;
   margin: 0 !important;
   vertical-align: baseline !important;
+  white-space: nowrap !important;
 }
 
 .fbs-wrap-inline .fbs-btn-inline > span,
 .fbs-btn-inline[data-fbs-ui="v3"] > span {
   display: inline-flex !important;
   align-items: center !important;
-  gap: 4px !important;
-  padding: 1px 8px !important;
+  gap: 6px !important;
+  min-height: 26px !important;
+  padding: 3px 11px 3px 8px !important;
   border-radius: var(--fw-radius-pill) !important;
-  background: var(--fw-accent-soft) !important;
-  color: var(--fw-accent) !important;
-  font-size: 0.92em !important;
-  font-weight: 650 !important;
-  line-height: inherit !important;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.92), rgba(124, 58, 237, 0.92)) !important;
+  border: 1px solid rgba(196, 181, 253, 0.5) !important;
+  color: #ffffff !important;
+  font-size: 0.9em !important;
+  font-weight: 700 !important;
+  line-height: 1.1 !important;
+  letter-spacing: 0.01em !important;
   white-space: nowrap !important;
   vertical-align: baseline !important;
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.18) !important;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease !important;
+}
+
+.fbs-wrap-inline:hover .fbs-btn-inline > span,
+.fbs-btn-inline[data-fbs-ui="v3"]:hover > span,
+.fbs-btn-inline[data-fbs-ui="v3"]:focus-visible > span {
+  filter: brightness(1.08) saturate(1.08) !important;
+  box-shadow: 0 4px 14px rgba(79, 70, 229, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.24) !important;
+  transform: translateY(-1px) !important;
+}
+
+.fbs-wrap-inline .fbs-btn-inline > span img,
+.fbs-btn-inline[data-fbs-ui="v3"] > span img {
+  width: 13px !important;
+  height: 13px !important;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.24)) !important;
 }
 
 /* X: the wrapper is appended inside its block-level Show more control so the
@@ -930,6 +952,130 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
 .fbs-panel[data-fbs-ui="v3"].is-composer .fbs-panel-footer,
 .fbs-panel.fbs-ui-v3.is-composer .fbs-panel-footer {
   display: none !important;
+}
+
+/* Facebook composer: fit the available right rail instead of covering feed. */
+@media (min-width: 1200px) {
+  .fbs-panel[data-fbs-ui="v3"].fbs-panel-left.is-composer,
+  .fbs-panel.fbs-ui-v3.fbs-panel-left.is-composer {
+    top: 64px !important;
+    right: 12px !important;
+    bottom: 12px !important;
+    left: auto !important;
+    transform: none !important;
+    width: clamp(264px, calc((100vw - 700px) / 2 - 28px), 336px) !important;
+    max-height: calc(100vh - 76px) !important;
+  }
+}
+
+.fbs-panel[data-fbs-ui="v3"].fbs-panel-left.is-composer .fbs-panel-head,
+.fbs-panel.fbs-ui-v3.fbs-panel-left.is-composer .fbs-panel-head {
+  gap: 8px !important;
+  padding: 9px 10px !important;
+}
+.fbs-panel[data-fbs-ui="v3"].fbs-panel-left.is-composer .fbs-brand,
+.fbs-panel.fbs-ui-v3.fbs-panel-left.is-composer .fbs-brand {
+  gap: 8px !important;
+}
+.fbs-panel[data-fbs-ui="v3"].fbs-panel-left.is-composer .fbs-brand-icon,
+.fbs-panel.fbs-ui-v3.fbs-panel-left.is-composer .fbs-brand-icon {
+  width: 24px !important;
+  height: 24px !important;
+  border-radius: 7px !important;
+}
+.fbs-panel[data-fbs-ui="v3"].fbs-panel-left.is-composer .fbs-panel-body,
+.fbs-panel.fbs-ui-v3.fbs-panel-left.is-composer .fbs-panel-body {
+  padding: 6px !important;
+}
+.fbs-panel[data-fbs-ui="v3"].fbs-panel-left.is-composer .fbs-status-preview,
+.fbs-panel.fbs-ui-v3.fbs-panel-left.is-composer .fbs-status-preview {
+  border-radius: 9px !important;
+}
+.fbs-panel[data-fbs-ui="v3"].fbs-panel-left.is-composer .fbs-sp-source-card,
+.fbs-panel.fbs-ui-v3.fbs-panel-left.is-composer .fbs-sp-source-card {
+  margin: 7px !important;
+  padding: 9px !important;
+  border-radius: 8px !important;
+}
+.fbs-panel[data-fbs-ui="v3"].fbs-panel-left.is-composer .fbs-sp-source-card-head,
+.fbs-panel.fbs-ui-v3.fbs-panel-left.is-composer .fbs-sp-source-card-head {
+  margin-bottom: 8px !important;
+}
+.fbs-panel[data-fbs-ui="v3"].fbs-panel-left.is-composer .fbs-sp-author-row,
+.fbs-panel.fbs-ui-v3.fbs-panel-left.is-composer .fbs-sp-author-row {
+  gap: 6px !important;
+  margin-bottom: 8px !important;
+  flex-wrap: nowrap !important;
+}
+.fbs-panel[data-fbs-ui="v3"].fbs-panel-left.is-composer .fbs-sp-author-field,
+.fbs-panel.fbs-ui-v3.fbs-panel-left.is-composer .fbs-sp-author-field,
+.fbs-panel[data-fbs-ui="v3"].fbs-panel-left.is-composer .fbs-sp-link-field,
+.fbs-panel.fbs-ui-v3.fbs-panel-left.is-composer .fbs-sp-link-field {
+  height: 31px !important;
+  padding: 0 8px !important;
+  font-size: 11.5px !important;
+}
+.fbs-panel[data-fbs-ui="v3"].fbs-panel-left.is-composer .fbs-sp-link-row,
+.fbs-panel.fbs-ui-v3.fbs-panel-left.is-composer .fbs-sp-link-row {
+  grid-template-columns: 1fr 1fr 31px !important;
+  gap: 5px !important;
+}
+.fbs-panel[data-fbs-ui="v3"].fbs-panel-left.is-composer .fbs-sp-link-field,
+.fbs-panel.fbs-ui-v3.fbs-panel-left.is-composer .fbs-sp-link-field {
+  grid-column: 1 / -1 !important;
+}
+.fbs-panel[data-fbs-ui="v3"].fbs-panel-left.is-composer .fbs-sp-paste-link,
+.fbs-panel.fbs-ui-v3.fbs-panel-left.is-composer .fbs-sp-paste-link,
+.fbs-panel[data-fbs-ui="v3"].fbs-panel-left.is-composer .fbs-sp-redetect-link,
+.fbs-panel.fbs-ui-v3.fbs-panel-left.is-composer .fbs-sp-redetect-link,
+.fbs-panel[data-fbs-ui="v3"].fbs-panel-left.is-composer .fbs-sp-open-link,
+.fbs-panel.fbs-ui-v3.fbs-panel-left.is-composer .fbs-sp-open-link {
+  height: 30px !important;
+  padding: 0 8px !important;
+  font-size: 10.5px !important;
+}
+.fbs-panel[data-fbs-ui="v3"].fbs-panel-left.is-composer .fbs-sp-open-link,
+.fbs-panel.fbs-ui-v3.fbs-panel-left.is-composer .fbs-sp-open-link {
+  width: 31px !important;
+  padding: 0 !important;
+}
+.fbs-panel[data-fbs-ui="v3"].fbs-panel-left.is-composer .fbs-sp-related-block,
+.fbs-panel.fbs-ui-v3.fbs-panel-left.is-composer .fbs-sp-related-block {
+  margin: 0 7px 6px !important;
+  padding: 8px 9px !important;
+  border-radius: 8px !important;
+}
+.fbs-panel[data-fbs-ui="v3"].fbs-panel-left.is-composer .fbs-sp-github-field,
+.fbs-panel.fbs-ui-v3.fbs-panel-left.is-composer .fbs-sp-github-field {
+  min-height: 48px !important;
+  max-height: 72px !important;
+  padding: 7px 8px !important;
+  font-size: 11px !important;
+  resize: vertical !important;
+}
+.fbs-panel[data-fbs-ui="v3"].fbs-panel-left.is-composer .fbs-sp-image img,
+.fbs-panel.fbs-ui-v3.fbs-panel-left.is-composer .fbs-sp-image img {
+  max-height: 138px !important;
+}
+.fbs-panel[data-fbs-ui="v3"].fbs-panel-left.is-composer .fbs-sp-image.fbs-sp-multi,
+.fbs-panel.fbs-ui-v3.fbs-panel-left.is-composer .fbs-sp-image.fbs-sp-multi {
+  padding: 6px 7px 7px !important;
+}
+.fbs-panel[data-fbs-ui="v3"].fbs-panel-left.is-composer .fbs-sp-thumbs,
+.fbs-panel.fbs-ui-v3.fbs-panel-left.is-composer .fbs-sp-thumbs {
+  grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)) !important;
+  gap: 4px !important;
+  max-height: 148px !important;
+}
+.fbs-panel[data-fbs-ui="v3"].fbs-panel-left.is-composer .fbs-sp-actions,
+.fbs-panel.fbs-ui-v3.fbs-panel-left.is-composer .fbs-sp-actions {
+  padding: 0 7px 7px !important;
+}
+.fbs-panel[data-fbs-ui="v3"].fbs-panel-left.is-composer .fbs-sp-open-fb,
+.fbs-panel.fbs-ui-v3.fbs-panel-left.is-composer .fbs-sp-open-fb {
+  height: 37px !important;
+  border-radius: 8px !important;
+  font-size: 12px !important;
 }
 
 /* Tool button "done" state when editing */
