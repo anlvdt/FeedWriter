@@ -25,6 +25,68 @@ const summaryCache = new LRUCache(50);
 const observers = []; // Store observers for cleanup
 const listeners = []; // Store event listeners for cleanup
 
+const FB_NON_PROFILE_ROUTES = new Set([
+  "", "home.php", "groups", "pages", "watch", "reel", "reels", "events",
+  "marketplace", "stories", "photo", "photos", "videos", "gaming", "friends",
+  "messages", "notifications", "settings", "help", "search", "login", "recover",
+]);
+
+/**
+ * Keep FeedWriter out of Facebook's personal-profile home pages. A bare
+ * /username URL may also be a Page, so require the profile-only Friends tab
+ * before suppressing it. Numeric profile.php and /people URLs are personal
+ * profile routes and can be identified directly.
+ */
+function isFacebookPersonalProfileHome() {
+  if (SITE !== "facebook") return false;
+
+  let url;
+  try {
+    url = new URL(location.href);
+  } catch (_) {
+    return false;
+  }
+
+  const path = url.pathname.replace(/\/+$/, "") || "/";
+  const isNumericProfile =
+    path === "/profile.php" &&
+    !!url.searchParams.get("id") &&
+    !url.searchParams.get("story_fbid");
+  const isPeopleProfile = /^\/people\/[^/]+\/\d+$/i.test(path);
+  const isUserProfile = /^\/user\/[^/]+$/i.test(path);
+  if (isNumericProfile || isPeopleProfile || isUserProfile) return true;
+
+  const match = path.match(/^\/([^/]+)$/);
+  if (!match || FB_NON_PROFILE_ROUTES.has(match[1].toLowerCase())) return false;
+
+  const main = document.querySelector('[role="main"]');
+  if (!main) return false;
+  return Array.from(
+    main.querySelectorAll(
+      '[role="tab"], a[href*="/friends"], a[href*="sk=friends"], ' +
+        'a[aria-label^="Trang cá nhân của "], a[aria-label^="Profile of "]',
+    ),
+  ).some((tab) => {
+    const label = (tab.innerText || tab.textContent || "").replace(/\s+/g, " ").trim();
+    const href = tab.getAttribute("href") || "";
+    const aria = tab.getAttribute("aria-label") || "";
+    return (
+      /^(bạn bè|friends)$/i.test(label) ||
+      /(?:\/friends(?:\/|$)|[?&]sk=friends\b)/i.test(href) ||
+      /^(trang cá nhân của|profile of)\b/i.test(aria)
+    );
+  });
+}
+
+function removePersonalProfileControls() {
+  document
+    .querySelectorAll(
+      ".fbs-wrap, .fbs-chip-host, .fbs-btn-inline, .fbs-comment-summary-btn",
+    )
+    .forEach((element) => element.remove());
+  if (floatingToolbar) floatingToolbar.classList.remove("fbs-visible");
+}
+
 // Batch operations state
 const batchOperations = {
   active: false,
@@ -436,6 +498,7 @@ function _feedCandidates(root) {
  */
 function scanSponsoredFast(rootEl) {
   if (SITE !== "facebook") return;
+  if (isFacebookPersonalProfileHome()) return;
   const root =
     rootEl ||
     document.querySelector('div[role="main"]') ||
@@ -494,6 +557,7 @@ function scanSponsoredFast(rootEl) {
 
 function scanAffiliatePosts() {
   if (SITE !== "facebook") return;
+  if (isFacebookPersonalProfileHome()) return;
   if (typeof window.fbsEvaluatePostSignals !== "function") return;
 
   // Always run sponsored fast path first
@@ -2233,6 +2297,11 @@ function showBatchResults() {
 }
 
 async function summarizeText(text, type = "summary", contextElement = null, tone = null) {
+  if (isFacebookPersonalProfileHome()) {
+    removePersonalProfileControls();
+    return;
+  }
+
   if (!text || text.length < 50) {
     openOverlay(
       '<div class="fbs-error">Text quá ngắn để tóm tắt.</div>',
@@ -2611,6 +2680,8 @@ chrome.runtime.onMessage.addListener((msg) => {
 
 // === INJECT BUTTON ===
 function inject(target, seeMoreClickable, textContainer, seeMoreOriginal) {
+  if (isFacebookPersonalProfileHome()) return;
+
   if (injected.has(target)) {
     // Keep if a healthy (non-stretched) button already exists
     const existing = target.querySelector(".fbs-wrap[data-fbs-ui='v3'] .fbs-btn, .fbs-btn-inline[data-fbs-ui='v3']");
@@ -2856,9 +2927,35 @@ function createFloatingToolbar() {
   listeners.push({ element: window, event: "resize", handler: hideToolbar, options: { passive: true } });
 }
 
+// Facebook renders its post composer in a modal dialog. The native editor is
+// already packed with controls, while our toolbar lives under `body` with a
+// higher stacking level. Facebook can move the contenteditable attribute among
+// nested nodes, so hide selection tools whenever its modal editor is open,
+// rather than relying on the selected node alone.
+function isNativeComposerOpen() {
+  const editors = document.querySelectorAll(
+    '[role="dialog"] [contenteditable="true"], ' +
+      '[role="dialog"] [data-lexical-editor="true"], ' +
+      '[aria-modal="true"] [contenteditable="true"], ' +
+      '[aria-modal="true"] [data-lexical-editor="true"]',
+  );
+
+  return Array.from(editors).some((editor) => editor.getClientRects().length > 0);
+}
+
 function handleSelection() {
   createFloatingToolbar();
   setTimeout(() => {
+    if (isFacebookPersonalProfileHome()) {
+      floatingToolbar.classList.remove("fbs-visible");
+      return;
+    }
+
+    if (isNativeComposerOpen()) {
+      floatingToolbar.classList.remove("fbs-visible");
+      return;
+    }
+
     const selection = window.getSelection();
     const text = selection.toString().trim();
     if (selection.rangeCount === 0) {
@@ -3505,6 +3602,10 @@ function scanShopeeLinks() {
 function scan() {
   if (!isContextValid() || isBlocked) return;
   if (document.hidden) return;
+  if (isFacebookPersonalProfileHome()) {
+    removePersonalProfileControls();
+    return;
+  }
   if (SITE === "reddit") scanRedditPosts();
   if (SITE === "x") scanXPosts();
   // Sponsored first (fast) then rest
