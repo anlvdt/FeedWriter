@@ -2740,7 +2740,7 @@ button.fbs-allpost-btn:hover,
 }
 
 /* === HIDDEN POST CHIP (soft, not red alarm) === */
-.fbs-affiliate-indicator,
+.fbs-filter-indicator,
 .fbs-hidden-chip {
   display: flex;
   align-items: center;
@@ -2763,9 +2763,6 @@ button.fbs-allpost-btn:hover,
 }
 .fbs-hidden-chip[data-kind="engagement"] {
   --fbs-hidden-accent: #a78bfa;
-}
-.fbs-hidden-chip[data-kind="affiliate"] {
-  --fbs-hidden-accent: #94a3b8;
 }
 
 .fbs-hidden-chip-icon {
@@ -2802,7 +2799,7 @@ button.fbs-allpost-btn:hover,
   max-width: 100%;
 }
 
-.fbs-affiliate-show,
+.fbs-filter-show,
 .fbs-hidden-chip-show {
   flex-shrink: 0;
   height: 28px;
@@ -2818,14 +2815,14 @@ button.fbs-allpost-btn:hover,
   transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
 
-.fbs-affiliate-show:hover,
+.fbs-filter-show:hover,
 .fbs-hidden-chip-show:hover {
   background: var(--fbs-surface-2, #303042);
   color: var(--fbs-text, #f5f5f7);
   border-color: var(--fbs-border-strong, #6a6a84);
 }
 
-.fbs-affiliate-show:focus-visible,
+.fbs-filter-show:focus-visible,
 .fbs-hidden-chip-show:focus-visible {
   outline: 2px solid var(--fbs-accent, #8b93f7);
   outline-offset: 2px;

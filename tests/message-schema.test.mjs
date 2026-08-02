@@ -82,23 +82,6 @@ describe("validate / ACTION_SCHEMAS", () => {
     assert.equal(r.request.action, "summarize");
   });
 
-  it("rejects run-github-autopost-now from content_tab", () => {
-    const r = validate(
-      { action: "run-github-autopost-now" },
-      contentTabSender,
-    );
-    assert.equal(r.ok, false);
-    assert.match(r.error, /not allowed|content_tab/i);
-  });
-
-  it("accepts run-github-autopost-now from extension_page", () => {
-    const r = validate(
-      { action: "run-github-autopost-now" },
-      extensionPageSender,
-    );
-    assert.equal(r.ok, true);
-  });
-
   it("rejects fetch-image missing url", () => {
     const r = validate({ action: "fetch-image" }, contentTabSender);
     assert.equal(r.ok, false);
@@ -117,22 +100,6 @@ describe("validate / ACTION_SCHEMAS", () => {
     const r = validate({ action: "totally-unknown-xyz" }, extensionPageSender);
     assert.equal(r.ok, false);
     assert.equal(r.error, "Unknown action");
-  });
-
-  it("rejects github-autopost-done from extension_page", () => {
-    const r = validate(
-      { action: "github-autopost-done", ok: true },
-      extensionPageSender,
-    );
-    assert.equal(r.ok, false);
-  });
-
-  it("accepts github-autopost-done from content_tab", () => {
-    const r = validate(
-      { action: "github-autopost-done", ok: true, message: "ok" },
-      contentTabSender,
-    );
-    assert.equal(r.ok, true);
   });
 
   it("rejects request-optional-permission without permissions or origins", () => {
@@ -179,24 +146,8 @@ describe("validate / ACTION_SCHEMAS", () => {
     assert.equal(r.ok, false);
   });
 
-  it("rejects unshorten-shopee-inline from extension_page", () => {
-    const r = validate(
-      { action: "unshorten-shopee-inline", url: "https://s.shopee.vn/x" },
-      extensionPageSender,
-    );
-    assert.equal(r.ok, false);
-  });
-
-  it("accepts unshorten-shopee-inline from content_tab", () => {
-    const r = validate(
-      { action: "unshorten-shopee-inline", url: "https://s.shopee.vn/x" },
-      contentTabSender,
-    );
-    assert.equal(r.ok, true);
-  });
-
   it("accepts ping / test-connection / get-key-status with no payload", () => {
-    for (const action of ["ping", "test-connection", "get-key-status", "backupSettings", "reschedule-github"]) {
+    for (const action of ["ping", "test-connection", "get-key-status", "backupSettings"]) {
       const r = validate({ action }, extensionPageSender);
       assert.equal(r.ok, true, `expected ${action} ok`);
     }
@@ -256,6 +207,7 @@ describe("validate / ACTION_SCHEMAS", () => {
     assert.equal(SENDER.EXTENSION_PAGE, "extension_page");
     assert.equal(SENDER.CONTENT_TAB, "content_tab");
     assert.ok(ACTION_SCHEMAS.summarize);
-    assert.ok(ACTION_SCHEMAS["run-github-autopost-now"]);
+    assert.equal(ACTION_SCHEMAS["run-github-autopost-now"], undefined);
+    assert.equal(ACTION_SCHEMAS["github-autopost-done"], undefined);
   });
 });

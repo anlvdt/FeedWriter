@@ -89,20 +89,9 @@
       </section>
 
       <div class="accordion advanced-accordion">
-        <div class="accordion-header" role="button" aria-expanded="false" tabindex="0">Hỗ trợ đăng bài</div>
+        <button class="accordion-header" type="button" aria-expanded="false">Nguồn & đăng thủ công</button>
         <div class="accordion-content">
-          <div class="field-hint" style="margin-bottom:12px">Workflow đề xuất: lọc feed → dùng Batch để chọn bài đáng đọc → preview, chỉnh sửa và đăng thủ công.</div>
-          <div class="field">
-            <label class="checkbox-label">
-              <input type="checkbox" id="hideAffiliatePosts">
-              <span>Ẩn bài viết có link Affiliate</span>
-            </label>
-            <div class="field-hint">Ẩn bài chứa link shopping (Shopee, Lazada, Tiki, TikTok Shop…).</div>
-          </div>
-          <div class="fbs-shopee-settings">
-            <div class="fbs-shopee-settings-title">Bóc link Shopee</div>
-            <div class="field-hint">Bôi link <code>shope.ee</code> → chuột phải → <strong>Bóc Link Shopee</strong> để mở trang tạo link chính thức.</div>
-          </div>
+          <div class="field-hint workflow-hint">Workflow đề xuất: lọc feed → dùng Batch để chọn bài đáng đọc → preview, chỉnh sửa và đăng thủ công.</div>
           <div class="field">
             <label for="sourceTemplate">
               Thông tin nguồn & tham khảo
@@ -114,25 +103,22 @@
       </div>
 
       <div class="accordion advanced-accordion">
-        <div class="accordion-header" role="button" aria-expanded="false" tabindex="0">Nâng cao</div>
+        <button class="accordion-header" type="button" aria-expanded="false">Nâng cao</button>
         <div class="accordion-content">
           <div class="field">
             <label for="adDisplayMode">Bài Được tài trợ / Sponsored</label>
             <select id="adDisplayMode">
-              <option value="hide" selected>Ẩn hoàn toàn</option>
-              <option value="collapse">Thu gọn (có lý do)</option>
-              <option value="mark">Chỉ đánh dấu</option>
-            </select>
-            <div class="field-hint">Luôn lọc bài nhãn <strong>Được tài trợ</strong> / <strong>Sponsored</strong>. Mặc định ẩn hẳn.</div>
-          </div>
-          <div class="field">
-            <label for="affiliateDisplayMode">Hiển thị bài affiliate / yêu cầu comment</label>
-            <select id="affiliateDisplayMode">
-              <option value="hide">Ẩn hoàn toàn</option>
               <option value="collapse" selected>Thu gọn (có lý do)</option>
               <option value="mark">Chỉ đánh dấu</option>
             </select>
-            <div class="field-hint">Cách hiển thị bài affiliate và bài yêu cầu comment để nhận link, file hoặc tài liệu. Bài yêu cầu comment luôn được phát hiện.</div>
+            <div class="field-hint">Chỉ lọc bài có tín hiệu Sponsored mạnh. Luôn có thể bấm Hiện để khôi phục.</div>
+          </div>
+          <div class="field">
+            <label class="checkbox-label">
+              <input type="checkbox" id="filterEngagementGates">
+              <span>Thu gọn bài yêu cầu tương tác để nhận nội dung</span>
+            </label>
+            <div class="field-hint">Tắt mặc định để tránh ẩn nhầm bài chia sẻ tài liệu hợp lệ.</div>
           </div>
           <div class="field">
             <label for="customInstructions">
@@ -155,9 +141,9 @@
       </div>
 
       <div class="accordion advanced-accordion">
-        <div class="accordion-header" role="button" aria-expanded="false" tabindex="0">
+        <button class="accordion-header" type="button" aria-expanded="false">
           Template Library
-        </div>
+        </button>
         <div class="accordion-content">
           <div class="field">
             <label for="templateName">Tên template</label>
@@ -174,30 +160,30 @@
             <label for="templatePrompt">Nội dung prompt</label>
             <textarea id="templatePrompt" rows="3" placeholder="VD: Viết review ngắn gọn 2-3 câu, tập trung vào ưu điểm chính..."></textarea>
           </div>
-          <div style="display: flex; gap: 8px; margin-bottom: 12px;">
-            <button id="saveTemplateBtn" class="btn btn-primary" style="flex: 1;">Lưu Template</button>
-            <button id="clearTemplateFormBtn" class="btn btn-secondary" style="flex: 1;">Xóa Form</button>
+          <div class="inline-action-row">
+            <button id="saveTemplateBtn" class="btn btn-primary">Lưu Template</button>
+            <button id="clearTemplateFormBtn" class="btn btn-secondary">Xóa Form</button>
           </div>
           <div id="templateStatus" class="status" role="status" aria-live="polite"></div>
 
-          <div style="margin-top: 16px;">
-            <label style="display: block; margin-bottom: 8px; font-weight: 600;">Templates đã lưu</label>
+          <div class="template-list-section">
+            <label class="section-subhead">Templates đã lưu</label>
             <div id="templateList" class="template-list"></div>
           </div>
         </div>
       </div>
 
       <!-- Settings Management -->
-      <div class="accordion advanced-accordion" style="margin-top:15px">
-        <div class="accordion-header" role="button" aria-expanded="false" tabindex="0">
+      <div class="accordion advanced-accordion settings-management-accordion">
+        <button class="accordion-header" type="button" aria-expanded="false">
           Quản lý cài đặt
-        </div>
+        </button>
         <div class="accordion-content">
           <div class="field">
             <label>Backup & Restore</label>
-            <div style="display: flex; gap: 8px; margin-bottom: 12px;">
-              <button id="backupSettingsBtn" class="btn btn-secondary" style="flex: 1;">Backup ngay</button>
-              <button id="restoreSettingsBtn" class="btn btn-secondary" style="flex: 1;">Restore</button>
+            <div class="inline-action-row">
+              <button id="backupSettingsBtn" class="btn btn-secondary">Backup ngay</button>
+              <button id="restoreSettingsBtn" class="btn btn-secondary">Restore</button>
             </div>
             <div class="field-hint">Tự động backup khi cài đặt thay đổi. Giữ 5 backup gần nhất.</div>
           </div>
@@ -207,11 +193,11 @@
       </div>
 
 <!-- Debug Panel (Test Mode) -->
-      <div id="debugPanel" class="debug-panel" style="display:none;margin-top:20px;padding:15px;border:1px solid #ddd;border-radius:8px;background:#f9f9f9;">
-        <h4 style="margin:0 0 10px 0;color:#666;"> Test Mode Debug</h4>
-        <button id="debugTestBtn" class="btn btn-secondary" style="margin-right:10px;">Test kết nối</button>
+      <div id="debugPanel" class="debug-panel">
+        <h4>Test Mode Debug</h4>
+        <button id="debugTestBtn" class="btn btn-secondary">Test kết nối</button>
         <button id="clearCacheBtn" class="btn btn-secondary">Clear Cache</button>
-        <div id="debugInfo" style="margin-top:10px;font-size:12px;color:#666;"></div>
+        <div id="debugInfo"></div>
       </div>
 
       <div class="settings-footer sticky-save">
@@ -427,52 +413,52 @@
   </div>
 
   <!-- Setup Wizard View (Inline SPA) -->
-  <div id="wizard-view" class="wizard-container" style="display: none; padding: var(--space-4);">
-    <div class="wizard-header" style="text-align: center; margin-bottom: var(--space-5);">
-      <div class="wizard-logo" style="display: flex; justify-content: center; margin-bottom: var(--space-3);">
-        <img src="icons/icon128.png" width="56" height="56" alt="FeedWriter Logo" style="border-radius:14px">
+  <div id="wizard-view" class="wizard-container">
+    <div class="wizard-header">
+      <div class="wizard-logo">
+        <img src="icons/icon128.png" width="56" height="56" alt="FeedWriter Logo">
       </div>
-      <h1 class="wizard-title" style="font-size: var(--text-xl); font-weight: 700; color: var(--text-heading); margin-bottom: var(--space-2);">Chào mừng đến FeedWriter</h1>
-      <p class="wizard-subtitle" style="font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.5;">Hãy cùng thiết lập để bắt đầu sử dụng</p>
+      <h1 class="wizard-title">Chào mừng đến FeedWriter</h1>
+      <p class="wizard-subtitle">Hãy cùng thiết lập để bắt đầu sử dụng</p>
     </div>
 
-    <div class="wizard-progress" style="display: flex; justify-content: center; gap: var(--space-2); margin-bottom: var(--space-5);">
-      <div class="wizard-progress-dot active" data-step="0" style="width: 24px; height: 8px; border-radius: 4px; background: var(--accent); transition: all 0.3s;"></div>
-      <div class="wizard-progress-dot" data-step="1" style="width: 8px; height: 8px; border-radius: 50%; background: var(--border); transition: all 0.3s;"></div>
-      <div class="wizard-progress-dot" data-step="2" style="width: 8px; height: 8px; border-radius: 50%; background: var(--border); transition: all 0.3s;"></div>
-      <div class="wizard-progress-dot" data-step="3" style="width: 8px; height: 8px; border-radius: 50%; background: var(--border); transition: all 0.3s;"></div>
+    <div class="wizard-progress">
+      <div class="wizard-progress-dot active" data-step="0"></div>
+      <div class="wizard-progress-dot" data-step="1"></div>
+      <div class="wizard-progress-dot" data-step="2"></div>
+      <div class="wizard-progress-dot" data-step="3"></div>
     </div>
 
     <!-- Step 1: Welcome -->
     <div class="wizard-step active" data-step="0">
-      <h2 class="wizard-step-title" style="font-size: var(--text-lg); font-weight: 700; color: var(--text-heading); margin-bottom: var(--space-3);">Tính năng chính</h2>
-      <p class="wizard-step-description" style="font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.6; margin-bottom: var(--space-4);">FeedWriter giúp bạn tóm tắt và viết lại nội dung từ mạng xã hội một cách thông minh.</p>
+      <h2 class="wizard-step-title">Tính năng chính</h2>
+      <p class="wizard-step-description">FeedWriter giúp bạn tóm tắt và viết lại nội dung từ mạng xã hội một cách thông minh.</p>
 
-      <ul class="wizard-feature-list" style="list-style: none; padding: 0; margin: var(--space-4) 0;">
-        <li class="wizard-feature-item" style="display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-2) 0; font-size: var(--text-sm); color: var(--text-secondary);">
-          <span class="wizard-feature-icon" aria-hidden="true" style="flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: var(--success-bg); color: var(--success); display: flex; align-items: center; justify-content: center; font-size: var(--text-xs); font-weight: 700;">✓</span>
+      <ul class="wizard-feature-list">
+        <li class="wizard-feature-item">
+          <span class="wizard-feature-icon" aria-hidden="true">✓</span>
           <span>Tóm tắt bài viết dài thành nội dung ngắn gọn</span>
         </li>
-        <li class="wizard-feature-item" style="display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-2) 0; font-size: var(--text-sm); color: var(--text-secondary);">
-          <span class="wizard-feature-icon" aria-hidden="true" style="flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: var(--success-bg); color: var(--success); display: flex; align-items: center; justify-content: center; font-size: var(--text-xs); font-weight: 700;">✓</span>
+        <li class="wizard-feature-item">
+          <span class="wizard-feature-icon" aria-hidden="true">✓</span>
           <span>Phát hiện và ẩn bài quảng cáo / shopping</span>
         </li>
-        <li class="wizard-feature-item" style="display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-2) 0; font-size: var(--text-sm); color: var(--text-secondary);">
-          <span class="wizard-feature-icon" aria-hidden="true" style="flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: var(--success-bg); color: var(--success); display: flex; align-items: center; justify-content: center; font-size: var(--text-xs); font-weight: 700;">✓</span>
+        <li class="wizard-feature-item">
+          <span class="wizard-feature-icon" aria-hidden="true">✓</span>
           <span>Hỗ trợ đa ngôn ngữ (Việt, Anh, Trung, Nhật...)</span>
         </li>
       </ul>
 
-      <div class="wizard-actions" style="display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-5);">
-        <button type="button" class="btn btn-primary" id="wizardStep0Next" style="width: 100%;">Bắt đầu</button>
-        <button type="button" class="btn btn-secondary" id="wizardStep0Skip" style="width: 100%;">Bỏ qua, vào app ngay</button>
+      <div class="wizard-actions wizard-actions-stack">
+        <button type="button" class="btn btn-primary" id="wizardStep0Next">Bắt đầu</button>
+        <button type="button" class="btn btn-secondary" id="wizardStep0Skip">Bỏ qua, vào app ngay</button>
       </div>
     </div>
 
     <!-- Step 2: Add API Key -->
-    <div class="wizard-step" data-step="1" style="display: none;">
-      <h2 class="wizard-step-title" style="font-size: var(--text-lg); font-weight: 700; color: var(--text-heading); margin-bottom: var(--space-3);">Thêm API Key</h2>
-      <p class="wizard-step-description" style="font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.6; margin-bottom: var(--space-4);">Để sử dụng FeedWriter, bạn cần thêm ít nhất một API key từ các nhà cung cấp AI miễn phí.</p>
+    <div class="wizard-step" data-step="1">
+      <h2 class="wizard-step-title">Thêm API Key</h2>
+      <p class="wizard-step-description">Để sử dụng FeedWriter, bạn cần thêm ít nhất một API key từ các nhà cung cấp AI miễn phí.</p>
 
       <div class="field">
         <label for="wizardApiKey">API Key</label>
@@ -480,29 +466,29 @@
         <div class="field-hint">Tự động nhận diện provider từ key prefix</div>
       </div>
 
-      <div class="wizard-api-guide" style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: var(--space-3); margin-top: var(--space-3);">
-        <div class="wizard-api-guide-title" style="font-size: var(--text-sm); font-weight: 600; color: var(--text-heading); margin-bottom: var(--space-2);">Lấy API Key miễn phí:</div>
-        <div class="wizard-api-guide-step" style="font-size: var(--text-xs); color: var(--text-secondary); margin-bottom: var(--space-1); line-height: 1.5;">1. <a href="https://console.groq.com/keys" target="_blank" style="color: var(--accent); text-decoration: none;">Groq</a> — 100K token/ngày</div>
-        <div class="wizard-api-guide-step" style="font-size: var(--text-xs); color: var(--text-secondary); margin-bottom: var(--space-1); line-height: 1.5;">2. <a href="https://cloud.cerebras.ai" target="_blank" style="color: var(--accent); text-decoration: none;">Cerebras</a> — 1M token/ngày</div>
-        <div class="wizard-api-guide-step" style="font-size: var(--text-xs); color: var(--text-secondary); margin-bottom: var(--space-1); line-height: 1.5;">3. <a href="https://aistudio.google.com/apikey" target="_blank" style="color: var(--accent); text-decoration: none;">Gemini</a> — 1500 req/ngày</div>
+      <div class="wizard-api-guide">
+        <div class="wizard-api-guide-title">Lấy API Key miễn phí:</div>
+        <div class="wizard-api-guide-step">1. <a href="https://console.groq.com/keys" target="_blank">Groq</a> — 100K token/ngày</div>
+        <div class="wizard-api-guide-step">2. <a href="https://cloud.cerebras.ai" target="_blank">Cerebras</a> — 1M token/ngày</div>
+        <div class="wizard-api-guide-step">3. <a href="https://aistudio.google.com/apikey" target="_blank">Gemini</a> — 1500 req/ngày</div>
       </div>
 
-      <div id="wizardKeyStatus" class="status" role="status" aria-live="polite" style="margin-top: var(--space-3); display: none;"></div>
+      <div id="wizardKeyStatus" class="status wizard-key-status" role="status" aria-live="polite"></div>
 
-      <div class="wizard-actions" style="display: flex; gap: var(--space-2); margin-top: var(--space-5);">
-        <button type="button" class="btn btn-secondary" id="wizardStep1Back" style="flex: 1;">Quay lại</button>
-        <button type="button" class="btn btn-primary" id="wizardStep1Next" style="flex: 1;">Tiếp tục</button>
+      <div class="wizard-actions">
+        <button type="button" class="btn btn-secondary" id="wizardStep1Back">Quay lại</button>
+        <button type="button" class="btn btn-primary" id="wizardStep1Next">Tiếp tục</button>
       </div>
 
-      <div class="wizard-skip" style="text-align: center; margin-top: var(--space-3);">
-        <a class="wizard-skip-link" id="wizardStep1Skip" style="font-size: var(--text-sm); color: var(--text-muted); text-decoration: none; cursor: pointer;">Bỏ qua, thêm sau</a>
+      <div class="wizard-skip">
+        <a class="wizard-skip-link" id="wizardStep1Skip">Bỏ qua, thêm sau</a>
       </div>
     </div>
 
     <!-- Step 3: Basic Settings -->
-    <div class="wizard-step" data-step="2" style="display: none;">
-      <h2 class="wizard-step-title" style="font-size: var(--text-lg); font-weight: 700; color: var(--text-heading); margin-bottom: var(--space-3);">Cài đặt cơ bản</h2>
-      <p class="wizard-step-description" style="font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.6; margin-bottom: var(--space-4);">Tùy chỉnh một số cài đặt quan trọng để phù hợp với nhu cầu của bạn.</p>
+    <div class="wizard-step" data-step="2">
+      <h2 class="wizard-step-title">Cài đặt cơ bản</h2>
+      <p class="wizard-step-description">Tùy chỉnh một số cài đặt quan trọng để phù hợp với nhu cầu của bạn.</p>
 
       <div class="field">
         <label for="wizardOutputLanguage">Ngôn ngữ đầu ra</label>
@@ -525,38 +511,33 @@
       </div>
 
       <div class="field">
-        <label class="checkbox-label">
-          <input type="checkbox" id="wizardHideAffiliate">
-          <span>Tự động ẩn bài viết có link Affiliate</span>
-        </label>
-        <div class="field-hint" style="font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--space-1); line-height: 1.4;">Ẩn các bài viết chứa link Shopee, Lazada, TikTok Shop...</div>
       </div>
 
-      <div class="wizard-actions" style="display: flex; gap: var(--space-2); margin-top: var(--space-5);">
-        <button type="button" class="btn btn-secondary" id="wizardStep2Back" style="flex: 1;">Quay lại</button>
-        <button type="button" class="btn btn-primary" id="wizardStep2Next" style="flex: 1;">Tiếp tục</button>
+      <div class="wizard-actions">
+        <button type="button" class="btn btn-secondary" id="wizardStep2Back">Quay lại</button>
+        <button type="button" class="btn btn-primary" id="wizardStep2Next">Tiếp tục</button>
       </div>
     </div>
 
     <!-- Step 4: Complete -->
-    <div class="wizard-step" data-step="3" style="display: none;">
-      <div class="wizard-success-icon" aria-hidden="true" style="width: 64px; height: 64px; margin: 0 auto var(--space-4); border-radius: 50%; background: var(--success-bg); color: var(--success); display: flex; align-items: center; justify-content: center; font-size: 32px;">✓</div>
-      <h2 class="wizard-step-title" style="text-align: center; font-size: var(--text-lg); font-weight: 700; color: var(--text-heading); margin-bottom: var(--space-3);">Hoàn tất!</h2>
-      <p class="wizard-step-description" style="text-align: center; font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.6; margin-bottom: var(--space-4);">Bạn đã sẵn sàng sử dụng FeedWriter. Hãy thử tóm tắt một bài viết trên Facebook hoặc mạng xã hội khác.</p>
+    <div class="wizard-step" data-step="3">
+      <div class="wizard-success-icon" aria-hidden="true">✓</div>
+      <h2 class="wizard-step-title wizard-step-title-centered">Hoàn tất!</h2>
+      <p class="wizard-step-description wizard-step-description-centered">Bạn đã sẵn sàng sử dụng FeedWriter. Hãy thử tóm tắt một bài viết trên Facebook hoặc mạng xã hội khác.</p>
 
-      <ul class="wizard-feature-list" style="list-style: none; padding: 0; margin: var(--space-4) 0;">
-        <li class="wizard-feature-item" style="display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-2) 0; font-size: var(--text-sm); color: var(--text-secondary);">
-          <span class="wizard-feature-icon" aria-hidden="true" style="flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: var(--success-bg); color: var(--success); display: flex; align-items: center; justify-content: center; font-size: var(--text-xs); font-weight: 700;">✓</span>
+      <ul class="wizard-feature-list">
+        <li class="wizard-feature-item">
+          <span class="wizard-feature-icon" aria-hidden="true">✓</span>
           <span>Bôi đen văn bản → Chuột phải → Chọn tính năng</span>
         </li>
-        <li class="wizard-feature-item" style="display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-2) 0; font-size: var(--text-sm); color: var(--text-secondary);">
-          <span class="wizard-feature-icon" style="flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: var(--success-bg); color: var(--success); display: flex; align-items: center; justify-content: center; font-size: var(--text-xs); font-weight: 700;">⌨️</span>
+        <li class="wizard-feature-item">
+          <span class="wizard-feature-icon">⌨️</span>
           <span id="wizardShortcutHint">Phím tắt: Ctrl+Shift+S (Tóm tắt), Ctrl+Shift+T (Dịch EN→VI)</span>
         </li>
       </ul>
 
-      <div class="wizard-actions" style="display: flex; gap: var(--space-2); margin-top: var(--space-5);">
-        <button type="button" class="btn btn-primary" id="wizardStep3Finish" style="width: 100%;">Bắt đầu sử dụng</button>
+      <div class="wizard-actions wizard-actions-stack">
+        <button type="button" class="btn btn-primary" id="wizardStep3Finish">Bắt đầu sử dụng</button>
       </div>
     </div>
   </div>

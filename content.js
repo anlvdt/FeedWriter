@@ -64,7 +64,7 @@ function isFacebookPersonalProfileHome() {
   return Array.from(
     main.querySelectorAll(
       '[role="tab"], a[href*="/friends"], a[href*="sk=friends"], ' +
-        'a[aria-label^="Trang cá nhân của "], a[aria-label^="Profile of "]',
+        '[aria-label^="Chỉnh sửa trang cá nhân"], [aria-label^="Edit profile"]',
     ),
   ).some((tab) => {
     const label = (tab.innerText || tab.textContent || "").replace(/\s+/g, " ").trim();
@@ -73,7 +73,7 @@ function isFacebookPersonalProfileHome() {
     return (
       /^(bạn bè|friends)$/i.test(label) ||
       /(?:\/friends(?:\/|$)|[?&]sk=friends\b)/i.test(href) ||
-      /^(trang cá nhân của|profile of)\b/i.test(aria)
+      /^(chỉnh sửa trang cá nhân|edit profile)\b/i.test(aria)
     );
   });
 }
@@ -123,14 +123,12 @@ function cleanup() {
 // existing DOM scanners still need to keep running.
 window.addEventListener("beforeunload", cleanup, { once: true });
 
-let hideAffiliatePosts = false;
 window.enableUnicodeBold = true;
 
-chrome.storage.sync.get(["minLength", "blockedDomains", "sourceTemplate", "customSourceLink", "hideAffiliatePosts", "enableUnicodeBold"], (d) => {
+chrome.storage.sync.get(["minLength", "blockedDomains", "sourceTemplate", "customSourceLink", "enableUnicodeBold"], (d) => {
   if (d.minLength) MIN_LEN = d.minLength;
   globalSourceTemplate = d.sourceTemplate || DEFAULT_SOURCE_TEMPLATE;
   globalCustomSourceLink = d.customSourceLink || "";
-  hideAffiliatePosts = !!d.hideAffiliatePosts;
   if (d.enableUnicodeBold !== undefined) window.enableUnicodeBold = d.enableUnicodeBold;
   updateBlockedState(d.blockedDomains);
 
@@ -143,10 +141,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (changes.minLength) MIN_LEN = changes.minLength.newValue || 400;
   if (changes.sourceTemplate) globalSourceTemplate = changes.sourceTemplate.newValue || DEFAULT_SOURCE_TEMPLATE;
   if (changes.customSourceLink) globalCustomSourceLink = changes.customSourceLink.newValue || "";
-  if (changes.hideAffiliatePosts) hideAffiliatePosts = !!changes.hideAffiliatePosts.newValue;
   if (changes.enableUnicodeBold) window.enableUnicodeBold = changes.enableUnicodeBold.newValue !== false;
-  if (changes.adDisplayMode) adDisplayMode = changes.adDisplayMode.newValue || "hide";
-  if (changes.affiliateDisplayMode) affiliateDisplayMode = changes.affiliateDisplayMode.newValue || "collapse";
+  if (changes.adDisplayMode) adDisplayMode = changes.adDisplayMode.newValue === "mark" ? "mark" : "collapse";
+  if (changes.filterEngagementGates) filterEngagementGates = changes.filterEngagementGates.newValue === true;
   if (changes.blockedDomains) updateBlockedState(changes.blockedDomains.newValue);
 });
 
@@ -233,14 +230,13 @@ themeObserver.observe(document.body, {
 });
 observers.push(themeObserver);
 
-// === AFFILIATE LINK DETECTION (uses unified engine from content-dom.js) ===
-const affiliatePostsHidden = new WeakSet();
+// Filtered feed units are tracked for the lifetime of their current DOM node.
+const filteredPosts = new WeakSet();
 
 // Telemetry counters
 let telemetry = {
   postsScanned: 0,
   postsFlaggedAds: 0,
-  postsFlaggedAffiliate: 0,
   postsFlaggedCommentGate: 0,
   topReasons: {},
   falsePositiveProxy: 0,
@@ -282,12 +278,12 @@ function saveTelemetry() {
 
 // Display modes: hide, collapse, mark
 // Sponsored / Được tài trợ defaults to full hide
-let adDisplayMode = "hide";
-let affiliateDisplayMode = "collapse";
+let adDisplayMode = "collapse";
+let filterEngagementGates = false;
 
-chrome.storage.sync.get(["adDisplayMode", "affiliateDisplayMode"], (d) => {
-  if (d.adDisplayMode) adDisplayMode = d.adDisplayMode;
-  if (d.affiliateDisplayMode) affiliateDisplayMode = d.affiliateDisplayMode;
+chrome.storage.sync.get(["adDisplayMode", "filterEngagementGates"], (d) => {
+  if (d.adDisplayMode) adDisplayMode = d.adDisplayMode === "mark" ? "mark" : "collapse";
+  filterEngagementGates = d.filterEngagementGates === true;
 });
 
 function _getReasonText(reason) {
@@ -299,12 +295,6 @@ function _getReasonText(reason) {
     sponsored_keyword: "Sponsored / Được tài trợ",
     ad_structure: "Cấu trúc ad",
     ads_library_link: "Ads Library",
-    affiliate_domain: "Link Affiliate",
-    shortener_link: "Short-link",
-    affiliate_param: "Aff param",
-    redirect_wrapper: "FB redirect",
-    affiliate_text: "Nội dung Aff",
-    affiliate_cta: "CTA Affiliate",
     // Engagement bait: do X to get Y
     comment_gate: "Comment để nhận",
     like_gate: "Like/react để nhận",
@@ -380,10 +370,10 @@ function _engagementGateShort(evalResult) {
 }
 
 function hideFlaggedPost(postContainer, evalResult, type) {
-  if (affiliatePostsHidden.has(postContainer)) return;
-  affiliatePostsHidden.add(postContainer);
+  if (filteredPosts.has(postContainer)) return;
+  filteredPosts.add(postContainer);
 
-  const displayMode = type === "sponsored" ? adDisplayMode : affiliateDisplayMode;
+  const displayMode = type === "sponsored" ? adDisplayMode : "collapse";
   // Skip noisy action_* keys in visible reason chips — actions already in label
   const reasonText = evalResult.reasons
     .filter((r) => !String(r).startsWith("action_"))
@@ -416,16 +406,16 @@ function hideFlaggedPost(postContainer, evalResult, type) {
 
   // Collapse mode — soft chip (violet accent, not red alarm)
   const kind =
-    type === "sponsored" ? "sponsored" : isEngage ? "engagement" : "affiliate";
+    type === "sponsored" ? "sponsored" : "engagement";
   const hiddenLabel =
     type === "sponsored"
       ? "Quảng cáo"
       : isEngage
         ? _engagementGateLabel(evalResult)
-        : "Affiliate";
+        : "Yêu cầu tương tác";
 
   const indicator = document.createElement("div");
-  indicator.className = "fbs-affiliate-indicator fbs-hidden-chip";
+  indicator.className = "fbs-filter-indicator fbs-hidden-chip";
   indicator.setAttribute("data-fbs-ui", "v3");
   indicator.setAttribute("data-kind", kind);
   indicator.innerHTML =
@@ -440,7 +430,7 @@ function hideFlaggedPost(postContainer, evalResult, type) {
       ? '<span class="fbs-hidden-chip-meta"></span>'
       : "") +
     "</div>" +
-    '<button type="button" class="fbs-affiliate-show fbs-hidden-chip-show">Hiện</button>';
+    '<button type="button" class="fbs-filter-show fbs-hidden-chip-show">Hiện</button>';
 
   indicator.querySelector(".fbs-hidden-chip-title").textContent =
     hiddenLabel + " đã ẩn";
@@ -457,7 +447,7 @@ function hideFlaggedPost(postContainer, evalResult, type) {
     e.preventDefault();
     postContainer.style.display = "";
     indicator.remove();
-    affiliatePostsHidden.delete(postContainer);
+    filteredPosts.delete(postContainer);
     telemetry.falsePositiveProxy++;
     saveTelemetry();
   });
@@ -492,6 +482,21 @@ function _feedCandidates(root) {
   ];
 }
 
+function refreshReusedFeedUnit(article) {
+  const fingerprint = hashText((article.innerText || article.textContent || "").trim());
+  const previous = article.dataset.fbsFilterFingerprint;
+  if (previous && previous !== fingerprint) {
+    article.style.display = "";
+    article.style.outline = "";
+    article.style.outlineOffset = "";
+    article.querySelectorAll(".fbs-mark-badge").forEach((badge) => badge.remove());
+    filteredPosts.delete(article);
+    delete article.dataset.fbsSponsoredHidden;
+    delete article.dataset.fbsEvalFingerprint;
+  }
+  article.dataset.fbsFilterFingerprint = fingerprint;
+}
+
 /**
  * Fast path: sponsored only — no fingerprint lock, re-checks until hidden.
  * Called on every new DOM node so ads die before user scrolls past.
@@ -504,13 +509,6 @@ function scanSponsoredFast(rootEl) {
     document.querySelector('div[role="main"]') ||
     document.querySelector('div[id^="mount_0_0"]') ||
     document.body;
-
-  // Portal-based hide (detached "Được tài trợ" labels)
-  if (typeof hideFeedClutter === "function") {
-    try {
-      hideFeedClutter();
-    } catch (_) {}
-  }
 
   const detect =
     typeof window.fbsDetectSponsoredSignals === "function"
@@ -526,7 +524,8 @@ function scanSponsoredFast(rootEl) {
         : null;
 
   for (const article of _feedCandidates(root)) {
-    if (affiliatePostsHidden.has(article)) continue;
+    refreshReusedFeedUnit(article);
+    if (filteredPosts.has(article)) continue;
     if (article.dataset.fbsSponsoredHidden === "1") continue;
     if (_isNestedFeedUnit(article)) continue;
 
@@ -555,7 +554,7 @@ function scanSponsoredFast(rootEl) {
   }
 }
 
-function scanAffiliatePosts() {
+function scanEngagementPosts() {
   if (SITE !== "facebook") return;
   if (isFacebookPersonalProfileHome()) return;
   if (typeof window.fbsEvaluatePostSignals !== "function") return;
@@ -569,7 +568,8 @@ function scanAffiliatePosts() {
     document.body;
 
   for (const article of _feedCandidates(root)) {
-    if (affiliatePostsHidden.has(article)) continue;
+    refreshReusedFeedUnit(article);
+    if (filteredPosts.has(article)) continue;
     if (_isNestedFeedUnit(article)) continue;
 
     // Sponsored may appear after first paint (portal) — recheck if not yet hidden
@@ -618,22 +618,12 @@ function scanAffiliatePosts() {
     }
 
     // Engagement bait
-    if (evalResult.isEngagementGate || evalResult.isCommentGate) {
+    if (filterEngagementGates && (evalResult.isEngagementGate || evalResult.isCommentGate)) {
       telemetry.postsFlaggedCommentGate++;
       for (const r of evalResult.reasons) {
         telemetry.topReasons[r] = (telemetry.topReasons[r] || 0) + 1;
       }
       hideFlaggedPost(article, evalResult, "engagement_gate");
-    } else if (
-      hideAffiliatePosts &&
-      evalResult.isAffiliate &&
-      evalResult.confidence >= 70
-    ) {
-      telemetry.postsFlaggedAffiliate++;
-      for (const r of evalResult.reasons) {
-        telemetry.topReasons[r] = (telemetry.topReasons[r] || 0) + 1;
-      }
-      hideFlaggedPost(article, evalResult, "affiliate");
     }
   }
 
@@ -2339,8 +2329,6 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
     );
     return;
   }
-  // Legacy affiliate writing removed — fall back to summary
-  if (type && String(type).startsWith("affiliate")) type = "summary";
   const cacheKey =
     hashText(text) +
     "_" +
@@ -3161,8 +3149,9 @@ function _mountPostChip(article) {
       article.innerText ||
       ""
     ).trim();
-    const minimumLength = SITE === "x" ? 50 : MIN_LEN;
-    if (t.length >= minimumLength) summarizeText(t, "summary", article);
+    // Always route the click through summarizeText so short/failed extraction
+    // shows a useful message instead of making the button appear unresponsive.
+    summarizeText(t, "summary", article);
   });
 
   host.appendChild(btn);
@@ -3616,8 +3605,7 @@ function scan() {
   findNewSeeMoreElements().forEach(processSeeMore);
   scanFBAllPosts();
   if (!scan._skipComments) scanCommentSections();
-  scanShopeeLinks();
-  scanAffiliatePosts();
+  scanEngagementPosts();
 }
 
 let scanDebounceTimer = null;
@@ -3626,6 +3614,7 @@ let sponsoredDebounceTimer = null;
 let sponsoredScheduled = false;
 const SCAN_DEBOUNCE_MS = 400;
 const SPONSORED_DEBOUNCE_MS = 32; // ~1 frame — hide ads ASAP
+const SCAN_SAFETY_INTERVAL_MS = 60_000;
 let _scanSafetyCount = 0;
 
 function scheduleScan() {
@@ -3667,14 +3656,15 @@ let sponsoredCatchupTimer = SITE === "facebook" ? setInterval(() => {
   }
 }, 500) : null;
 
-// Safety full scan
+// Low-frequency recovery scan. Normal operation is driven by relevant DOM
+// mutations, visibility changes, and newly observed posts.
 scanTimer = setInterval(() => {
   if (document.hidden) return;
   _scanSafetyCount++;
   scan._skipComments = _scanSafetyCount % 2 === 0;
   scanSponsoredFast();
   scan();
-}, 15000);
+}, SCAN_SAFETY_INTERVAL_MS);
 
 const resumeScan = () => {
   if (document.visibilityState === "visible") {
@@ -3690,38 +3680,26 @@ listeners.push({ element: window, event: "focus", handler: resumeScan });
 listeners.push({ element: window, event: "pageshow", handler: resumeScan });
 
 let fastScanPending = false;
+const feedObserverRoot =
+  document.querySelector('div[role="main"]') || document.body || document.documentElement;
+const feedTargetSelector =
+  'article[role="article"], [data-virtualized], [data-pagelet^="FeedUnit"]';
 const scanObserver = new MutationObserver((mutations) => {
   let hasNewPost = false;
-  let hasPortal = false;
   for (const m of mutations) {
     for (const node of m.addedNodes) {
       if (node.nodeType !== 1) continue;
-      const pagelet = node.getAttribute?.("data-pagelet") || "";
-      const isPost =
-        node.getAttribute?.("role") === "article" ||
-        node.hasAttribute?.("data-virtualized") ||
-        pagelet.startsWith("FeedUnit");
-      const isPortal =
-        node.classList?.contains("__fb-light-mode") ||
-        node.classList?.contains("__fb-dark-mode") ||
-        (node.id && node.tagName === "SPAN" && (node.textContent || "").length < 80);
-      if (isPost) hasNewPost = true;
-      if (isPortal) hasPortal = true;
       if (
-        !hasNewPost &&
-        node.querySelector?.(
-          'article[role="article"], [data-virtualized], [data-pagelet^="FeedUnit"], .__fb-light-mode, .__fb-dark-mode',
-        )
+        node.matches?.(feedTargetSelector) ||
+        node.querySelector?.(feedTargetSelector)
       ) {
         hasNewPost = true;
       }
-      if (hasNewPost && hasPortal) break;
     }
-    if (hasNewPost && hasPortal) break;
+    if (hasNewPost) break;
   }
 
-  // Always prioritize sponsored path on DOM churn
-  if (hasNewPost || hasPortal) {
+  if (hasNewPost) {
     scheduleSponsoredFast();
     if (!fastScanPending) {
       fastScanPending = true;
@@ -3731,9 +3709,11 @@ const scanObserver = new MutationObserver((mutations) => {
       });
     }
   }
-  scheduleScan();
+  // Facebook mutates many unrelated nodes (presence, reactions, chat). Only
+  // rescan when a new feed unit was actually introduced inside the feed root.
+  if (hasNewPost) scheduleScan();
 });
-scanObserver.observe(document.documentElement || document.body, {
+scanObserver.observe(feedObserverRoot, {
   childList: true,
   subtree: true,
 });

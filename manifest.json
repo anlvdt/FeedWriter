@@ -20,9 +20,6 @@
     "https://api.cerebras.ai/*",
     "https://api.sambanova.ai/*",
     "https://openrouter.ai/*",
-    "https://*/*",
-    "*://*.shope.ee/*",
-    "*://*.shopee.vn/*",
     "https://tinyurl.com/*",
     "https://is.gd/*",
     "https://v.gd/*",
@@ -36,12 +33,7 @@
       "matches": [
         "https://www.facebook.com/*",
         "https://web.facebook.com/*",
-        "https://m.facebook.com/*",
-        "https://*.threads.net/*",
-        "https://x.com/*",
-        "https://twitter.com/*",
-        "https://www.linkedin.com/*",
-        "https://www.reddit.com/*"
+        "https://m.facebook.com/*"
       ],
       "js": [
         "errors.js",
@@ -49,14 +41,10 @@
         "dom-helpers.js",
         "post-data.js",
         "status-formatter.js",
-        "content-dom.js",
+        "content-dom-runtime.js",
         "poster-facebook.js",
-        "poster-threads.js",
-        "poster-x.js",
-        "poster-linkedin.js",
-        "poster-reddit.js",
         "cross-poster.js",
-        "content-composer.js",
+        "content-composer-runtime.js",
         "content.js"
       ],
       "css": [
@@ -66,13 +54,39 @@
       "run_at": "document_end"
     },
     {
+      "matches": ["https://*.threads.net/*"],
+      "js": ["errors.js", "utils.js", "dom-helpers.js", "post-data.js", "status-formatter.js", "content-dom-runtime.js", "poster-threads.js", "cross-poster.js", "content-composer-runtime.js", "content.js"],
+      "css": ["content.css", "ui.css"],
+      "run_at": "document_end"
+    },
+    {
+      "matches": ["https://x.com/*", "https://twitter.com/*"],
+      "js": ["errors.js", "utils.js", "dom-helpers.js", "post-data.js", "status-formatter.js", "content-dom-runtime.js", "poster-x.js", "cross-poster.js", "content-composer-runtime.js", "content.js"],
+      "css": ["content.css", "ui.css"],
+      "run_at": "document_end"
+    },
+    {
+      "matches": ["https://www.linkedin.com/*"],
+      "js": ["errors.js", "utils.js", "dom-helpers.js", "post-data.js", "status-formatter.js", "content-dom-runtime.js", "poster-linkedin.js", "cross-poster.js", "content-composer-runtime.js", "content.js"],
+      "css": ["content.css", "ui.css"],
+      "run_at": "document_end"
+    },
+    {
+      "matches": ["https://www.reddit.com/*"],
+      "js": ["errors.js", "utils.js", "dom-helpers.js", "post-data.js", "status-formatter.js", "content-dom-runtime.js", "poster-reddit.js", "cross-poster.js", "content-composer-runtime.js", "content.js"],
+      "css": ["content.css", "ui.css"],
+      "run_at": "document_end"
+    },
+    {
       "matches": [
-        "https://*/*",
-        "http://*/*"
-      ],
-      "exclude_matches": [
-        "https://chrome.google.com/*",
-        "https://chromewebstore.google.com/*"
+        "https://www.facebook.com/*",
+        "https://web.facebook.com/*",
+        "https://m.facebook.com/*",
+        "https://*.threads.net/*",
+        "https://x.com/*",
+        "https://twitter.com/*",
+        "https://www.linkedin.com/*",
+        "https://www.reddit.com/*"
       ],
       "js": [
         "translate.js"

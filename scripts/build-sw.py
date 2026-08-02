@@ -27,6 +27,7 @@ HEADER = """/* =================================================================
 
 
 def main() -> int:
+    check_only = "--check" in sys.argv[1:]
     chunks = [HEADER]
     for name in ORDER:
         path = ROOT / name
@@ -48,7 +49,15 @@ def main() -> int:
         chunks.append(body.rstrip() + "\n")
         chunks.append(f"/* ===== END {name} ===== */\n")
 
-    OUT.write_text("".join(chunks), encoding="utf-8")
+    output = "".join(chunks)
+    if check_only:
+        if not OUT.is_file() or OUT.read_text(encoding="utf-8") != output:
+            print(f"stale generated file: {OUT}; run python3 scripts/build-sw.py", file=sys.stderr)
+            return 1
+        print(f"OK verified {OUT} ({OUT.stat().st_size} bytes)")
+        return 0
+
+    OUT.write_text(output, encoding="utf-8")
     r = subprocess.run(
         ["node", "--check", str(OUT)],
         capture_output=True,

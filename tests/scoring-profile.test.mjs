@@ -18,8 +18,8 @@ const { scoreText, VALID_PROFILES } = require(
 );
 
 describe("scoreText profiles", () => {
-  it("exports tech, general, affiliate profiles", () => {
-    assert.deepEqual(VALID_PROFILES, ["tech", "general", "affiliate"]);
+  it("exports tech and general profiles", () => {
+    assert.deepEqual(VALID_PROFILES, ["tech", "general"]);
   });
 
   it("tech scores higher than general for Claude Pro / GPT-4 content", () => {
@@ -49,22 +49,21 @@ describe("scoreText profiles", () => {
   it("empty and short text return low score", () => {
     assert.equal(scoreText("", "tech"), 1);
     assert.equal(scoreText(null, "general"), 1);
-    assert.equal(scoreText("hi", "affiliate"), 1);
     assert.equal(scoreText("a".repeat(20), "tech"), 1);
   });
 
-  it("affiliate boosts product/review signals vs tech", () => {
+  it("general recognises product/review signals without a dedicated profile", () => {
     const review =
       "Review chi tiết sản phẩm tai nghe này sau 2 tuần trải nghiệm. " +
       "Đánh giá ưu nhược điểm, so sánh với đối thủ, có nên mua không? " +
       "Link mua và giá bán mình để ở comment.";
-    const aff = scoreText(review, "affiliate");
+    const general = scoreText(review, "general");
     const tech = scoreText(review, "tech");
     assert.ok(
-      aff >= tech,
-      `affiliate (${aff}) should be >= tech (${tech}) for product review`,
+      general >= tech,
+      `general (${general}) should be >= tech (${tech}) for product review`,
     );
-    assert.ok(aff >= 4, `affiliate review should score reasonably, got ${aff}`);
+    assert.ok(general >= 4, `general review should score reasonably, got ${general}`);
   });
 
   it("unknown profile falls back to tech behavior", () => {

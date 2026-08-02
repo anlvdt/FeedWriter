@@ -182,7 +182,7 @@ article:hover > .fbs-chip-host .fbs-allpost-btn,
   width: auto !important;
   height: auto !important;
   max-height: none !important;
-  margin: 4px 0 0 6px !important;
+  margin: 2px 0 0 4px !important;
   padding: 0 !important;
   inset: auto !important;
   top: auto !important;
@@ -215,14 +215,14 @@ article:hover > .fbs-chip-host .fbs-allpost-btn,
 .fbs-btn-inline[data-fbs-ui="v3"] > span {
   display: inline-flex !important;
   align-items: center !important;
-  gap: 6px !important;
-  min-height: 26px !important;
-  padding: 3px 11px 3px 8px !important;
+  gap: 4px !important;
+  min-height: 22px !important;
+  padding: 2px 8px 2px 6px !important;
   border-radius: var(--fw-radius-pill) !important;
   background: linear-gradient(135deg, rgba(99, 102, 241, 0.92), rgba(124, 58, 237, 0.92)) !important;
   border: 1px solid rgba(196, 181, 253, 0.5) !important;
   color: #ffffff !important;
-  font-size: 0.9em !important;
+  font-size: 0.82em !important;
   font-weight: 700 !important;
   line-height: 1.1 !important;
   letter-spacing: 0.01em !important;
@@ -242,8 +242,8 @@ article:hover > .fbs-chip-host .fbs-allpost-btn,
 
 .fbs-wrap-inline .fbs-btn-inline > span img,
 .fbs-btn-inline[data-fbs-ui="v3"] > span img {
-  width: 13px !important;
-  height: 13px !important;
+  width: 11px !important;
+  height: 11px !important;
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.24)) !important;
 }
 
@@ -943,10 +943,10 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
   padding: 10px 12px !important;
 }
 
-/* Composer mode: a bit wider for source form */
+/* Composer mode: keep the source form compact on smaller browser windows. */
 .fbs-panel[data-fbs-ui="v3"].is-composer,
 .fbs-panel.fbs-ui-v3.is-composer {
-  width: min(460px, 94vw) !important;
+  width: min(400px, calc(100vw - 32px)) !important;
   max-height: min(86vh, 760px) !important;
 }
 .fbs-panel[data-fbs-ui="v3"].is-composer .fbs-panel-footer,
@@ -954,17 +954,17 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
   display: none !important;
 }
 
-/* Facebook composer: fit the available right rail instead of covering feed. */
+/* Facebook composer: a readable desktop panel instead of a narrow full-height rail. */
 @media (min-width: 1200px) {
   .fbs-panel[data-fbs-ui="v3"].fbs-panel-left.is-composer,
   .fbs-panel.fbs-ui-v3.fbs-panel-left.is-composer {
-    top: 64px !important;
+    top: 50% !important;
     right: 12px !important;
-    bottom: 12px !important;
+    bottom: auto !important;
     left: auto !important;
-    transform: none !important;
-    width: clamp(264px, calc((100vw - 700px) / 2 - 28px), 336px) !important;
-    max-height: calc(100vh - 76px) !important;
+    transform: translateY(-50%) !important;
+    width: min(400px, calc(100vw - 32px)) !important;
+    max-height: min(68vh, 640px) !important;
   }
 }
 
@@ -1115,6 +1115,15 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
   border-radius: var(--fw-radius) !important;
   background: var(--fw-surface) !important;
   overflow: hidden !important;
+}
+
+/* The source card is the composer’s only visual container. */
+.fbs-panel[data-fbs-ui="v3"].is-composer .fbs-status-preview,
+.fbs-panel.fbs-ui-v3.is-composer .fbs-status-preview {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  overflow: visible !important;
 }
 
 .fbs-sp-source-card {
@@ -1285,41 +1294,88 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
 }
 
 .fbs-sp-related-block {
-  margin: 0 12px 8px !important;
-  padding: 10px 12px !important;
-  border-radius: 10px !important;
-  border: 1px dashed var(--fw-border) !important;
+  margin: 0 12px !important;
+  padding: 10px 0 0 !important;
+  border: none !important;
+  border-top: 1px dashed var(--fw-border) !important;
+  border-radius: 0 !important;
   background: transparent !important;
 }
 
+.fbs-sp-related-block > summary,
+.fbs-sp-comment > summary {
+  cursor: pointer !important;
+  list-style: none !important;
+}
+.fbs-sp-related-block > summary::-webkit-details-marker,
+.fbs-sp-comment > summary::-webkit-details-marker {
+  display: none !important;
+}
+.fbs-sp-related-block > summary::after,
+.fbs-sp-comment > summary::after {
+  content: "+" !important;
+  margin-left: auto !important;
+  color: var(--fw-text-3) !important;
+  font-size: 15px !important;
+  font-weight: 400 !important;
+}
+.fbs-sp-related-block[open] > summary::after,
+.fbs-sp-comment[open] > summary::after {
+  content: "−" !important;
+}
+.fbs-sp-related-block > summary span,
+.fbs-sp-comment > summary span {
+  margin-left: auto !important;
+  color: var(--fw-text-3) !important;
+  font-size: 10px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+.fbs-sp-related-block[open] > .fbs-sp-github-field {
+  margin-top: 8px !important;
+}
+
 .fbs-sp-comment {
-  margin: 0 12px 12px !important;
-  padding: 12px !important;
-  border-radius: 10px !important;
-  background: rgba(255, 255, 255, 0.03) !important;
-  border: 1px solid var(--fw-border) !important;
+  margin: 10px 12px 12px !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
 }
 .fbs-sp-comment-label {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  min-height: 34px !important;
+  padding: 0 10px !important;
+  border: 1px solid var(--fw-border) !important;
+  border-radius: 8px !important;
+  background: rgba(255, 255, 255, 0.035) !important;
   font-size: 10px !important;
   font-weight: 700 !important;
   text-transform: uppercase !important;
   letter-spacing: 0.05em !important;
   color: var(--fw-text-3) !important;
-  margin-bottom: 8px !important;
+  margin-bottom: 0 !important;
+}
+.fbs-sp-comment[open] > .fbs-sp-comment-label {
+  border-bottom-left-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
 }
 .fbs-sp-comment-text {
   background: var(--fw-bg) !important;
   border: 1px solid var(--fw-border) !important;
   border-radius: var(--fw-radius-sm) !important;
-  padding: 10px !important;
+  margin: 0 !important;
+  padding: 9px 10px !important;
   font-size: 12px !important;
   color: var(--fw-text) !important;
-  max-height: 160px !important;
+  max-height: 104px !important;
   overflow-y: auto !important;
   white-space: pre-line !important;
 }
 .fbs-sp-copy-comment {
-  margin-top: 8px !important;
+  margin: -4px 12px 12px !important;
   height: 32px !important;
   padding: 0 12px !important;
   border-radius: var(--fw-radius-sm) !important;

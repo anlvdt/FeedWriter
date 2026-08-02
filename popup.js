@@ -12,14 +12,15 @@ async function initTheme() {
 }
 
 function applyTheme(theme) {
+  let isLight = false;
   if (theme === "auto") {
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    document.body.classList.toggle("light", !prefersDark);
+    isLight = !prefersDark;
   } else if (theme === "light") {
-    document.body.classList.add("light");
-  } else {
-    document.body.classList.remove("light");
+    isLight = true;
   }
+  document.body.classList.toggle("light", isLight);
+  document.documentElement.classList.toggle("light", isLight);
 }
 
 const themeSelect = document.getElementById("themeSelect");
@@ -116,18 +117,8 @@ function initWizard() {
       dot.classList.remove("active", "completed");
       if (index < currentStep) {
         dot.classList.add("completed");
-        dot.style.background = "var(--success)";
-        dot.style.width = "8px";
-        dot.style.borderRadius = "50%";
       } else if (index === currentStep) {
         dot.classList.add("active");
-        dot.style.background = "var(--accent)";
-        dot.style.width = "24px";
-        dot.style.borderRadius = "4px";
-      } else {
-        dot.style.background = "var(--border)";
-        dot.style.width = "8px";
-        dot.style.borderRadius = "50%";
       }
     });
 
@@ -152,7 +143,6 @@ function initWizard() {
     if (!wizardKeyStatus) return;
     wizardKeyStatus.textContent = msg;
     wizardKeyStatus.className = "status " + (type || "info");
-    wizardKeyStatus.style.display = "block";
     wizardKeyStatus.hidden = false;
   }
 
@@ -191,13 +181,9 @@ function initWizard() {
         document.getElementById("wizardOutputLanguage")?.value || "vi";
       const summaryLength =
         document.getElementById("wizardSummaryLength")?.value || "medium";
-      const hideAffiliatePosts = !!(
-        document.getElementById("wizardHideAffiliate")?.checked
-      );
       await chrome.storage.sync.set({
         outputLanguage,
         summaryLength,
-        hideAffiliatePosts,
         languageAutoDetected: false,
       });
       return true;
@@ -264,7 +250,6 @@ function initWizard() {
   if (wizardApiKey) {
     wizardApiKey.addEventListener("input", () => {
       if (wizardKeyStatus) {
-        wizardKeyStatus.style.display = "none";
         wizardKeyStatus.hidden = true;
       }
     });
@@ -273,16 +258,13 @@ function initWizard() {
   // Prefill settings (non-blocking)
   try {
     chrome.storage.sync.get(
-      ["outputLanguage", "summaryLength", "hideAffiliatePosts"],
+      ["outputLanguage", "summaryLength"],
       (d) => {
         if (chrome.runtime.lastError) return;
         const lang = document.getElementById("wizardOutputLanguage");
         const len = document.getElementById("wizardSummaryLength");
-        const hide = document.getElementById("wizardHideAffiliate");
         if (d.outputLanguage && lang) lang.value = d.outputLanguage;
         if (d.summaryLength && len) len.value = d.summaryLength;
-        if (d.hideAffiliatePosts !== undefined && hide)
-          hide.checked = d.hideAffiliatePosts;
       },
     );
   } catch (_) {}
@@ -357,9 +339,8 @@ const promptStyleSel = document.getElementById("promptStyle");
 const customInstructionsEl = document.getElementById("customInstructions");
 const customSummaryPromptEl = document.getElementById("customSummaryPrompt");
 const sourceTemplateEl = document.getElementById("sourceTemplate");
-const hideAffiliatePostsEl = document.getElementById("hideAffiliatePosts");
 const adDisplayModeEl = document.getElementById("adDisplayMode");
-const affiliateDisplayModeEl = document.getElementById("affiliateDisplayMode");
+const filterEngagementGatesEl = document.getElementById("filterEngagementGates");
 const blockedDomainsEl = document.getElementById("blockedDomains");
 const enableUnicodeBoldEl = document.getElementById("enableUnicodeBold");
 const saveBtn = document.getElementById("saveBtn");
@@ -396,9 +377,8 @@ chrome.storage.sync.get(
     "customInstructions",
     "customSummaryPrompt",
     "sourceTemplate",
-    "hideAffiliatePosts",
     "adDisplayMode",
-    "affiliateDisplayMode",
+    "filterEngagementGates",
     "blockedDomains",
     "enableUnicodeBold",
     "apiKeys",
@@ -413,9 +393,8 @@ chrome.storage.sync.get(
     if (d.customSummaryPrompt)
       customSummaryPromptEl.value = d.customSummaryPrompt;
     if (d.sourceTemplate) sourceTemplateEl.value = d.sourceTemplate;
-    if (d.hideAffiliatePosts) hideAffiliatePostsEl.checked = true;
-    if (d.adDisplayMode) adDisplayModeEl.value = d.adDisplayMode;
-    if (d.affiliateDisplayMode) affiliateDisplayModeEl.value = d.affiliateDisplayMode;
+    if (d.adDisplayMode) adDisplayModeEl.value = d.adDisplayMode === "mark" ? "mark" : "collapse";
+    if (filterEngagementGatesEl) filterEngagementGatesEl.checked = d.filterEngagementGates === true;
     if (d.blockedDomains) blockedDomainsEl.value = d.blockedDomains;
     if (d.enableUnicodeBold !== false) enableUnicodeBoldEl.checked = true;
 
@@ -460,18 +439,13 @@ if (saveBtn) saveBtn.addEventListener("click", () => {
       customInstructions: customInstructionsEl.value.trim(),
       customSummaryPrompt: customSummaryPromptEl.value.trim(),
       sourceTemplate: sourceTemplateEl.value.trim(),
-      hideAffiliatePosts: !!(hideAffiliatePostsEl && hideAffiliatePostsEl.checked),
-      adDisplayMode: adDisplayModeEl ? adDisplayModeEl.value : "collapse",
-      affiliateDisplayMode: affiliateDisplayModeEl
-        ? affiliateDisplayModeEl.value
-        : "collapse",
+      adDisplayMode: adDisplayModeEl?.value === "mark" ? "mark" : "collapse",
+      filterEngagementGates: filterEngagementGatesEl?.checked === true,
       blockedDomains: blockedDomainsEl ? blockedDomainsEl.value.trim() : "",
       enableUnicodeBold: enableUnicodeBoldEl
         ? enableUnicodeBoldEl.checked !== false
         : true,
       advancedModeEnabled: !!(advancedModeToggle && advancedModeToggle.checked),
-      // Force-disable legacy auto-GitHub feature if still in storage
-      autoGithubEnabled: false,
       languageAutoDetected: false, // User manually changed settings
     },
     () => {
@@ -481,11 +455,6 @@ if (saveBtn) saveBtn.addEventListener("click", () => {
         return;
       }
       showStatus("Đã lưu", "success");
-      // Clear legacy auto-GitHub alarm if any
-      try {
-        chrome.runtime.sendMessage({ action: "disable-github-autopost" });
-      } catch (_) {}
-
       // Create backup after saving
       chrome.runtime.sendMessage({ action: "backupSettings" }, (response) => {
         if (response && response.success) {
@@ -1320,12 +1289,6 @@ const REASON_LABELS = {
   sponsored_keyword: "Sponsored / Được tài trợ",
   ad_structure: "Cấu trúc ad",
   ads_library_link: "Ads Library",
-  affiliate_domain: "Link Affiliate",
-  shortener_link: "Short-link",
-  affiliate_param: "Aff param",
-  redirect_wrapper: "FB redirect",
-  affiliate_text: "Nội dung Aff",
-  affiliate_cta: "CTA Affiliate",
   // Bài “làm X để nhận Y” (engagement bait)
   comment_gate: "Comment để nhận link/file",
   like_gate: "Like/react để nhận",
@@ -1375,7 +1338,6 @@ async function loadAgentStats() {
     const skippedToday = (stats && stats.postsTodayDate === today) ? (stats.skippedToday || 0) : 0;
     const flagged =
       (telemetry.postsFlaggedAds || 0) +
-      (telemetry.postsFlaggedAffiliate || 0) +
       (telemetry.postsFlaggedCommentGate || 0);
 
     document.getElementById("statPostsToday").textContent = hasAgentStats ? postsToday : (telemetry.postsScanned || 0);
@@ -1445,6 +1407,7 @@ function toggleAccordion(header) {
 
 document.querySelectorAll('.accordion-header').forEach(header => {
   header.addEventListener('click', () => toggleAccordion(header));
+  if (header.tagName === 'BUTTON') return;
   header.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();

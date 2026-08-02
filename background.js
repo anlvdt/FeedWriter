@@ -70,10 +70,10 @@ if (typeof featureFlags === 'undefined') {
   };
 }
 
-// Initialize StorageBatcher for history (must be after importScripts)
-const historyBatcher = typeof StorageBatcher !== 'undefined'
-  ? new StorageBatcher(500)
-  : { set: (key, value) => chrome.storage.local.set({ [key]: value }) };
+// Serialize history writes. MV3 service workers may be suspended before a
+// debounced timer flushes, and concurrent summaries must not overwrite each
+// other's read-modify-write cycle.
+let historyWriteQueue = Promise.resolve();
 
 // Storage schema version
 const STORAGE_VERSION = 2;
@@ -93,9 +93,8 @@ const DEFAULT_SETTINGS = {
   customSourceLink: '',
   enableUnicodeBold: true,
   advancedModeEnabled: false,
-  hideAffiliatePosts: false,
-  adDisplayMode: 'hide', // Sponsored / Được tài trợ — hide by default
-  affiliateDisplayMode: 'collapse',
+  adDisplayMode: 'collapse',
+  filterEngagementGates: false,
   blockedDomains: '',
   theme: 'auto',
   // === Auto GitHub → Facebook ===
@@ -646,12 +645,6 @@ chrome.runtime.onInstalled.addListener(async () => {
       type: "separator",
       contexts: ["selection"],
     });
-    chrome.contextMenus.create({
-      id: "unshorten-shopee",
-      parentId: "content-tools",
-      title: "Bóc Link Shopee",
-      contexts: ["selection"],
-    });
   };
   try {
     chrome.contextMenus.removeAll(() => buildMenus());
@@ -802,18 +795,6 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     chrome.tabs
       .sendMessage(tab.id, msg)
       .catch(() => injectAndSend(tab.id, msg));
-  } else if (info.menuItemId === "unshorten-shopee" && info.selectionText) {
-    const urlMatches = info.selectionText.match(/https?:\/\/shope\.ee\/[^\s]*/);
-    if (!urlMatches) {
-      chrome.tabs
-        .sendMessage(tab.id, {
-          action: "unshorten-result",
-          error: "Không tìm thấy link shope.ee trong phần bôi đen",
-        })
-        .catch(() => {});
-      return;
-    }
-    processUnshorten(urlMatches[0], tab.id);
   }
 });
 } // end if (chrome?.contextMenus?.onClicked)
@@ -941,18 +922,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       }
       sendResponse({ ok: true });
     })().catch((error) => sendResponse({ ok: false, error: error.message }));
-    return true;
-  }
-
-  if (request.action === "disable-github-autopost") {
-    // Legacy cleanup: clear old alarm + force flag off
-    (async () => {
-      try {
-        if (chrome?.alarms) await chrome.alarms.clear("auto-github-post");
-        await chrome.storage.sync.set({ autoGithubEnabled: false });
-      } catch (_) {}
-      sendResponse({ ok: true });
-    })();
     return true;
   }
 
@@ -1089,14 +1058,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     chrome.storage.local.get(["keyStatus"], (data) => {
       sendResponse(data.keyStatus || {});
     });
-    return true;
-  }
-  if (
-    request.action === "unshorten-shopee-inline" &&
-    request.url &&
-    sender.tab
-  ) {
-    processUnshorten(request.url, sender.tab.id);
     return true;
   }
   if (request.action === "summarize") {
@@ -2263,7 +2224,7 @@ async function handleStream(
       result.quality = postResult.quality;
       result.issues = postResult.issues;
       incrementBadge();
-      saveHistory(
+      await saveHistory(
         text,
         result.summary,
         site,
@@ -2298,9 +2259,7 @@ async function saveHistory(
   author,
   postTitle,
 ) {
-  const data = await chrome.storage.local.get("history");
-  const history = data.history || [];
-  history.unshift({
+  const entry = {
     text: text.substring(0, 2000),
     summary,
     date: new Date().toISOString(),
@@ -2310,9 +2269,19 @@ async function saveHistory(
     imageUrl: imageUrl || "",
     author: author || "",
     postTitle: postTitle || "",
+  };
+
+  const write = historyWriteQueue.then(async () => {
+    const data = await chrome.storage.local.get("history");
+    const history = data.history || [];
+    history.unshift(entry);
+    if (history.length > 200) history.length = 200;
+    await chrome.storage.local.set({ history });
   });
-  if (history.length > 200) history.length = 200;
-  historyBatcher.set('history', history);
+  historyWriteQueue = write.catch((error) => {
+    logger.warn("History write failed:", error?.message || error);
+  });
+  return write;
 }
 
 // reviewTodayHistory uses getAvailableKey with retry on rate limit
@@ -2502,6 +2471,3 @@ chrome.runtime.onStartup.addListener(async () => {
 } // end if (chrome?.runtime?.onStartup)
 
 // keep-alive alarm handled by the listener near line 386
-
-// Legacy auto-GitHub removed.
-if (chrome?.alarms) chrome.alarms.clear("auto-github-post").catch(() => {});

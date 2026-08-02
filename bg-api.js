@@ -117,8 +117,19 @@ function selectAvailableKey(opts) {
   };
 }
 
-// Get the best available key across ALL providers
-async function getAvailableKey(preferredProvider = null) {
+// Key selection reads and updates rotation state. Serialize it so concurrent
+// summaries from separate tabs cannot select the same next key before either
+// request persists its new rotation index.
+let keySelectionQueue = Promise.resolve();
+
+function getAvailableKey(preferredProvider = null) {
+  const task = keySelectionQueue.then(() => selectAvailableKeyForRequest(preferredProvider));
+  keySelectionQueue = task.catch(() => {});
+  return task;
+}
+
+// Get the best available key across ALL providers.
+async function selectAvailableKeyForRequest(preferredProvider = null) {
   const data = await chrome.storage.sync.get(["apiKeys", "apiKey", "provider"]);
   const localData = await chrome.storage.local.get([
     "keyStatus",
