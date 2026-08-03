@@ -152,10 +152,19 @@ describe("UI system v3 contracts", () => {
   });
 
   it("aliases popup and content tokens to canonical --fw-*", () => {
-    assert.match(popupCss, /--fw-accent:\s*#8b93f7/i);
+    assert.match(popupCss, /--fw-accent:\s*#0f766e/i);
     assert.match(popupCss, /--bg:\s*var\(--fw-bg\)/);
     assert.match(popupCss, /--accent:\s*var\(--fw-accent\)/);
     assert.match(contentCss, /--fbs-accent:\s*var\(--fw-accent/);
+  });
+
+  it("rebinds popup light-theme aliases so inputs are not white-on-white", () => {
+    const lightBlock = popupCss.match(/body\.light,\s*html\.light\s*\{([\s\S]*?)\n\}/);
+    assert.ok(lightBlock, "expected body.light, html.light token block");
+    assert.match(lightBlock[1], /--bg:\s*var\(--fw-bg\)/);
+    assert.match(lightBlock[1], /--text:\s*var\(--fw-text\)/);
+    assert.match(lightBlock[1], /--bg-input:\s*#ffffff/);
+    assert.match(popupCss, /background-color:\s*var\(--bg-input\)/);
   });
 
   it("restyles comment-summary without sage leftover and uses toolbar overflow", () => {

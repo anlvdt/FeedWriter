@@ -1,13 +1,13 @@
 // === THEME ===
 async function initTheme() {
   try {
-    const { theme } = await chrome.storage.sync.get({ theme: "auto" });
+    const { theme } = await chrome.storage.sync.get({ theme: "light" });
     applyTheme(theme);
     const themeSelect = document.getElementById("themeSelect");
     if (themeSelect) themeSelect.value = theme;
   } catch (e) {
     console.warn("[FeedWriter] initTheme failed", e);
-    applyTheme("auto");
+    applyTheme("light");
   }
 }
 
@@ -39,7 +39,7 @@ try {
     .matchMedia("(prefers-color-scheme: dark)")
     .addEventListener("change", async () => {
       try {
-        const { theme } = await chrome.storage.sync.get({ theme: "auto" });
+        const { theme } = await chrome.storage.sync.get({ theme: "light" });
         if (theme === "auto") applyTheme("auto");
       } catch (_) {}
     });

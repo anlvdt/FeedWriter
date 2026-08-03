@@ -2044,7 +2044,7 @@ async function incrementBadge() {
   count++;
   await chrome.storage.local.set({ dailyCount: count, lastDate: today });
   chrome.action.setBadgeText({ text: count.toString() });
-  chrome.action.setBadgeBackgroundColor({ color: "#8B93F7" });
+  chrome.action.setBadgeBackgroundColor({ color: "#0F766E" });
 }
 
 // === PORT-BASED STREAMING ===
@@ -3700,7 +3700,7 @@ chrome.runtime.onStartup.addListener(async () => {
   ]);
   if (data.lastDate === today) {
     chrome.action.setBadgeText({ text: (data.dailyCount || 0).toString() });
-    chrome.action.setBadgeBackgroundColor({ color: "#8B93F7" });
+    chrome.action.setBadgeBackgroundColor({ color: "#0F766E" });
   }
 
   ensureKeepAliveAlarm();

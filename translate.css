@@ -1,18 +1,18 @@
 /* FeedWriter — Translate tooltip
- * Violet Issue nest surface (#252536) + primary #5E6AD2
- * See DESIGN.md
+ * Editorial Ink nest surface + teal accent. See DESIGN.md
  */
 
 .fbs-translate-tooltip {
-  --tr-bg: #35354a;
-  --tr-border: #4a4a60;
-  --tr-text: #f5f5f7;
-  --tr-muted: #b4b8c4;
-  --tr-secondary: #b4b8c4;
-  --tr-body: #f5f5f7;
-  --tr-danger: #eb5757;
-  --tr-accent: #8b93f7;
-  --tr-radius: 8px;
+  --tr-bg: var(--fw-elevated, #2a343d);
+  --tr-border: var(--fw-border, #3a4652);
+  --tr-text: var(--fw-text, #eef2f5);
+  --tr-muted: var(--fw-text-3, #7a8794);
+  --tr-secondary: var(--fw-text-2, #a8b4c0);
+  --tr-body: var(--fw-text, #eef2f5);
+  --tr-danger: var(--fw-danger, #eb5757);
+  --tr-accent: var(--fw-accent, #2dd4bf);
+  --tr-accent-soft: var(--fw-accent-soft, rgba(45, 212, 191, 0.18));
+  --tr-radius: var(--fw-radius-md, 8px);
 
   position: absolute;
   z-index: 2147483647;
@@ -23,8 +23,8 @@
   color: var(--tr-text);
   border: 1px solid var(--tr-border);
   border-radius: var(--tr-radius);
-  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  box-shadow: var(--fw-shadow, 0 24px 48px rgba(0, 0, 0, 0.4));
+  font-family: var(--fw-font, ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", sans-serif);
   font-size: 13px;
   line-height: 1.5;
   opacity: 0;
@@ -33,6 +33,18 @@
   transition: opacity 0.12s ease, transform 0.12s ease;
   -webkit-font-smoothing: antialiased;
   box-sizing: border-box;
+}
+
+.fbs-translate-tooltip[data-fbs-theme="light"] {
+  --tr-bg: #ffffff;
+  --tr-border: #c5cdd6;
+  --tr-text: #0f1419;
+  --tr-muted: #5c6b7a;
+  --tr-secondary: #3d4a57;
+  --tr-body: #0f1419;
+  --tr-accent: #0f766e;
+  --tr-accent-soft: rgba(15, 118, 110, 0.14);
+  box-shadow: 0 16px 40px rgba(15, 20, 28, 0.14);
 }
 
 .fbs-translate-tooltip.fbs-visible {
@@ -73,9 +85,9 @@
   text-transform: uppercase;
   padding: 2px 8px;
   border-radius: 4px;
-  background: rgba(139, 147, 247, 0.22);
+  background: var(--tr-accent-soft);
   color: var(--tr-accent);
-  border: 1px solid rgba(139, 147, 247, 0.35);
+  border: 1px solid color-mix(in srgb, var(--tr-accent) 35%, transparent);
   line-height: 1.2;
   font-family: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, monospace;
 }
@@ -141,14 +153,19 @@
 }
 .fbs-translate-copy:hover,
 .fbs-translate-copy-source:hover {
-  background: #1f1f2e;
-  border-color: #3a3a4a;
+  background: var(--fw-surface-2, #243039);
+  border-color: var(--fw-border-strong, #5a6a78);
+}
+.fbs-translate-tooltip[data-fbs-theme="light"] .fbs-translate-copy:hover,
+.fbs-translate-tooltip[data-fbs-theme="light"] .fbs-translate-copy-source:hover {
+  background: #e4eaef;
+  border-color: #8a97a6;
 }
 .fbs-translate-copy:focus-visible,
 .fbs-translate-copy-source:focus-visible {
   outline: none;
   border-color: var(--tr-accent);
-  box-shadow: 0 0 0 2px rgba(139, 147, 247, 0.32);
+  box-shadow: 0 0 0 2px var(--tr-accent-soft);
 }
 
 .fbs-translate-loading {
@@ -171,7 +188,7 @@
 .fbs-translate-tooltip .fbs-spinner {
   width: 14px;
   height: 14px;
-  border: 2px solid #2c2c3a;
+  border: 2px solid var(--tr-border);
   border-top-color: var(--tr-accent);
   border-radius: 50%;
   animation: fbsTranslateSpin 0.7s linear infinite;

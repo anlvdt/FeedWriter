@@ -1,4 +1,4 @@
-/* FeedWriter Popup — Violet Issue (designmd.ai) · Primary #8B93F7
+/* FeedWriter Popup — Editorial Ink · Primary #0F766E
  * Canonical tokens: --fw-*. Popup aliases (--bg/--accent) map to them. See DESIGN.md
  */
 :root {
@@ -18,20 +18,20 @@
   --space-5: 20px;
   --space-6: 24px;
 
-  /* Canonical Violet Issue (--fw-*) */
-  --fw-bg: #16161d;
-  --fw-surface: #252532;
-  --fw-surface-2: #303042;
-  --fw-elevated: #35354a;
-  --fw-border: #4a4a60;
-  --fw-border-strong: #6a6a84;
-  --fw-text: #f5f5f7;
-  --fw-text-2: #b4b8c4;
-  --fw-text-3: #9aa0ae;
-  --fw-accent: #8b93f7;
-  --fw-accent-hover: #9aa1ff;
-  --fw-accent-soft: rgba(139, 147, 247, 0.22);
-  --fw-accent-glow: rgba(139, 147, 247, 0.38);
+  /* Canonical Editorial Ink dark (--fw-*) */
+  --fw-bg: #12171c;
+  --fw-surface: #1a2229;
+  --fw-surface-2: #243039;
+  --fw-elevated: #2a343d;
+  --fw-border: #3a4652;
+  --fw-border-strong: #5a6a78;
+  --fw-text: #eef2f5;
+  --fw-text-2: #a8b4c0;
+  --fw-text-3: #7a8794;
+  --fw-accent: #2dd4bf;
+  --fw-accent-hover: #5eead4;
+  --fw-accent-soft: rgba(45, 212, 191, 0.18);
+  --fw-accent-glow: rgba(45, 212, 191, 0.28);
   --fw-danger: #eb5757;
   --fw-warn: #f0c000;
   --fw-ok: #3dd68c;
@@ -40,15 +40,16 @@
   --fw-radius-md: 8px;
   --fw-radius-pill: 9999px;
   --fw-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
-  --fw-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --fw-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --fw-font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
   --fw-font-mono: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, Consolas, monospace;
 
   /* Popup aliases → canonical */
   --bg: var(--fw-bg);
   --bg-card: var(--fw-surface);
   --bg-hover: var(--fw-surface-2);
-  --bg-input: #1c1c28;
-  --bg-input-focus: #2c2c3c;
+  --bg-input: #152028;
+  --bg-input-focus: #1e2a33;
   --bg-nest: var(--fw-elevated);
 
   --border: var(--fw-border);
@@ -71,7 +72,7 @@
   --warn: var(--fw-warn);
   --warn-bg: rgba(240, 192, 0, 0.14);
   --info: var(--fw-text-2);
-  --info-bg: rgba(180, 184, 196, 0.12);
+  --info-bg: rgba(168, 180, 192, 0.12);
 
   --scrollbar: var(--fw-border);
   --scrollbar-hover: var(--fw-border-strong);
@@ -93,39 +94,69 @@
   --shadow-modal: var(--fw-shadow);
 
   --font: var(--fw-font);
+  --font-display: var(--fw-font-display);
   --font-mono: var(--fw-font-mono);
   --color-scheme: dark;
 }
 
-/* Soft-light: gray canvas + near-white cards + darker type for contrast */
-body.light {
-  --fw-bg: #e0e0e8;
-  --fw-surface: #fafafc;
-  --fw-surface-2: #ececf4;
+/* Editorial light identity — cool paper + teal ink.
+ * Re-bind aliases here — :root resolves var(--fw-*) to concrete computed
+ * values that inherit, so updating only --fw-* leaves --text/--bg stuck dark. */
+body.light,
+html.light {
+  --fw-bg: #eef2f5;
+  --fw-surface: #ffffff;
+  --fw-surface-2: #e4eaef;
   --fw-elevated: #ffffff;
-  --fw-border: #b8b8c8;
-  --fw-border-strong: #8e8ea0;
-  --fw-text: #1a1a22;
-  --fw-text-2: #4a4a58;
-  --fw-text-3: #636374;
-  --fw-accent: #5b5fe8;
-  --fw-accent-hover: #4a4ed4;
-  --fw-accent-soft: rgba(91, 95, 232, 0.16);
-  --fw-accent-glow: rgba(91, 95, 232, 0.28);
+  --fw-border: #c5cdd6;
+  --fw-border-strong: #8a97a6;
+  --fw-text: #0f1419;
+  --fw-text-2: #3d4a57;
+  --fw-text-3: #5c6b7a;
+  --fw-accent: #0f766e;
+  --fw-accent-hover: #0d5f58;
+  --fw-accent-soft: rgba(15, 118, 110, 0.14);
+  --fw-accent-glow: rgba(15, 118, 110, 0.22);
   --fw-danger: #b91c1c;
   --fw-warn: #92400e;
   --fw-ok: #166534;
-  --fw-shadow: 0 16px 40px rgba(20, 20, 35, 0.14);
+  --fw-shadow: 0 16px 40px rgba(15, 20, 28, 0.12);
 
+  --bg: var(--fw-bg);
+  --bg-card: var(--fw-surface);
+  --bg-hover: var(--fw-surface-2);
   --bg-input: #ffffff;
   --bg-input-focus: #ffffff;
-  --text-heading: #0f0f14;
+  --bg-nest: var(--fw-elevated);
+
+  --border: var(--fw-border);
+  --border-light: var(--fw-border);
+  --border-hover: var(--fw-border-strong);
+
+  --text: var(--fw-text);
+  --text-secondary: var(--fw-text-2);
+  --text-muted: var(--fw-text-3);
+  --text-heading: #0f1419;
+
+  --accent: var(--fw-accent);
+  --accent-hover: var(--fw-accent-hover);
+  --accent-bg: var(--fw-accent-soft);
+  --accent-ring: var(--fw-accent-glow);
+  --success: var(--fw-ok);
   --success-bg: rgba(22, 101, 52, 0.12);
+  --danger: var(--fw-danger);
   --danger-bg: rgba(185, 28, 28, 0.1);
+  --warn: var(--fw-warn);
   --warn-bg: rgba(146, 64, 14, 0.12);
-  --info-bg: rgba(74, 74, 88, 0.1);
+  --info: var(--fw-text-2);
+  --info-bg: rgba(61, 74, 87, 0.1);
+
+  --scrollbar: var(--fw-border);
+  --scrollbar-hover: var(--fw-border-strong);
+
   --tab-active-bg: #ffffff;
-  --tab-active-fg: #0f0f14;
+  --tab-active-fg: #0f1419;
+  --shadow-modal: var(--fw-shadow);
   --color-scheme: light;
 }
 
@@ -147,7 +178,7 @@ html {
 }
 
 html.light {
-  background: #e0e0e8 !important;
+  background: #eef2f5 !important;
   color-scheme: light;
 }
 
@@ -161,7 +192,10 @@ body {
   color-scheme: var(--color-scheme);
   -webkit-font-smoothing: antialiased;
   line-height: 1.45;
-  background: var(--bg) !important;
+  background:
+    radial-gradient(120% 80% at 0% 0%, rgba(15, 118, 110, 0.06), transparent 55%),
+    radial-gradient(90% 60% at 100% 0%, rgba(61, 74, 87, 0.05), transparent 50%),
+    var(--bg) !important;
   border-radius: var(--radius-popup, 20px);
   overflow: hidden;
   clip-path: inset(0 round var(--radius-popup, 20px));
@@ -244,8 +278,9 @@ body {
 }
 .header-titles { min-width: 0; }
 h1 {
+  font-family: var(--font-display, var(--font));
   font-size: var(--text-lg);
-  font-weight: 750;
+  font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--text-heading);
   line-height: 1.3;
@@ -306,8 +341,8 @@ h1 {
 .tab.active {
   background: var(--tab-active-bg);
   color: var(--tab-active-fg);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-  border: 1px solid var(--border-hover);
+  box-shadow: 0 1px 2px rgba(15, 20, 28, 0.08);
+  border: 1px solid var(--border);
 }
 .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
@@ -321,7 +356,7 @@ h1 {
   background: var(--bg-card);
   margin-bottom: 10px;
   overflow: visible;
-  /* Violet Issue: no shadow on static cards — layer via surface color */
+  /* Editorial Ink: no shadow on static cards — layer via surface color */
   box-shadow: none;
 }
 .card-settings { margin-bottom: 10px; }
@@ -393,17 +428,20 @@ textarea,
   padding: 0 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm, 6px);
-  background: var(--bg-input);
+  background-color: var(--bg-input);
   color: var(--text);
+  -webkit-text-fill-color: var(--text);
   font-size: var(--text-md, 14px);
   font-family: inherit;
-  transition: border-color 0.1s, box-shadow 0.1s, background 0.1s;
+  transition: border-color 0.1s, box-shadow 0.1s, background-color 0.1s;
   appearance: none;
   -webkit-appearance: none;
   box-sizing: border-box;
 }
 select, .field-select {
   padding-right: 28px;
+  /* Keep background-color when painting the caret (shorthand would wipe it). */
+  background-color: var(--bg-input);
   background-image:
     linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
     linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
@@ -418,6 +456,11 @@ select, .field-select {
   overflow: visible;
   cursor: pointer;
   line-height: 1.3;
+}
+select option,
+.field-select option {
+  background-color: var(--bg-input);
+  color: var(--text);
 }
 textarea {
   height: auto;
@@ -435,7 +478,7 @@ textarea:focus,
   outline: none;
   border-color: var(--accent);
   background-color: var(--bg-input-focus);
-  /* Violet Issue focus: 1px accent + soft ring */
+  /* Editorial focus: 1px accent + soft ring */
   box-shadow: 0 0 0 2px var(--accent-ring, var(--accent-bg));
 }
 .field-hint {
@@ -1918,7 +1961,7 @@ body.light .settings-footer.sticky-save {
   display: block !important;
 }
 
-/* ═══ VIOLET ISSUE DENSITY ═══
+/* ═══ EDITORIAL INK DENSITY ═══
  * Spec: buttons 28 compact / 32 default · rows 36 · chips 20 · inputs 32
  * Radius: 4 chips · 6 controls · 8 cards · 12 modals
  * Transitions ≤ 150ms · no static card shadows
@@ -2058,7 +2101,7 @@ textarea.field-input {
   padding: 0 16px 12px !important;
 }
 
-/* —— History: list rows (Violet Issue 36px base) —— */
+/* —— History: list rows (Editorial Ink 36px base) —— */
 .history-list {
   display: flex !important;
   flex-direction: column !important;
