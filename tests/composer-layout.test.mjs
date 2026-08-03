@@ -64,9 +64,63 @@ describe("Feed false-positive safeguards", () => {
     assert.ok(!popup.includes('<option value="hide" selected>Ẩn hoàn toàn</option>'));
   });
 
+  it("excludes group-suggestion shelves from filtering and summary controls", () => {
+    assert.match(contentDom, /const FB_GROUP_SUGGESTION_LABELS/);
+    assert.match(contentDom, /function _isFacebookGroupSuggestionContainer\(element\)/);
+    assert.match(contentDom, /container && !_isFacebookGroupSuggestionContainer\(container\)/);
+    assert.match(content, /function _removeGroupSuggestionControls\(element\)/);
+    assert.match(content, /if \(_isFacebookGroupSuggestion\(article\)\)/);
+    assert.match(content, /if \(_isFacebookGroupSuggestion\(sm\)\) return;/);
+  });
+
+  it("only adds Facebook summary controls inside semantic post bodies", () => {
+    assert.match(content, /const FB_POST_BODY_SELECTOR/);
+    assert.match(content, /function _findFacebookPostBodyFrom\(element\)/);
+    assert.match(content, /SITE === "facebook" && !_findFacebookPostBodyFrom\(el\)/);
+    assert.match(content, /SITE === "facebook" && !postBody\) return;/);
+    assert.match(content, /SITE === "facebook" && !_findFacebookStatusText\(el\)\) continue;/);
+  });
+
   it("does not ship retired affiliate detection helpers", () => {
     assert.doesNotMatch(contentDomRuntime, /AFFILIATE_DOMAINS/);
     assert.doesNotMatch(contentDomRuntime, /_detectAffiliateUrl/);
+  });
+});
+
+describe("Feed summary control density", () => {
+  it("keeps summary controls visually secondary to Facebook content", () => {
+    assert.match(css, /\.fbs-wrap-inline \.fbs-btn-inline > span[\s\S]*?background:\s*transparent\s*!important/);
+    assert.match(css, /\.fbs-wrap-inline \.fbs-btn-inline > span[\s\S]*?color:\s*var\(--fw-accent\)\s*!important/);
+    assert.match(css, /\.fbs-wrap-inline \.fbs-inline-sep[\s\S]*?color:\s*var\(--fw-text-3\)\s*!important/);
+    assert.match(css, /\.fbs-wrap-inline\[data-fbs-ui="v3"\][\s\S]*?margin:\s*0\s*!important/);
+    assert.match(css, /button\.fbs-allpost-btn[\s\S]*?height:\s*28px\s*!important/);
+    assert.match(css, /\.fbs-chip-host:hover \.fbs-allpost-btn[\s\S]*?opacity:\s*0\.82\s*!important/);
+  });
+
+  it("uses text-only inline summary controls", () => {
+    const inlineFactory = content.slice(
+      content.indexOf("function createInlineBtn()"),
+      content.indexOf("// === POST METADATA EXTRACTION ==="),
+    );
+    assert.match(inlineFactory, /d\.innerHTML\s*=\s*'<span title="Tóm tắt nội dung">Tóm tắt<\/span>'/);
+    assert.doesNotMatch(inlineFactory, /ICON_BASE64/);
+  });
+
+  it("places Facebook inline summaries immediately after See more", () => {
+    assert.match(content, /function _matchInlineBtnTypography\(btn, refEl\)/);
+    assert.match(content, /_matchInlineBtnTypography\(btnNode, afterEl\)/);
+    assert.match(content, /afterEl\.parentElement\.insertBefore\(wrap, afterEl\.nextSibling\)/);
+    assert.match(content, /sep\.className = "fbs-inline-sep"/);
+    assert.match(content, /sep\.textContent = " · "/);
+  });
+
+  it("does not mount inline summaries on short Facebook status bodies", () => {
+    assert.match(content, /function _statusBodyTextLength\(textEl\)/);
+    assert.match(
+      content,
+      /if \(_statusBodyTextLength\(textEl\) < minimumLength\) return;/,
+    );
+    assert.match(content, /_matchInlineBtnTypography\(btn, textEl\)/);
   });
 });
 

@@ -107,25 +107,25 @@ button.fbs-allpost-btn {
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  gap: 6px !important;
-  height: var(--fw-chip-h) !important;
-  min-height: var(--fw-chip-h) !important;
-  max-height: var(--fw-chip-h) !important;
+  gap: 4px !important;
+  height: 28px !important;
+  min-height: 28px !important;
+  max-height: 28px !important;
   width: auto !important;
   max-width: 148px !important;
-  padding: 0 12px !important;
+  padding: 0 9px !important;
   margin: 0 !important;
-  border: 1px solid var(--fw-border-strong) !important;
+  border: 1px solid var(--fw-border) !important;
   border-radius: var(--fw-radius-pill) !important;
-  background: var(--fw-surface) !important;
-  color: var(--fw-text) !important;
-  font-size: 12px !important;
-  font-weight: 650 !important;
+  background: color-mix(in srgb, var(--fw-surface) 84%, transparent) !important;
+  color: var(--fw-text-2) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
   line-height: 1 !important;
   white-space: nowrap !important;
   writing-mode: horizontal-tb !important;
   cursor: pointer !important;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35) !important;
+  box-shadow: none !important;
   position: relative !important;
   inset: auto !important;
   top: auto !important;
@@ -144,7 +144,10 @@ button.fbs-allpost-btn {
 .fbs-chip-host:hover .fbs-allpost-btn,
 article:hover > .fbs-chip-host .fbs-allpost-btn,
 [data-pagelet^="FeedUnit"]:hover > .fbs-chip-host .fbs-allpost-btn,
-[data-virtualized]:hover > .fbs-chip-host .fbs-allpost-btn,
+[data-virtualized]:hover > .fbs-chip-host .fbs-allpost-btn {
+  opacity: 0.82 !important;
+}
+
 .fbs-allpost-btn:focus,
 .fbs-allpost-btn:focus-visible {
   opacity: 1 !important;
@@ -153,6 +156,7 @@ article:hover > .fbs-chip-host .fbs-allpost-btn,
 .fbs-allpost-btn:hover {
   background: var(--fw-surface-2) !important;
   border-color: var(--fw-border-strong) !important;
+  color: var(--fw-text) !important;
 }
 
 .fbs-allpost-btn img,
@@ -182,12 +186,12 @@ article:hover > .fbs-chip-host .fbs-allpost-btn,
   width: auto !important;
   height: auto !important;
   max-height: none !important;
-  margin: 2px 0 0 4px !important;
+  margin: 0 !important;
   padding: 0 !important;
   inset: auto !important;
   top: auto !important;
   right: auto !important;
-  vertical-align: middle !important;
+  vertical-align: baseline !important;
   white-space: nowrap !important;
   z-index: 2 !important;
   background: none !important;
@@ -211,40 +215,57 @@ article:hover > .fbs-chip-host .fbs-allpost-btn,
   white-space: nowrap !important;
 }
 
+.fbs-wrap-inline .fbs-inline-sep {
+  display: inline !important;
+  color: var(--fw-text-3) !important;
+  font-size: inherit !important;
+  font-weight: 400 !important;
+  line-height: inherit !important;
+  white-space: pre !important;
+  vertical-align: baseline !important;
+  pointer-events: none !important;
+  user-select: none !important;
+}
+
 .fbs-wrap-inline .fbs-btn-inline > span,
 .fbs-btn-inline[data-fbs-ui="v3"] > span {
-  display: inline-flex !important;
-  align-items: center !important;
-  gap: 4px !important;
-  min-height: 22px !important;
-  padding: 2px 8px 2px 6px !important;
-  border-radius: var(--fw-radius-pill) !important;
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.92), rgba(124, 58, 237, 0.92)) !important;
-  border: 1px solid rgba(196, 181, 253, 0.5) !important;
-  color: #ffffff !important;
-  font-size: 0.82em !important;
-  font-weight: 700 !important;
-  line-height: 1.1 !important;
-  letter-spacing: 0.01em !important;
+  display: inline !important;
+  align-items: baseline !important;
+  gap: 0 !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  color: var(--fw-accent) !important;
+  /* Match status/"Xem thêm" size via wrapper inline styles; 15px guards chrome. */
+  font-size: inherit !important;
+  font-weight: 600 !important;
+  font-family: inherit !important;
+  line-height: inherit !important;
+  letter-spacing: inherit !important;
   white-space: nowrap !important;
   vertical-align: baseline !important;
-  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.18) !important;
-  transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease !important;
+  box-shadow: none !important;
+  transition: color 0.16s ease !important;
 }
 
 .fbs-wrap-inline:hover .fbs-btn-inline > span,
 .fbs-btn-inline[data-fbs-ui="v3"]:hover > span,
 .fbs-btn-inline[data-fbs-ui="v3"]:focus-visible > span {
-  filter: brightness(1.08) saturate(1.08) !important;
-  box-shadow: 0 4px 14px rgba(79, 70, 229, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.24) !important;
-  transform: translateY(-1px) !important;
+  filter: none !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  color: var(--fw-accent-hover) !important;
+  opacity: 1 !important;
+  box-shadow: none !important;
+  transform: none !important;
+  text-decoration: none !important;
 }
 
 .fbs-wrap-inline .fbs-btn-inline > span img,
 .fbs-btn-inline[data-fbs-ui="v3"] > span img {
-  width: 11px !important;
-  height: 11px !important;
-  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.24)) !important;
+  display: none !important;
 }
 
 /* X: the wrapper is appended inside its block-level Show more control so the

@@ -289,6 +289,17 @@ const CLUTTER_LABELS = [
 
 const CLUTTER_STOP_ROLES = new Set(["complementary", "banner", "navigation", "dialog"]);
 
+// These are Facebook recommendation shelves, not feed posts. Their group-card
+// artwork often contains copy such as "Tham gia nhóm để nhận…", which must
+// never be evaluated as engagement bait.
+const FB_GROUP_SUGGESTION_LABELS = new Set([
+  "gợi ý nhóm",
+  "nhóm gợi ý",
+  "suggested groups",
+  "groups you might like",
+  "groups you should join",
+]);
+
 let _lastExtractedImages = [];
 
 let hiddenClutterCount = 0;
@@ -460,6 +471,29 @@ function findFeedWrapper(el) {
     cur = parent;
   }
   return null; // could not find a reliable individual post boundary — don't hide
+}
+
+function _isFacebookGroupSuggestionContainer(element) {
+  if (SITE !== "facebook" || !element) return false;
+  const container = findFeedWrapper(element) || element;
+  let node = container;
+  for (let i = 0; i < 4 && node; i++, node = node.parentElement) {
+    const pagelet = (node.getAttribute?.("data-pagelet") || "").toLowerCase();
+    if (/groups.*(?:suggest|recommend|shouldjoin)|(?:suggest|recommend).*groups/.test(pagelet)) {
+      return true;
+    }
+  }
+  const labels = container.querySelectorAll?.(
+    "h1, h2, h3, h4, [role='heading'], [aria-label], span[dir='auto'], div[dir='auto']",
+  ) || [];
+  for (let i = 0; i < Math.min(labels.length, 40); i++) {
+    const label = (labels[i].innerText || labels[i].textContent || labels[i].getAttribute?.("aria-label") || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+    if (FB_GROUP_SUGGESTION_LABELS.has(label)) return true;
+  }
+  return false;
 }
 
 function isSponsored(el) {
@@ -1483,6 +1517,30 @@ function _fbCleanName(raw) {
     .trim();
 }
 
+// Facebook social-context cards (for example "Nope Pham đã bình luận gần
+// đây." or the shorter "Trần Hồng Quân đã bình luận.") are neither a comment
+// nor the post author. They use much of the same markup as headers/comments,
+// so identify them from their complete text.
+function _fbIsCommentActivityText(raw) {
+  const text = _fbCleanName(raw);
+  if (!text || text.length > 180) return false;
+  return /^(?:.+?\s+)?(?:has\s+commented(?:\s+recently)?|have\s+commented(?:\s+recently)?|commented(?:\s+recently)?|(?:đã|vừa)\s+bình\s*luận(?:\s+gần\s*đây)?)[.!…]*$/i.test(text);
+}
+
+function _fbIsCommentActivityLink(link) {
+  if (!link) return false;
+  const header = link.closest?.("h2, h3, h4, [role='heading']");
+  if (header && _fbIsCommentActivityText(header.innerText || header.textContent || "")) {
+    return true;
+  }
+  let parent = link.parentElement;
+  for (let i = 0; i < 3 && parent; i++, parent = parent.parentElement) {
+    const text = parent.innerText || parent.textContent || "";
+    if (text.length <= 180 && _fbIsCommentActivityText(text)) return true;
+  }
+  return false;
+}
+
 /** Profile-like Facebook href? */
 function _fbIsProfileHref(href) {
   if (!href) return false;
@@ -1530,14 +1588,16 @@ function _fbNameFromLink(link) {
 // Extract a valid author name from the first profile-like <a> inside a header.
 function _fbNameFromHeader(header) {
   if (!header) return "";
+  if (_fbIsCommentActivityText(header.innerText || header.textContent || "")) return "";
   const links = header.querySelectorAll("a[href]");
   for (const link of links) {
+    if (_fbIsCommentActivityLink(link)) continue;
     const href = link.href || "";
     if (href && !_fbIsProfileHref(href) && !href.includes("facebook.com")) continue;
     const name = _fbNameFromLink(link);
     if (name) return name;
   }
-  if (links[0]) {
+  if (links[0] && !_fbIsCommentActivityLink(links[0])) {
     const name = _fbNameFromLink(links[0]);
     if (name) return name;
   }
@@ -1586,6 +1646,7 @@ function _fbFindOriginalAuthor(postContainer) {
     const strongs = nested.querySelectorAll("strong a[href], a[role='link']");
     for (const s of strongs) {
       if (s.closest('[role="article"]') !== nested) continue;
+      if (_fbIsCommentActivityLink(s)) continue;
       if (s.href && !_fbIsProfileHref(s.href) && !/facebook\.com\/(profile\.php|people|user)/i.test(s.href)) {
         continue;
       }
@@ -1630,6 +1691,7 @@ function _fbExtractAuthorFromContainer(container) {
   const profileLinks = container.querySelectorAll("a[href*='facebook.com']");
   for (let i = 0; i < Math.min(profileLinks.length, 20); i++) {
     const a = profileLinks[i];
+    if (_fbIsCommentActivityLink(a)) continue;
     if (!_fbIsProfileHref(a.href)) continue;
     const name = _fbNameFromLink(a);
     if (name) return name;
@@ -2231,6 +2293,66 @@ function _getPrimaryPostText(container) {
   }
 }
 
+/**
+ * Text used by engagement-gate detection. Prefer Facebook's semantic post
+ * body so social-context chrome ("X đã bình luận.") and comment threads
+ * cannot turn a normal post into a false "comment để nhận" hit.
+ */
+function _getEngagementScanText(container) {
+  if (!container) return "";
+  const messageSelector =
+    '[data-ad-preview="message"], [data-ad-comet-preview="message"], [data-testid="post_message"], [data-testid="post-message"]';
+  const candidates = [];
+  try {
+    for (const node of container.querySelectorAll(messageSelector)) {
+      if (node.closest("form")) continue;
+      let articleDepth = 0;
+      let parent = node.parentElement;
+      while (parent && parent !== container) {
+        if (parent.getAttribute?.("role") === "article") articleDepth++;
+        parent = parent.parentElement;
+      }
+      const text = _normalizePostBodyText(node.innerText || node.textContent || "");
+      if (text) candidates.push({ text, articleDepth });
+    }
+  } catch (_) {}
+
+  let raw = "";
+  if (candidates.length) {
+    // Prefer the outermost message nodes inside this container. On modern
+    // Facebook feeds the container is often data-virtualized wrapping one
+    // article, so depth 1 is the real post body — do not skip it.
+    candidates.sort(
+      (a, b) => a.articleDepth - b.articleDepth || b.text.length - a.text.length,
+    );
+    const minDepth = candidates[0].articleDepth;
+    raw = candidates
+      .filter((candidate) => candidate.articleDepth === minDepth)
+      .map((candidate) => candidate.text)
+      .join("\n");
+  } else {
+    raw = _getPrimaryPostText(container);
+  }
+  raw = _normalizePostBodyText(raw);
+  // Drop Facebook social-context lines and action-bar leftovers that survive cloning.
+  const lines = String(raw || "")
+    .split(/\n+/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter((line) => {
+      if (!line) return false;
+      if (_fbIsCommentActivityText(line)) return false;
+      if (
+        /^(?:thích|like|bình luận|comment|chia sẻ|share|xem thêm|see more|tóm tắt|all comments|tất cả bình luận|\d+\s*(?:comments?|bình luận))$/i.test(
+          line,
+        )
+      ) {
+        return false;
+      }
+      return true;
+    });
+  return lines.join("\n").trim();
+}
+
 function _normalizePostBodyText(raw) {
   const uiOnly = /^(?:like|thích|comment|bình luận|share|chia sẻ|send|gửi|follow|theo dõi|see more|xem thêm|show less|ẩn bớt|tóm tắt)$/i;
   const lines = String(raw || "")
@@ -2295,7 +2417,7 @@ function extractPostContent(element) {
  * }
  */
 function _detectEngagementGateText(container) {
-  const raw = _getPrimaryPostText(container).replace(/\s+/g, " ").trim();
+  const raw = _getEngagementScanText(container).replace(/\s+/g, " ").trim();
   if (!raw || raw.length < 12) return null;
   const text = raw.toLowerCase();
   // Cap scan length — gates almost always sit in first ~1.2k chars of post body
@@ -2303,7 +2425,7 @@ function _detectEngagementGateText(container) {
 
   const ACTION = {
     comment:
-      "(?:comment|bình\\s*luận|binh\\s*luan|cmt|cmb|cmnt|để\\s*lại\\s*(?:cmt|comment|bình\\s*luận|ý\\s*kiến)|de\\s*lai\\s*(?:cmt|comment)|trao\\s*đổi|reply|phản\\s*hồi|viết\\s*comment|viet\\s*cmt|gõ\\s*(?:cmt|comment)|go\\s*cmt|nhập\\s*(?:cmt|comment))",
+      "(?:comment|bình\\s*luận|binh\\s*luan|cmt|cmb|cmnt|để\\s*lại\\s*(?:cmt|comment|bình\\s*luận|ý\\s*kiến)|de\\s*lai\\s*(?:cmt|comment)|viết\\s*comment|viet\\s*cmt|gõ\\s*(?:cmt|comment)|go\\s*cmt|nhập\\s*(?:cmt|comment))",
     like:
       "(?:like|thích|thik|tha\\s*tim|thả\\s*tim|tha\\s*❤|❤|❤️|♥|🔥|react|reaction|cảm\\s*xúc|cam\\s*xuc|thả\\s*cảm\\s*xúc|bấm\\s*like|bam\\s*like|nhấn\\s*like|nhan\\s*like|click\\s*like|double\\s*tap|thả\\s*tim|tym)",
     share:
@@ -2409,10 +2531,9 @@ function _detectEngagementGateText(container) {
   tryHit(
     "comment_gate",
     91,
-    new RegExp(
-      `\\b${cmt}\\b.{0,40}\\b(?:một\\s*dấu\\s*chấm|dấu\\s*chấm|\\.|số\\s*1|so\\s*1|từ\\s*khóa|tu\\s*khoa|keyword|quan\\s*tâm|quan\\s*tam|interested|xin\\s*link|\"link\"|'link'|✅|✔️)\\b`,
-      "i",
-    ),
+    // Imperative "cmt/để lại …" cue only — plain "bình luận" near "xin link"
+    // is common in activity headers and comment threads.
+    /(?:để\s*lại|de\s*lai|comment|cmt)\b.{0,40}\b(?:một\s*dấu\s*chấm|dấu\s*chấm|số\s*1|so\s*1|từ\s*khóa|tu\s*khoa|keyword|quan\s*tâm|quan\s*tam|interested|xin\s*link|"link"|'link'|✅|✔️)\b/i,
     ["comment"],
   );
   tryHit(
@@ -2428,7 +2549,8 @@ function _detectEngagementGateText(container) {
     "comment_gate",
     90,
     new RegExp(
-      `(?:${cmt})\\s*[.:+\\-–—]?\\s*(?:quan\\s*tâm|quan\\s*tam|xin\\s*link|link|inbox|ib|nhận\\s*(?:tài\\s*liệu|file|prompt|template)|nhan\\s*(?:tai\\s*lieu|file|prompt))`,
+      // Avoid bare "bình luận" + "link" (action bar / thread chrome).
+      `(?:để\\s*lại|de\\s*lai|comment|cmt)\\s*[.:+\\-–—]?\\s*(?:quan\\s*tâm|quan\\s*tam|xin\\s*link|\"link\"|'link'|inbox|ib|nhận\\s*(?:tài\\s*liệu|file|prompt|template)|nhan\\s*(?:tai\\s*lieu|file|prompt))`,
       "i",
     ),
     ["comment"],
@@ -2929,7 +3051,7 @@ function evaluatePostSignals(postEl) {
   }
 
   // === ENGAGEMENT GATE (comment/like/share/follow/tag → get link/file) ===
-  if (container) {
+  if (container && !_isFacebookGroupSuggestionContainer(container)) {
     const engagementGate = _detectEngagementGateText(container);
     if (engagementGate) {
       result.isEngagementGate = true;
@@ -3114,4 +3236,6 @@ window.fbsIsSponsored = isSponsored;
 window.fbsDiscoverRelatedSourceLinks = discoverRelatedSourceLinks;
 window.fbsCleanRelatedUrl = _cleanRelatedUrl;
 window.fbsClassifyRelatedUrl = _classifyRelatedUrl;
+window.fbsIsCommentActivityText = _fbIsCommentActivityText;
+window.fbsIsGroupSuggestion = _isFacebookGroupSuggestionContainer;
 window.fbsDisplayModes = DISPLAY_MODES;

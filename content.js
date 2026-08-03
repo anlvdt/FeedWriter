@@ -87,6 +87,78 @@ function removePersonalProfileControls() {
   if (floatingToolbar) floatingToolbar.classList.remove("fbs-visible");
 }
 
+function _isFacebookGroupSuggestion(element) {
+  return SITE === "facebook" &&
+    typeof window.fbsIsGroupSuggestion === "function" &&
+    window.fbsIsGroupSuggestion(element);
+}
+
+function _removeGroupSuggestionControls(element) {
+  element?.querySelectorAll(
+    ".fbs-wrap, .fbs-chip-host, .fbs-btn-inline, .fbs-comment-summary-btn, .fbs-batch-checkbox",
+  ).forEach((control) => control.remove());
+}
+
+const FB_POST_BODY_SELECTOR =
+  '[data-ad-preview="message"], [data-ad-comet-preview="message"], [data-testid="post_message"], [data-testid="post-message"]';
+
+// A generic "Xem thêm" appears in many Facebook widgets. Only use the ones
+// nested in Facebook's semantic post-body node; everything else is UI chrome.
+function _findFacebookPostBodyFrom(element) {
+  if (SITE !== "facebook" || !element) return null;
+  const direct = element.closest?.(FB_POST_BODY_SELECTOR);
+  if (direct) return direct;
+  const post = element.closest?.(
+    'article[role="article"], [data-virtualized], div[data-pagelet^="FeedUnit"]',
+  );
+  if (!post || _isFacebookGroupSuggestion(post)) return null;
+  return Array.from(post.querySelectorAll(FB_POST_BODY_SELECTOR))
+    .find((body) => body.contains(element)) || null;
+}
+
+// Copy typography from Facebook's "Xem thêm" / status text so "Tóm tắt"
+// shares the same line rhythm. CSS keeps a distinct accent color.
+function _matchInlineBtnTypography(btn, refEl) {
+  if (!btn || !refEl) return;
+  try {
+    const label =
+      [...refEl.querySelectorAll("span, div")].find((node) => {
+        const text = (node.innerText || node.textContent || "")
+          .replace(/\s+/g, " ")
+          .trim()
+          .toLowerCase();
+        return SEE_MORE.some((kw) => text === kw || text.startsWith(kw));
+      }) ||
+      [...refEl.querySelectorAll("span[dir='auto'], div[dir='auto'], span, div")].find((node) => {
+        const text = (node.innerText || node.textContent || "").replace(/\s+/g, " ").trim();
+        return text.length >= 12 && !SEE_MORE.some((kw) => text.toLowerCase() === kw);
+      }) ||
+      refEl;
+    const cs = window.getComputedStyle(label);
+    const host = btn.closest(".fbs-wrap-inline") || btn;
+    const fontSize = parseFloat(cs.fontSize);
+    // Guard against inheriting Facebook chrome that renders at ~10–11px.
+    host.style.fontSize = fontSize > 0 && fontSize < 13 ? "15px" : cs.fontSize;
+    host.style.fontFamily = cs.fontFamily;
+    host.style.lineHeight = cs.lineHeight;
+    host.style.letterSpacing = cs.letterSpacing;
+    host.style.fontWeight = "600";
+  } catch (_) {}
+}
+
+function _statusBodyTextLength(textEl) {
+  if (!textEl) return 0;
+  try {
+    const clone = textEl.cloneNode(true);
+    clone
+      .querySelectorAll('[data-fbs-ui], .fbs-wrap-inline, .fbs-btn-inline')
+      .forEach((node) => node.remove());
+    return (clone.innerText || clone.textContent || "").replace(/\s+/g, " ").trim().length;
+  } catch (_) {
+    return (textEl.innerText || textEl.textContent || "").replace(/\s+/g, " ").trim().length;
+  }
+}
+
 // Batch operations state
 const batchOperations = {
   active: false,
@@ -524,6 +596,10 @@ function scanSponsoredFast(rootEl) {
         : null;
 
   for (const article of _feedCandidates(root)) {
+    if (_isFacebookGroupSuggestion(article)) {
+      _removeGroupSuggestionControls(article);
+      continue;
+    }
     refreshReusedFeedUnit(article);
     if (filteredPosts.has(article)) continue;
     if (article.dataset.fbsSponsoredHidden === "1") continue;
@@ -568,6 +644,10 @@ function scanEngagementPosts() {
     document.body;
 
   for (const article of _feedCandidates(root)) {
+    if (_isFacebookGroupSuggestion(article)) {
+      _removeGroupSuggestionControls(article);
+      continue;
+    }
     refreshReusedFeedUnit(article);
     if (filteredPosts.has(article)) continue;
     if (_isNestedFeedUnit(article)) continue;
@@ -662,6 +742,14 @@ function findNewSeeMoreElements() {
       'div[role="button"], span[role="button"], span[dir="auto"], div[dir="auto"]',
     );
     for (const el of els) {
+      if (_isFacebookGroupSuggestion(el)) {
+        el.dataset.fbsScanned = "1";
+        continue;
+      }
+      if (SITE === "facebook" && !_findFacebookPostBodyFrom(el)) {
+        el.dataset.fbsScanned = "1";
+        continue;
+      }
       if (el.dataset.fbsScanned) {
         const textContainer = findTextContainer(el);
         const target = textContainer && findInjectTarget(textContainer);
@@ -2008,17 +2096,7 @@ function createInlineBtn() {
   d.setAttribute("data-fbs-ui", "v3");
   d.style.cssText =
     "cursor:pointer;font-size:inherit;font-family:inherit;background:none;border:none;padding:0;margin:0;display:inline;line-height:inherit;vertical-align:baseline;height:auto;width:auto;max-height:none;writing-mode:horizontal-tb;";
-  d.innerHTML =
-    ' · <span title="Tóm tắt nội dung" style="cursor:pointer;display:inline-flex;align-items:center;gap:3px;vertical-align:baseline;color:#A1A1AA;font-weight:600;font-size:0.92em;background:rgba(161,161,170,0.13);padding:0px 6px 1px;border-radius:8px;transition:background 0.15s"><img src="' +
-    ICON_BASE64 +
-    '" style="width:11px;height:11px;vertical-align:-1px;flex-shrink:0">Tóm tắt</span>';
-  const pill = d.querySelector("span");
-  d.addEventListener("mouseenter", () => {
-    pill.style.background = "rgba(161,161,170,0.28)";
-  });
-  d.addEventListener("mouseleave", () => {
-    pill.style.background = "rgba(161,161,170,0.13)";
-  });
+  d.innerHTML = '<span title="Tóm tắt nội dung">Tóm tắt</span>';
   return d;
 }
 
@@ -2699,7 +2777,23 @@ function inject(target, seeMoreClickable, textContainer, seeMoreOriginal) {
       btnNode.firstChild.textContent = "";
     }
     wrap.appendChild(btnNode);
-    if (SITE === "x" && seeMoreClickable) {
+    if (SITE === "facebook") {
+      // Separator + action stay in one unbreakable unit after "Xem thêm".
+      const sep = document.createElement("span");
+      sep.className = "fbs-inline-sep";
+      sep.setAttribute("aria-hidden", "true");
+      sep.textContent = " · ";
+      wrap.insertBefore(sep, btnNode);
+      try {
+        const afterEl =
+          (seeMoreClickable && seeMoreClickable.parentElement && seeMoreClickable) ||
+          seeMoreOriginal;
+        _matchInlineBtnTypography(btnNode, afterEl);
+        afterEl.parentElement.insertBefore(wrap, afterEl.nextSibling);
+        inserted = true;
+      } catch (e) {}
+    }
+    if (!inserted && SITE === "x" && seeMoreClickable) {
       try {
         // X renders Show more as a block-level role=button. Inserting after
         // that block forces a new line; appending to the control keeps both
@@ -2824,7 +2918,10 @@ function findCollapseBtn(container) {
 }
 
 function processSeeMore(sm) {
-  const textContainer = findTextContainer(sm);
+  if (_isFacebookGroupSuggestion(sm)) return;
+  const postBody = _findFacebookPostBodyFrom(sm);
+  if (SITE === "facebook" && !postBody) return;
+  const textContainer = postBody || findTextContainer(sm);
   if (!textContainer) return;
   if ((textContainer.innerText || "").trim().length < MIN_LEN / 2) return;
   const target = findInjectTarget(textContainer);
@@ -3066,6 +3163,9 @@ function _getTopLevelFeedPosts(root) {
     // Skip tiny / non-post shells (image-only tiles often < 120px tall without text)
     const text = (el.innerText || "").replace(/\s+/g, " ").trim();
     if (text.length < MIN_LEN) continue;
+    // An eligible Facebook post must expose an actual post-body node. This
+    // excludes carousels, suggested groups, and every other generic widget.
+    if (SITE === "facebook" && !_findFacebookStatusText(el)) continue;
     // Skip comment-only blocks: many short lines of names without body
     if (el.querySelector('form[role="presentation"], div[aria-label*="Viết bình luận"], div[aria-label*="Write a comment"]')
         && text.length < MIN_LEN * 1.5
@@ -3098,6 +3198,10 @@ function _purgeBrokenChips(scope) {
  * Host is isolated so FB flex/grid cannot stretch the button with the image.
  */
 function _mountPostChip(article) {
+  if (_isFacebookGroupSuggestion(article)) {
+    _removeGroupSuggestionControls(article);
+    return;
+  }
   if (SITE === "facebook") {
     const textEl = _findFacebookStatusText(article);
     if (textEl) _mountInlineStatusChip(article, textEl, MIN_LEN);
@@ -3186,6 +3290,9 @@ function _findFacebookStatusText(article) {
 
 function _mountInlineStatusChip(post, textEl, minimumLength = 50) {
   if (!post || !textEl || textEl.querySelector('.fbs-wrap-inline[data-fbs-ui="v3"]')) return;
+  // Gate on the real status body — feed-unit chrome (author/comments/UI) can
+  // make the outer article look long even when the status is one sentence.
+  if (_statusBodyTextLength(textEl) < minimumLength) return;
 
   // Remove a chip left by an older content-script instance in this live DOM.
   post.querySelectorAll(':scope > .fbs-chip-host').forEach((el) => {
@@ -3198,6 +3305,7 @@ function _mountInlineStatusChip(post, textEl, minimumLength = 50) {
   const btn = createInlineBtn();
   if (btn.firstChild?.nodeType === Node.TEXT_NODE) btn.firstChild.textContent = "";
   wrap.appendChild(btn);
+  _matchInlineBtnTypography(btn, textEl);
   textEl.appendChild(document.createTextNode(" "));
   textEl.appendChild(wrap);
 
@@ -3273,6 +3381,11 @@ function scanFBAllPosts() {
 
   const posts = _getTopLevelFeedPosts(root);
   for (const article of posts) {
+    if (_isFacebookGroupSuggestion(article)) {
+      _removeGroupSuggestionControls(article);
+      fbAllPostInjected.add(article);
+      continue;
+    }
     if (postObserver && !article.dataset.fbsObserved) {
       article.dataset.fbsObserved = "1";
       postObserver.observe(article);
@@ -3295,13 +3408,49 @@ function scanFBAllPosts() {
     }
 
     const textEl = _findFacebookStatusText(article);
-    if (textEl) _mountInlineStatusChip(article, textEl, MIN_LEN);
+    if (!textEl) {
+      fbAllPostInjected.add(article);
+      continue;
+    }
+
+    // Prefer sitting right after Facebook's "Xem thêm" when the post is truncated.
+    let seeMore = null;
+    for (const control of textEl.querySelectorAll('[role="button"], span[dir="auto"], div[dir="auto"]')) {
+      const label = (control.innerText || control.textContent || "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase();
+      if (!SEE_MORE.some((kw) => label === kw || label.startsWith(kw))) continue;
+      seeMore = control;
+      break;
+    }
+    if (seeMore) {
+      // Visible truncated body can be shorter than MIN_LEN; require half like processSeeMore.
+      if (_statusBodyTextLength(textEl) >= MIN_LEN / 2) {
+        inject(article, findClickable(seeMore), textEl, seeMore);
+      }
+    } else {
+      _mountInlineStatusChip(article, textEl, MIN_LEN);
+    }
     fbAllPostInjected.add(article);
   }
 }
 
 // === COMMENT THREAD SUMMARY (Feature 11) ===
 const commentBtnInjected = new WeakSet();
+function _isFacebookCommentActivityText(text) {
+  // content-dom-runtime.js loads first and owns the canonical matcher.
+  return typeof window.fbsIsCommentActivityText === "function"
+    ? window.fbsIsCommentActivityText(text)
+    : false;
+}
+
+function _visibleCommentEntries(article) {
+  return Array.from(article.querySelectorAll('article[role="article"]'))
+    .map((element) => ({ element, text: (element.innerText || "").trim() }))
+    .filter(({ text }) => text.length > 10 && !_isFacebookCommentActivityText(text));
+}
+
 function scanCommentSections() {
   if (SITE !== "facebook") return;
   const root = document.querySelector('div[role="main"]') || document.querySelector('div[id^="mount_0_0"]') || document.body;
@@ -3311,6 +3460,7 @@ function scanCommentSections() {
     ...root.querySelectorAll('[data-virtualized]'),
   ];
   for (const article of articles) {
+    if (_isFacebookGroupSuggestion(article)) continue;
     // Only top-level post containers — not nested in another post
     let depth = 0;
     let ancestor = article.parentElement;
@@ -3328,29 +3478,24 @@ function scanCommentSections() {
     const commentArticles = article.querySelectorAll('article[role="article"]');
     if (commentArticles.length < 2) continue; // need at least 2 visible comments
     // Collect comment text
-    const commentTexts = [];
-    for (const ca of commentArticles) {
-      const t = (ca.innerText || "").trim();
-      if (t.length > 10) commentTexts.push(t);
-    }
-    if (commentTexts.length < 2) continue;
+    const commentEntries = _visibleCommentEntries(article);
+    if (commentEntries.length < 2) continue;
     commentBtnInjected.add(article);
     const btn = document.createElement("button");
     btn.className = "fbs-comment-summary-btn";
-    btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg> Tóm tắt ' + commentTexts.length + ' bình luận';
+    btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg> Tóm tắt ' + commentEntries.length + ' bình luận';
     btn.title = "Tóm tắt toàn bộ thread bình luận";
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       e.preventDefault();
-      const currentComments = Array.from(article.querySelectorAll('article[role="article"]'))
-        .map(ca => (ca.innerText || "").trim()).filter(t => t.length > 10);
+      const currentComments = _visibleCommentEntries(article).map(({ text }) => text);
       if (currentComments.length === 0) return;
       const combined = "THREAD BÌNH LUẬN (" + currentComments.length + " comments):\n\n" +
         currentComments.map((t, i) => (i + 1) + ". " + t).join("\n\n");
       summarizeText(combined, "comment_summary", article);
     });
     // Insert before the first comment article
-    const firstComment = commentArticles[0];
+    const firstComment = commentEntries[0].element;
     firstComment.parentElement?.insertBefore(btn, firstComment);
   }
 }
