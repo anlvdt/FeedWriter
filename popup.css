@@ -169,16 +169,15 @@ html.light {
 html {
   width: 380px;
   height: 100%;
-  background: var(--bg) !important;
-  /* Paint the full Chrome popup viewport. Body and the app shell carry the
-     visual radius; clipping html itself exposes Chrome's black backdrop. */
+  /* Keep root transparent: a painted root background propagates to the whole
+     Chrome popup canvas and squares off the body's rounded corners. */
+  background: transparent !important;
   border-radius: 0;
   overflow: hidden;
   clip-path: none;
 }
 
 html.light {
-  background: #eef2f5 !important;
   color-scheme: light;
 }
 

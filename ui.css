@@ -180,11 +180,13 @@ article:hover > .fbs-chip-host .fbs-allpost-btn,
   white-space: nowrap !important;
 }
 
-/* Inline after "Xem thêm" — text link style, never absolute */
+/* Inline after "Xem thêm" — true inline so the action shares the exact
+   baseline/line box of "Xem thêm" (inline-block would create its own line
+   box and drift a few px when Facebook's line-height differs). */
 .fbs-wrap-inline[data-fbs-ui="v3"],
 .fbs-wrap.fbs-wrap-inline {
   position: relative !important;
-  display: inline-block !important;
+  display: inline !important;
   width: auto !important;
   height: auto !important;
   max-height: none !important;
@@ -203,7 +205,7 @@ article:hover > .fbs-chip-host .fbs-allpost-btn,
 
 .fbs-wrap-inline .fbs-btn-inline,
 .fbs-btn-inline[data-fbs-ui="v3"] {
-  display: inline-block !important;
+  display: inline !important;
   position: relative !important;
   width: auto !important;
   height: auto !important;
