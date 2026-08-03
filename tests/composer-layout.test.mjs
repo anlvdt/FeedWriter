@@ -56,12 +56,31 @@ describe("Feed scanning cost controls", () => {
     assert.match(content, /_isFbScrollBusy/);
     assert.match(content, /_markFbScrollBusy/);
     assert.match(content, /FB_SCROLL_IDLE_MS/);
+    assert.match(content, /FB_PENDING_POSTS_PER_FRAME = 2/);
+    assert.match(content, /FB_DISCOVERY_FALLBACK_MS = 8000/);
+    assert.match(content, /feedRootObserver\.observe\(root, \{ childList: true \}\)/);
+    assert.match(content, /pendingFeedRootAdditions/);
+    assert.match(content, /Queue only — Facebook may append cards while kinetic scrolling/);
     assert.match(content, /Queue only — never flush while scrolling/);
     assert.match(
       content,
       /Facebook: no subtree MutationObserver on the feed/,
     );
     assert.match(content, /if \(SITE !== "facebook"\) \{/);
+  });
+
+  it("keeps expensive feed discovery sparse and avoids cloning post bodies for the length gate", () => {
+    const facebookBoot = content.slice(
+      content.indexOf('// Boot: discover quickly'),
+      content.indexOf('scanTimer = setInterval'),
+    );
+    assert.match(facebookBoot, /\}, FB_DISCOVERY_FALLBACK_MS\);/);
+    assert.doesNotMatch(facebookBoot, /\}, 1500\);/);
+    assert.match(content, /textContent is\s*\n\s*\/\/ sufficient for the length gate/);
+    assert.doesNotMatch(
+      content,
+      /function _statusBodyTextLength\(textEl\)[\s\S]{0,600}cloneNode\(true\)/,
+    );
   });
 });
 

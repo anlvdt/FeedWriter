@@ -30,6 +30,10 @@ const FB_NON_PROFILE_ROUTES = new Set([
   "marketplace", "stories", "photo", "photos", "videos", "gaming", "friends",
   "messages", "notifications", "settings", "help", "search", "login", "recover",
 ]);
+let profileHomeCacheUrl = "";
+let profileHomeCacheValue = false;
+let profileHomeCacheAt = 0;
+const PROFILE_HOME_CACHE_MS = 8000;
 
 /**
  * Keep FeedWriter out of Facebook's personal-profile home pages. A bare
@@ -40,11 +44,29 @@ const FB_NON_PROFILE_ROUTES = new Set([
 function isFacebookPersonalProfileHome() {
   if (SITE !== "facebook") return false;
 
+  // This guard runs from several feed paths. Facebook's main container can be
+  // very large, so do not repeatedly search its tabs while the route is stable.
+  const currentUrl = location.href;
+  const now = Date.now();
+  if (
+    currentUrl === profileHomeCacheUrl &&
+    now - profileHomeCacheAt < PROFILE_HOME_CACHE_MS
+  ) {
+    return profileHomeCacheValue;
+  }
+
+  const remember = (value) => {
+    profileHomeCacheUrl = currentUrl;
+    profileHomeCacheValue = value;
+    profileHomeCacheAt = now;
+    return value;
+  };
+
   let url;
   try {
     url = new URL(location.href);
   } catch (_) {
-    return false;
+    return remember(false);
   }
 
   const path = url.pathname.replace(/\/+$/, "") || "/";
@@ -54,20 +76,20 @@ function isFacebookPersonalProfileHome() {
     !url.searchParams.get("story_fbid");
   const isPeopleProfile = /^\/people\/[^/]+\/\d+$/i.test(path);
   const isUserProfile = /^\/user\/[^/]+$/i.test(path);
-  if (isNumericProfile || isPeopleProfile || isUserProfile) return true;
+  if (isNumericProfile || isPeopleProfile || isUserProfile) return remember(true);
 
   const match = path.match(/^\/([^/]+)$/);
-  if (!match || FB_NON_PROFILE_ROUTES.has(match[1].toLowerCase())) return false;
+  if (!match || FB_NON_PROFILE_ROUTES.has(match[1].toLowerCase())) return remember(false);
 
   const main = document.querySelector('[role="main"]');
-  if (!main) return false;
-  return Array.from(
+  if (!main) return remember(false);
+  return remember(Array.from(
     main.querySelectorAll(
       '[role="tab"], a[href*="/friends"], a[href*="sk=friends"], ' +
         '[aria-label^="Chỉnh sửa trang cá nhân"], [aria-label^="Edit profile"]',
     ),
   ).some((tab) => {
-    const label = (tab.innerText || tab.textContent || "").replace(/\s+/g, " ").trim();
+    const label = (tab.textContent || "").replace(/\s+/g, " ").trim();
     const href = tab.getAttribute("href") || "";
     const aria = tab.getAttribute("aria-label") || "";
     return (
@@ -75,7 +97,7 @@ function isFacebookPersonalProfileHome() {
       /(?:\/friends(?:\/|$)|[?&]sk=friends\b)/i.test(href) ||
       /^(chỉnh sửa trang cá nhân|edit profile)\b/i.test(aria)
     );
-  });
+  }));
 }
 
 function removePersonalProfileControls() {
@@ -153,15 +175,10 @@ function _matchInlineBtnTypography(btn, refEl) {
 
 function _statusBodyTextLength(textEl) {
   if (!textEl) return 0;
-  try {
-    const clone = textEl.cloneNode(true);
-    clone
-      .querySelectorAll('[data-fbs-ui], .fbs-wrap-inline, .fbs-btn-inline')
-      .forEach((node) => node.remove());
-    return (clone.innerText || clone.textContent || "").replace(/\s+/g, " ").trim().length;
-  } catch (_) {
-    return (textEl.innerText || textEl.textContent || "").replace(/\s+/g, " ").trim().length;
-  }
+  // The caller rejects elements that already contain our UI. textContent is
+  // sufficient for the length gate and avoids cloning a large Facebook post
+  // plus forcing layout through innerText on every newly visible card.
+  return (textEl.textContent || "").replace(/\s+/g, " ").trim().length;
 }
 
 // Batch operations state
@@ -188,6 +205,10 @@ function cleanup() {
   if (typeof discoverTimer !== "undefined" && discoverTimer) {
     clearInterval(discoverTimer);
     discoverTimer = null;
+  }
+  if (typeof pendingFeedRootDiscoveryRaf !== "undefined" && pendingFeedRootDiscoveryRaf) {
+    cancelAnimationFrame(pendingFeedRootDiscoveryRaf);
+    pendingFeedRootDiscoveryRaf = 0;
   }
   if (typeof sponsoredCatchupTimer !== "undefined" && sponsoredCatchupTimer) {
     clearInterval(sponsoredCatchupTimer);
@@ -906,8 +927,9 @@ let _pendingFlushIdle = 0;
 // Queue work only — never probe DOM / inject UI until scroll is idle.
 let _fbScrollIdle = true;
 let _fbScrollIdleTimer = 0;
-// Short settle — long idle made "Tóm tắt" feel delayed after stopping.
-const FB_SCROLL_IDLE_MS = 90;
+// Leave enough room for kinetic-scroll work to settle before touching a post.
+const FB_SCROLL_IDLE_MS = 180;
+const FB_PENDING_POSTS_PER_FRAME = 2;
 
 function _isFbScrollBusy() {
   return SITE === "facebook" && !_fbScrollIdle;
@@ -929,9 +951,14 @@ function _markFbScrollBusy() {
     } catch (_) {}
     _pendingFlushIdle = 0;
   }
+  if (typeof pendingFeedRootDiscoveryRaf !== "undefined" && pendingFeedRootDiscoveryRaf) {
+    cancelAnimationFrame(pendingFeedRootDiscoveryRaf);
+    pendingFeedRootDiscoveryRaf = 0;
+  }
   _fbScrollIdleTimer = setTimeout(() => {
     _fbScrollIdle = true;
     _fbScrollIdleTimer = 0;
+    _schedulePendingFeedRootDiscovery();
     _schedulePendingFlush();
   }, FB_SCROLL_IDLE_MS);
 }
@@ -952,7 +979,9 @@ function _flushPendingFeedPosts() {
   for (const node of _pendingFeedPosts) {
     batch.push(node);
     _pendingFeedPosts.delete(node);
-    if (batch.length >= 6) break;
+    // Each card can involve several deep Facebook selectors. Keep one flush
+    // below a frame budget; the next rAF continues the queue.
+    if (batch.length >= FB_PENDING_POSTS_PER_FRAME) break;
   }
   // Tóm tắt first (user-visible); sponsored probe second (heavier).
   try {
@@ -3486,6 +3515,12 @@ listeners.push({ element: document, event: "mousedown", handler: mousedownHandle
 // on the feed (FB mutates constantly while scrolling and freezes the tab).
 const visiblePosts = new Set();
 let postObserver = null;
+let feedRootObserver = null;
+let observedFeedRoot = null;
+let lastFallbackFeedDiscoveryAt = 0;
+const FB_DISCOVERY_FALLBACK_MS = 8000;
+const pendingFeedRootAdditions = new Set();
+let pendingFeedRootDiscoveryRaf = 0;
 if (typeof IntersectionObserver !== "undefined") {
   postObserver = new IntersectionObserver(
     (entries) => {
@@ -3522,8 +3557,91 @@ if (SITE === "facebook") {
   });
 }
 
-/** Register new top-level feed units with the viewport observer (cheap poll). */
-function _discoverFeedUnitsForObserver() {
+function _observeFeedUnit(node) {
+  if (!node || node.nodeType !== 1 || !postObserver) return false;
+  if (node.dataset.fbsObserved === "1" || _isNestedFeedUnit(node)) return false;
+  node.dataset.fbsObserved = "1";
+  try {
+    postObserver.observe(node);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * Register feed units from a newly-added top-level feed child. This is kept
+ * deliberately shallow: Facebook mutates post internals continuously, so a
+ * subtree observer would bring back scroll jank.
+ */
+function _observeFeedUnitsFromAddedNode(node) {
+  if (!node || node.nodeType !== 1 || !postObserver) return;
+  const selector =
+    'div[data-pagelet^="FeedUnit"], [data-virtualized], article[role="article"]';
+  const candidates = [];
+  if (node.matches?.(selector)) candidates.push(node);
+  if (node.querySelectorAll) {
+    for (const candidate of node.querySelectorAll(selector)) {
+      candidates.push(candidate);
+      if (candidates.length >= 12) break;
+    }
+  }
+  for (const candidate of candidates) {
+    _observeFeedUnit(candidate);
+  }
+}
+
+function _flushPendingFeedRootDiscovery() {
+  pendingFeedRootDiscoveryRaf = 0;
+  if (document.hidden || _isFbScrollBusy()) return;
+  let inspected = 0;
+  for (const node of pendingFeedRootAdditions) {
+    pendingFeedRootAdditions.delete(node);
+    _observeFeedUnitsFromAddedNode(node);
+    if (++inspected >= 8) break;
+  }
+  if (pendingFeedRootAdditions.size) _schedulePendingFeedRootDiscovery();
+}
+
+function _schedulePendingFeedRootDiscovery() {
+  if (document.hidden || _isFbScrollBusy()) return;
+  if (pendingFeedRootDiscoveryRaf || !pendingFeedRootAdditions.size) return;
+  pendingFeedRootDiscoveryRaf = requestAnimationFrame(
+    _flushPendingFeedRootDiscovery,
+  );
+}
+
+/** Observe only direct feed children; never Facebook's noisy post subtree. */
+function _ensureFeedRootObserver(root) {
+  if (!root || root === observedFeedRoot) return;
+  if (!feedRootObserver) {
+    feedRootObserver = new MutationObserver((mutations) => {
+      if (document.hidden) return;
+      let inspected = 0;
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          if (node.nodeType === 1) pendingFeedRootAdditions.add(node);
+          if (++inspected >= 8) break;
+        }
+        if (inspected >= 8) break;
+      }
+      // Queue only — Facebook may append cards while kinetic scrolling.
+      _schedulePendingFeedRootDiscovery();
+    });
+    observers.push(feedRootObserver);
+  } else {
+    feedRootObserver.disconnect();
+  }
+  observedFeedRoot = root;
+  // Facebook: no subtree MutationObserver on the feed — direct children only.
+  feedRootObserver.observe(root, { childList: true });
+}
+
+/**
+ * Fallback discovery for an initial/moved feed root. Normal additions use the
+ * shallow observer above, so this full selector walk is intentionally rare.
+ */
+function _discoverFeedUnitsForObserver({ force = false } = {}) {
   if (SITE !== "facebook" || document.hidden || !postObserver) return;
   if (_isFbScrollBusy()) return;
   if (isFacebookPersonalProfileHome()) return;
@@ -3531,31 +3649,27 @@ function _discoverFeedUnitsForObserver() {
     document.querySelector('div[role="feed"]') ||
     document.querySelector('div[role="main"]');
   if (!root) return;
+  _ensureFeedRootObserver(root);
+
+  const now = Date.now();
+  if (!force && now - lastFallbackFeedDiscoveryAt < FB_DISCOVERY_FALLBACK_MS) {
+    return;
+  }
+  lastFallbackFeedDiscoveryAt = now;
+
   // FeedUnit pagelets only — bare [data-virtualized] matches too much chrome.
   const nodes = root.querySelectorAll('div[data-pagelet^="FeedUnit"]');
   let registered = 0;
   for (const node of nodes) {
     if (registered >= 16) break;
-    if (node.dataset.fbsObserved === "1") continue;
-    if (_isNestedFeedUnit(node)) continue;
-    node.dataset.fbsObserved = "1";
-    try {
-      postObserver.observe(node);
-      registered++;
-    } catch (_) {}
+    if (_observeFeedUnit(node)) registered++;
   }
   if (registered === 0) {
     for (const node of root.querySelectorAll(
       '[data-virtualized], article[role="article"]',
     )) {
       if (registered >= 12) break;
-      if (node.dataset.fbsObserved === "1") continue;
-      if (_isNestedFeedUnit(node)) continue;
-      node.dataset.fbsObserved = "1";
-      try {
-        postObserver.observe(node);
-        registered++;
-      } catch (_) {}
+      if (_observeFeedUnit(node)) registered++;
     }
   }
 }
@@ -4348,12 +4462,14 @@ if (SITE === "facebook") {
   // Fast path — do not wait for requestIdleCallback (felt like ~1s delay).
   setTimeout(bootDiscover, 80);
   requestAnimationFrame(bootDiscover);
-  // Discover new FeedUnits while idle; skip while scrolling.
+  // One retry covers Facebook's late initial mount. After that, direct feed
+  // child observation handles new cards and this is only a sparse fallback.
+  setTimeout(bootDiscover, 900);
   discoverTimer = setInterval(() => {
     if (document.hidden || _isFbScrollBusy()) return;
     _discoverFeedUnitsForObserver();
     _schedulePendingFlush();
-  }, 1500);
+  }, FB_DISCOVERY_FALLBACK_MS);
 } else {
   setTimeout(() => {
     try {
