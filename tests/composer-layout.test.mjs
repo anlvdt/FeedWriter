@@ -45,6 +45,9 @@ describe("Feed scanning cost controls", () => {
     assert.match(content, /scanObserver\.observe\(feedObserverRoot/);
     assert.match(content, /const feedTargetSelector\s*=/);
     assert.doesNotMatch(content, /scanObserver\.observe\(document\.documentElement/);
+    assert.match(content, /function scanSummaryControlsFast\(\)/);
+    assert.match(content, /SCAN_DEBOUNCE_MS = 120/);
+    assert.match(content, /hasSeeMore/);
   });
 });
 

@@ -3905,10 +3905,21 @@ let scanDebounceTimer = null;
 let scanScheduled = false;
 let sponsoredDebounceTimer = null;
 let sponsoredScheduled = false;
-const SCAN_DEBOUNCE_MS = 400;
+// Keep short: new feed units already wait one rAF for the fast inject path;
+// this only batches follow-up full scans (comments, heal, etc.).
+const SCAN_DEBOUNCE_MS = 120;
 const SPONSORED_DEBOUNCE_MS = 32; // ~1 frame — hide ads ASAP
 const SCAN_SAFETY_INTERVAL_MS = 60_000;
 let _scanSafetyCount = 0;
+
+/** Lightweight inject used on the first paint of new feed units. */
+function scanSummaryControlsFast() {
+  if (!isContextValid() || isBlocked || document.hidden) return;
+  if (isFacebookPersonalProfileHome()) return;
+  findNewSeeMoreElements().forEach(processSeeMore);
+  if (SITE === "facebook") scanFBAllPosts();
+  if (SITE === "x") scanXPosts();
+}
 
 function scheduleScan() {
   if (scanScheduled || document.hidden) return;
@@ -3972,6 +3983,36 @@ listeners.push({ element: document, event: "visibilitychange", handler: resumeSc
 listeners.push({ element: window, event: "focus", handler: resumeScan });
 listeners.push({ element: window, event: "pageshow", handler: resumeScan });
 
+function _nodeLooksLikeSeeMoreControl(node) {
+  if (!node || node.nodeType !== 1) return false;
+  const matchesLabel = (el) => {
+    const t = (el.innerText || el.textContent || "")
+      .replace(/\u00a0/g, " ")
+      .trim()
+      .toLowerCase();
+    if (t.length > 30 || t.length < 4) return false;
+    const cleanT = t.replace(/\.+/g, "").replace(/\s+/g, " ").trim();
+    return SEE_MORE.some((kw) => cleanT === kw || cleanT.startsWith(kw) || t === kw);
+  };
+  if (
+    node.matches?.(
+      'div[role="button"], span[role="button"], span[dir="auto"], div[dir="auto"]',
+    ) &&
+    matchesLabel(node)
+  ) {
+    return true;
+  }
+  const els = node.querySelectorAll?.(
+    'div[role="button"], span[role="button"], span[dir="auto"], div[dir="auto"]',
+  );
+  if (!els || !els.length) return false;
+  const limit = Math.min(els.length, 16);
+  for (let i = 0; i < limit; i++) {
+    if (matchesLabel(els[i])) return true;
+  }
+  return false;
+}
+
 let fastScanPending = false;
 const feedObserverRoot =
   document.querySelector('div[role="main"]') || document.body || document.documentElement;
@@ -3979,6 +4020,7 @@ const feedTargetSelector =
   'article[role="article"], [data-virtualized], [data-pagelet^="FeedUnit"]';
 const scanObserver = new MutationObserver((mutations) => {
   let hasNewPost = false;
+  let hasSeeMore = false;
   for (const m of mutations) {
     for (const node of m.addedNodes) {
       if (node.nodeType !== 1) continue;
@@ -3988,8 +4030,11 @@ const scanObserver = new MutationObserver((mutations) => {
       ) {
         hasNewPost = true;
       }
+      if (!hasSeeMore && _nodeLooksLikeSeeMoreControl(node)) {
+        hasSeeMore = true;
+      }
     }
-    if (hasNewPost) break;
+    if (hasNewPost && hasSeeMore) break;
   }
 
   if (hasNewPost) {
@@ -3999,12 +4044,16 @@ const scanObserver = new MutationObserver((mutations) => {
       requestAnimationFrame(() => {
         fastScanPending = false;
         scanSponsoredFast();
+        // Inject "Tóm tắt" on the first frame — do not wait for SCAN_DEBOUNCE_MS.
+        try {
+          scanSummaryControlsFast();
+        } catch (_) {}
       });
     }
   }
-  // Facebook mutates many unrelated nodes (presence, reactions, chat). Only
-  // rescan when a new feed unit was actually introduced inside the feed root.
-  if (hasNewPost) scheduleScan();
+  // Rescan when Facebook hydrates "Xem thêm" inside an already-mounted post,
+  // or when a whole new feed unit arrives.
+  if (hasNewPost || hasSeeMore) scheduleScan();
 });
 scanObserver.observe(feedObserverRoot, {
   childList: true,

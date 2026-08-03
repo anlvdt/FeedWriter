@@ -191,10 +191,10 @@ body {
   color-scheme: var(--color-scheme);
   -webkit-font-smoothing: antialiased;
   line-height: 1.45;
-  background:
-    radial-gradient(120% 80% at 0% 0%, rgba(15, 118, 110, 0.06), transparent 55%),
-    radial-gradient(90% 60% at 100% 0%, rgba(61, 74, 87, 0.05), transparent 50%),
-    var(--bg) !important;
+  /* Must stay transparent: any body background propagates to the Chrome
+     popup canvas and fills the corners as a square. The rounded paper
+     surface lives on #main-view below. */
+  background: transparent !important;
   border-radius: var(--radius-popup, 20px);
   overflow: hidden;
   clip-path: inset(0 round var(--radius-popup, 20px));
@@ -205,13 +205,18 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 999px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-hover); }
 
-/* Inner shell — same radius, scrolls inside the clip */
+/* Inner shell — same radius, scrolls inside the clip. This is the element
+   that actually paints the rounded paper surface (html/body stay transparent
+   so the popup canvas does not square off the corners). */
 #main-view,
 #wizard-view,
 .popup,
 .popup-v2,
 .wizard-container {
-  background: var(--bg) !important;
+  background:
+    radial-gradient(120% 80% at 0% 0%, rgba(15, 118, 110, 0.06), transparent 55%),
+    radial-gradient(90% 60% at 100% 0%, rgba(61, 74, 87, 0.05), transparent 50%),
+    var(--bg) !important;
   border-radius: var(--radius-popup, 20px) !important;
   overflow: hidden;
   isolation: isolate;
