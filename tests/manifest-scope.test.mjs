@@ -34,7 +34,7 @@ describe("manifest scope", () => {
 
 describe("popup controls", () => {
   it("uses native buttons for accordion headers", () => {
-    assert.equal((popup.match(/<button class="accordion-header"/g) || []).length, 4);
+    assert.equal((popup.match(/<button class="accordion-header"/g) || []).length, 2);
     assert.ok(!popup.includes('<div class="accordion-header"'));
   });
 

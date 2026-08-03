@@ -5,7 +5,7 @@
 
 ## Overview
 
-Violet Issue is a precision-engineered design system for dense, keyboard-driven tools on deep dark surfaces. FeedWriter applies the same **dark ladder, compact heights (28–36px), Inter type, layering-over-shadows, and violet accent** for:
+Violet Issue is a precision-engineered design system for dense, keyboard-driven tools on deep dark surfaces. FeedWriter applies the same **dark ladder, compact heights (28–36px), system UI type, layering-over-shadows, and violet accent** for:
 
 - Extension popup (~380px)
 - Facebook overlay panel
@@ -39,7 +39,7 @@ Violet Issue is a precision-engineered design system for dense, keyboard-driven 
 
 ## Typography
 
-- UI: **Inter** 400 / 500 / 600
+- UI: **system UI stack** 400 / 500 / 600 (Inter optional if available)
 - Mono: **ui-monospace / JetBrains Mono** for keys, shortcuts, IDs
 - Scale (popup / dense UI): 11 · 12 · 13 · 14 · 15–16 panel title  
 - Line-height body ≥ **1.45** (Vietnamese diacritics)
@@ -67,7 +67,7 @@ Base **4px**: 2, 4, 8, 12, 16, 20, 24, 32…
 
 | Component | Spec |
 |-----------|------|
-| **Primary button** | 32px · violet `#5E6AD2` · radius 6 · weight 500–600 · hover `#4E5BBF` |
+| **Primary button** | 32px · violet `#8B93F7` · radius 6 · weight 500–600 · hover `#9AA1FF` |
 | **Compact / secondary** | **28px** · transparent + border |
 | **Inputs / selects** | **32px** · radius 6 · focus ring soft violet |
 | **History list** | Seamless list · row **min 36px** · title 14/500 clamp 1 · meta 12px |
@@ -78,7 +78,7 @@ Base **4px**: 2, 4, 8, 12, 16, 20, 24, 32…
 | **Panel primary (Copy/Đăng)** | 32px violet |
 | **Floating toolbar btn** | 28px |
 | **Overlay panel** | bg L0 · head/footer L1 |
-| **Tooltip** | L3 nest `#252536` |
+| **Tooltip** | L3 nest `#35354A` |
 
 ## Do's and Don'ts
 
@@ -94,10 +94,10 @@ Base **4px**: 2, 4, 8, 12, 16, 20, 24, 32…
 |------|------|
 | `DESIGN.md` | This document (agent + human source of truth) |
 | `vendor/violet-issue-DESIGN.md` | Upstream Violet Issue (verbatim) |
-| `popup.css` | Extension popup tokens |
-| `ui.css` | Overlay / FB panel tokens (`--fw-*`) |
+| `popup.css` | Extension popup — aliases `--bg` → `--fw-*` |
+| `ui.css` | Overlay / FB panel — canonical `--fw-*` |
 | `translate.css` | Translate tooltip |
-| `content.css` | Legacy + shared FB surface tokens (`--fbs-*`) |
+| `content.css` | FB helpers — `--fbs-*` aliases to `--fw-*` |
 | `UI_SYSTEM_V3.md` | Surface map + verify checklist |
 
 ## Credit

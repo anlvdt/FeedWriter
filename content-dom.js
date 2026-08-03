@@ -454,23 +454,68 @@ function _permalinkFamilyRank(href) {
 
 function findFeedWrapper(el) {
   let cur = el;
+  let found = null;
   for (let i = 0; i < 30; i++) {
     const parent = cur.parentElement;
-    if (!parent || parent === document.body) return null;
+    if (!parent || parent === document.body) break;
     const role = parent.getAttribute("role") || "";
-    if (CLUTTER_STOP_ROLES.has(role)) return null; // sidebar/nav — wrong area
-    // data-virtualized = Facebook's virtual-scroll individual post wrapper
-    if (parent.hasAttribute("data-virtualized")) return parent;
-    // div[role="feed"] → cur is a single feed item
-    if (role === "feed") return cur;
-    // Legacy: article[role="article"] whose parent is feed/article
+    if (CLUTTER_STOP_ROLES.has(role)) break; // sidebar/nav — wrong area
+    // Prefer the outermost virtualized/article unit so we never hide only the
+    // status/media slice while author header + engagement bar stay visible.
+    if (parent.hasAttribute("data-virtualized")) found = parent;
+    if (role === "feed") {
+      found = found || cur;
+      break;
+    }
     if (role === "article") {
       const pRole = (parent.parentElement?.getAttribute("role")) || "";
-      if (pRole === "feed" || pRole === "article") return parent;
+      if (pRole === "feed" || pRole === "article") found = parent;
     }
     cur = parent;
   }
-  return null; // could not find a reliable individual post boundary — don't hide
+  if (!found) return null;
+  return _expandToFullPostCard(found) || found;
+}
+
+/** True when a node has status/media but not author chrome or engagement bar. */
+function _isContentOnlyPostSlice(el) {
+  if (!el || !el.querySelector) return false;
+  const hasMessage = !!el.querySelector(
+    '[data-ad-rendering-role="story_message"], [data-ad-preview="message"], [data-ad-comet-preview="message"], [data-testid="post_message"]',
+  );
+  if (!hasMessage) return false;
+  const hasProfile = !!el.querySelector('[data-ad-rendering-role="profile_name"]');
+  const hasEngage = !!el.querySelector(
+    '[data-ad-rendering-role="like_button"], [data-ad-rendering-role="comment_button"], [aria-label="Thích"], [aria-label="Like"], [aria-label="Viết bình luận"], [aria-label="Write a comment"]',
+  );
+  return !hasProfile && !hasEngage;
+}
+
+/**
+ * Climb to the full feed card (header + body + actions) when given a
+ * content-only slice. Stops before feed/main/layout columns.
+ */
+function _expandToFullPostCard(el) {
+  let cur = el;
+  for (let i = 0; i < 8 && cur; i++) {
+    if (!_isContentOnlyPostSlice(cur)) return cur;
+    const par = cur.parentElement;
+    if (!par || (typeof _isFbLayoutColumn === "function" && _isFbLayoutColumn(par))) {
+      return cur;
+    }
+    const role = par.getAttribute("role") || "";
+    if (role === "feed" || role === "main") return cur;
+    // Parent must still look like the same post (owns author or actions).
+    if (
+      !par.querySelector?.(
+        '[data-ad-rendering-role="profile_name"], [data-ad-rendering-role="like_button"], [aria-label="Thích"], [aria-label="Like"]',
+      )
+    ) {
+      return cur;
+    }
+    cur = par;
+  }
+  return cur;
 }
 
 function _isFacebookGroupSuggestionContainer(element) {
@@ -2057,9 +2102,13 @@ function _isFbLayoutColumn(el) {
 function _hideAdCardOnly(el) {
   if (!el || el.dataset.fbsHidden === "1") return false;
   if (_isFbLayoutColumn(el)) return false;
-  el.dataset.fbsHidden = "1";
+  const target = _expandToFullPostCard(el) || el;
+  // Never blank status/media while leaving the author row + action bar.
+  if (_isContentOnlyPostSlice(target)) return false;
+  if (_isFbLayoutColumn(target)) return false;
+  target.dataset.fbsHidden = "1";
   // Collapse content but keep flow if needed — display none on card only
-  el.style.setProperty("display", "none", "important");
+  target.style.setProperty("display", "none", "important");
   return true;
 }
 
@@ -3385,4 +3434,6 @@ window.fbsCleanRelatedUrl = _cleanRelatedUrl;
 window.fbsClassifyRelatedUrl = _classifyRelatedUrl;
 window.fbsIsCommentActivityText = _fbIsCommentActivityText;
 window.fbsIsGroupSuggestion = _isFacebookGroupSuggestionContainer;
+window.fbsIsContentOnlyPostSlice = _isContentOnlyPostSlice;
+window.fbsExpandToFullPostCard = _expandToFullPostCard;
 window.fbsDisplayModes = DISPLAY_MODES;

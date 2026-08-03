@@ -204,9 +204,11 @@ button.fbs-btn:focus-visible,
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
-/* Responsive: Mobile devices (< 768px) */
+/* Responsive: Mobile devices (< 768px)
+ * Sheet motion for v3 panels is owned by ui.css — keep legacy rules from
+ * fighting translateY on [data-fbs-ui="v3"]. */
 @media (max-width: 767px) {
-  .fbs-panel {
+  .fbs-panel:not([data-fbs-ui="v3"]):not(.fbs-ui-v3):not(.fbs-ui-v2) {
     width: 100vw;
     max-width: 100vw;
     height: auto;
@@ -225,14 +227,14 @@ button.fbs-btn:focus-visible,
     display: none;
   }
 
-  .fbs-panel.fbs-visible {
+  .fbs-panel:not([data-fbs-ui="v3"]):not(.fbs-ui-v3):not(.fbs-ui-v2).fbs-visible {
     display: flex;
     transform: translateY(0);
     animation: fbsMobileSlideUp 0.35s cubic-bezier(0.32, 0.94, 0.6, 1);
   }
 
-  /* Bottom drawer drag handle indicator */
-  .fbs-panel::before {
+  /* Bottom drawer drag handle indicator (legacy panels only) */
+  .fbs-panel:not([data-fbs-ui="v3"]):not(.fbs-ui-v3):not(.fbs-ui-v2)::before {
     content: '';
     position: absolute;
     top: 8px;
@@ -1285,7 +1287,7 @@ button.fbs-btn:focus-visible,
   transform: translateX(-50%);
   border-width: 6px 6px 0;
   border-style: solid;
-  border-color: #1c1e21 transparent transparent transparent;
+  border-color: var(--fw-bg, #16161d) transparent transparent transparent;
   display: block;
   width: 0;
 }
@@ -1295,7 +1297,7 @@ button.fbs-btn:focus-visible,
   bottom: auto;
   top: -6px;
   border-width: 0 6px 6px;
-  border-color: transparent transparent #1c1e21 transparent;
+  border-color: transparent transparent var(--fw-bg, #16161d) transparent;
 }
 
 .fbs-floating-btn {
@@ -2335,79 +2337,32 @@ button.fbs-allpost-btn:hover,
   object-fit: contain !important;
 }
 
-/* ===== COMMENT THREAD SUMMARY (Feature 11) ===== */
+/* ===== COMMENT THREAD SUMMARY (Feature 11) — v3 tokens via ui.css ===== */
 .fbs-comment-summary-btn {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   padding: 5px 12px;
   margin: 6px 0 2px;
-  border-radius: 20px;
-  border: 1px solid rgba(161,161,170,0.3);
-  background: rgba(161,161,170,0.07);
-  color: #A8C0B4;
+  border-radius: var(--fbs-radius-sm, 6px);
+  border: 1px solid var(--fbs-border, #4a4a60);
+  background: var(--fbs-surface, #252532);
+  color: var(--fbs-text-2, #b4b8c4);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  transition: background 0.14s, border-color 0.14s, color 0.14s;
+  font-family: var(--fbs-font, ui-sans-serif, system-ui, sans-serif);
 }
 .fbs-comment-summary-btn:hover {
-  background: rgba(161,161,170,0.16);
-  border-color: #A8C0B4;
+  background: var(--fbs-surface-2, #303042);
+  border-color: var(--fbs-border-strong, #6a6a84);
+  color: var(--fbs-text, #f5f5f7);
 }
 
-/* ===== BATCH QUEUE (Feature 12) ===== */
-.fbs-batch-bar {
-  position: fixed;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(20,10,40,0.95);
-  border: 1px solid rgba(63,63,70,0.45);
-  border-radius: 28px;
-  padding: 10px 20px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  z-index: 2147483640;
-  color: #e0c9ff;
-  font-size: 13px;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-  backdrop-filter: blur(8px);
-  min-width: 260px;
-  justify-content: center;
-  display: none;
-}
-.fbs-batch-bar.fbs-batch-visible {
-  display: flex;
-}
-.fbs-batch-count {
-  font-weight: 700;
-  color: #A8C0B4;
-}
-.fbs-batch-run-btn {
-  padding: 5px 16px;
-  border-radius: 20px;
-  border: none;
-  background: linear-gradient(135deg, #8B93F7, #6B72E8);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: opacity 0.15s;
-}
-.fbs-batch-run-btn:hover { opacity: 0.85; }
-.fbs-batch-cancel-btn {
-  background: transparent;
-  border: none;
-  color: #888;
-  cursor: pointer;
-  font-size: 18px;
-  line-height: 1;
-  padding: 0 2px;
-}
+/* ===== BATCH QUEUE (Feature 12) =====
+ * Floating .fbs-batch-bar chrome is owned by ui.css (v3). Keep only
+ * Facebook-DOM helpers (checkboxes) here. */
 .fbs-batch-checkbox {
   position: absolute;
   top: 10px;
@@ -2415,10 +2370,10 @@ button.fbs-allpost-btn:hover,
   width: 18px;
   height: 18px;
   cursor: pointer;
-  opacity: 0;
+  opacity: 0.7;
   transition: opacity 0.15s;
   z-index: 10;
-  accent-color: #2A3D33;
+  accent-color: var(--fbs-accent, #8b93f7);
 }
 .fbs-batch-mode article,
 .fbs-batch-mode [role="article"] {
@@ -2835,12 +2790,12 @@ button.fbs-allpost-btn:hover,
   right: 8px;
   z-index: 100;
   padding: 3px 8px;
-  font-size: 10px;
-  font-weight: 650;
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--fbs-font, ui-sans-serif, system-ui, sans-serif);
   letter-spacing: 0.02em;
   border-radius: 6px;
-  background: rgba(139, 147, 247, 0.92);
+  background: var(--fbs-accent, #8b93f7);
   color: #fff;
   pointer-events: none;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
@@ -2881,18 +2836,19 @@ button.fbs-allpost-btn:hover,
   border-color: rgba(255, 255, 255, 0.4);
 }
 
-.fbs-batch-bar {
+/* In-panel overlay progress (distinct from floating .fbs-batch-bar) */
+.fbs-batch-overlay-track {
   width: 100%;
   height: 8px;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--fbs-surface-2, rgba(255, 255, 255, 0.1));
   border-radius: 4px;
   overflow: hidden;
   margin-bottom: 12px;
 }
 
-.fbs-batch-bar-fill {
+.fbs-batch-overlay-fill {
   height: 100%;
-  background: linear-gradient(90deg, #1C2B23, #2A3D33);
+  background: var(--fbs-accent, #8b93f7);
   border-radius: 4px;
   transition: width 0.3s ease;
 }
@@ -3456,29 +3412,29 @@ button.fbs-allpost-btn:hover,
    ========================================================= */
 
 :root {
-  /* Soft-dark + high-contrast type */
-  --fbs-bg: #16161d;
-  --fbs-surface: #252532;
-  --fbs-surface-2: #303042;
-  --fbs-border: #4a4a60;
-  --fbs-border-strong: #6a6a84;
-  --fbs-text: #f5f5f7;
-  --fbs-text-2: #b4b8c4;
-  --fbs-text-3: #9aa0ae;
-  --fbs-accent: #8b93f7;
-  --fbs-accent-hover: #9aa1ff;
-  --fbs-accent-soft: rgba(139, 147, 247, 0.22);
-  --fbs-success: #3dd68c;
+  /* Legacy --fbs-* aliases → canonical --fw-* (defined in ui.css, loaded after) */
+  --fbs-bg: var(--fw-bg, #16161d);
+  --fbs-surface: var(--fw-surface, #252532);
+  --fbs-surface-2: var(--fw-surface-2, #303042);
+  --fbs-border: var(--fw-border, #4a4a60);
+  --fbs-border-strong: var(--fw-border-strong, #6a6a84);
+  --fbs-text: var(--fw-text, #f5f5f7);
+  --fbs-text-2: var(--fw-text-2, #b4b8c4);
+  --fbs-text-3: var(--fw-text-3, #9aa0ae);
+  --fbs-accent: var(--fw-accent, #8b93f7);
+  --fbs-accent-hover: var(--fw-accent-hover, #9aa1ff);
+  --fbs-accent-soft: var(--fw-accent-soft, rgba(139, 147, 247, 0.22));
+  --fbs-success: var(--fw-ok, #3dd68c);
   --fbs-success-soft: rgba(61, 214, 140, 0.12);
-  --fbs-warn: #f0c000;
+  --fbs-warn: var(--fw-warn, #f0c000);
   --fbs-warn-soft: rgba(240, 192, 0, 0.12);
-  --fbs-danger: #eb5757;
+  --fbs-danger: var(--fw-danger, #eb5757);
   --fbs-danger-soft: rgba(235, 87, 87, 0.12);
   --fbs-info: #8a8f98;
-  --fbs-radius: 12px;
-  --fbs-radius-sm: 6px;
-  --fbs-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
-  --fbs-font: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --fbs-radius: var(--fw-radius, 12px);
+  --fbs-radius-sm: var(--fw-radius-sm, 6px);
+  --fbs-shadow: var(--fw-shadow, 0 24px 48px rgba(0, 0, 0, 0.4));
+  --fbs-font: var(--fw-font, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif);
 }
 
 /* ---- Backdrop ---- */
@@ -3807,9 +3763,9 @@ button.fbs-allpost-btn:hover,
   --fbs-text: #1a1a22;
   --fbs-text-2: #4a4a58;
   --fbs-text-3: #636374;
-  --fbs-accent: #5b5fe8;
-  --fbs-accent-hover: #4a4ed4;
-  --fbs-accent-soft: rgba(91, 95, 232, 0.16);
+  --fbs-accent: #8b93f7;
+  --fbs-accent-hover: #9aa1ff;
+  --fbs-accent-soft: rgba(139, 147, 247, 0.16);
   background: #e0e0e8 !important;
   box-shadow: 0 16px 40px rgba(20, 20, 35, 0.14) !important;
 }
@@ -3861,60 +3817,7 @@ article:hover .fbs-allpost-btn,
   pointer-events: auto !important;
 }
 
-button.fbs-allpost-btn:hover,
-.fbs-allpost-btn:hover {
-  background: #14201A !important;
-  border-color: transparent !important;
-}
-
-/* ---- Floating selection toolbar ---- */
-.fbs-floating-toolbar {
-  background: #0C1411 !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  border-radius: 12px !important;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4) !important;
-  padding: 4px !important;
-  gap: 2px !important;
-  backdrop-filter: none !important;
-}
-
-.fbs-floating-btn {
-  border-radius: 8px !important;
-  font-weight: 650 !important;
-  font-size: 12px !important;
-  padding: 8px 12px !important;
-  color: #FFFFFF !important;
-  background: transparent !important;
-}
-
-.fbs-floating-btn:hover {
-  background: rgba(255, 255, 255, 0.08) !important;
-  color: #fff !important;
-}
-
-.fbs-floating-btn.fbs-btn-highlight {
-  background: #14201A !important;
-  color: #fff !important;
-}
-
-/* ---- Batch bar ---- */
-.fbs-batch-bar {
-  background: #0C1411 !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  border-radius: 14px !important;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4) !important;
-  padding: 10px 14px !important;
-  gap: 12px !important;
-  backdrop-filter: none !important;
-}
-
-.fbs-batch-run-btn {
-  background: #14201A !important;
-  border: none !important;
-  border-radius: 9px !important;
-  font-weight: 700 !important;
-  padding: 8px 14px !important;
-}
+/* Chip hover / floating toolbar / batch bar chrome: owned by ui.css */
 
 /* ---- Status / composer preview ---- */
 .fbs-status-preview {

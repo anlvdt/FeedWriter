@@ -71,6 +71,7 @@ async function finishWizard() {
     console.warn("[FeedWriter] could not persist wizardCompleted", e);
   }
   showMainApp();
+  await maybeOpenKeysTabIfNoKeys();
 }
 
 async function checkWizardStatus() {
@@ -96,6 +97,7 @@ async function checkWizardStatus() {
     initWizard();
   } else {
     showMainApp();
+    await maybeOpenKeysTabIfNoKeys();
   }
 }
 
@@ -120,6 +122,11 @@ function initWizard() {
       } else if (index === currentStep) {
         dot.classList.add("active");
       }
+      if (index === currentStep) {
+        dot.setAttribute("aria-current", "step");
+      } else {
+        dot.removeAttribute("aria-current");
+      }
     });
 
     steps.forEach((step, index) => {
@@ -128,6 +135,12 @@ function initWizard() {
       step.classList.toggle("active", on);
       step.hidden = !on;
     });
+
+    const live = document.getElementById("wizardStepLive");
+    if (live) {
+      live.textContent = "Bước " + (currentStep + 1) + "/" + totalSteps;
+    }
+
     const activeStep = steps[currentStep];
     const heading = activeStep?.querySelector("h2");
     if (heading) {
@@ -195,7 +208,7 @@ function initWizard() {
 
   // Event delegation — survives re-renders / density CSS issues
   wizardView.addEventListener("click", async (e) => {
-    const btn = e.target.closest("button, a.wizard-skip-link, [data-wizard-action]");
+    const btn = e.target.closest("button, [data-wizard-action]");
     if (!btn || !wizardView.contains(btn)) return;
     const id = btn.id || btn.getAttribute("data-wizard-action") || "";
 
@@ -276,12 +289,65 @@ function initWizard() {
 checkWizardStatus().catch((e) => {
   console.warn("[FeedWriter] wizard check failed", e);
   showMainApp();
+  maybeOpenKeysTabIfNoKeys().catch(() => {});
 });
 
 // === TABS ===
 // Cache selectors for better performance
 const allTabs = document.querySelectorAll(".tab");
 const allTabContents = document.querySelectorAll(".tab-content");
+
+/** Activate a main popup tab by data-tab name (e.g. "apikeys"). */
+function activateTab(tabName) {
+  const tab = document.querySelector('.tab[data-tab="' + tabName + '"]');
+  if (!tab) return;
+  allTabs.forEach((t) => {
+    t.classList.remove("active");
+    t.setAttribute("aria-selected", "false");
+    t.setAttribute("tabindex", "-1");
+  });
+  allTabContents.forEach((c) => {
+    c.classList.remove("active");
+    c.hidden = true;
+  });
+  tab.classList.add("active");
+  tab.setAttribute("aria-selected", "true");
+  tab.setAttribute("tabindex", "0");
+  const panel = document.getElementById("tab-" + tab.dataset.tab);
+  if (panel) {
+    panel.classList.add("active");
+    panel.hidden = false;
+  }
+  if (tab.dataset.tab === "history") {
+    loadHistory();
+    loadAgentStats();
+  }
+  if (tab.dataset.tab === "apikeys") loadKeyLists();
+}
+
+/**
+ * When there are no API keys (and no legacy single key), open the Keys tab
+ * so first-run / empty-key users land on setup instead of Settings.
+ */
+async function maybeOpenKeysTabIfNoKeys() {
+  try {
+    if (typeof ensureApiKeysLoaded === "function" && typeof _countApiKeys === "function") {
+      const { apiKeys } = await ensureApiKeysLoaded();
+      if (_countApiKeys(apiKeys) === 0) activateTab("apikeys");
+      return;
+    }
+    const data = await chrome.storage.sync.get(["apiKeys", "apiKey"]);
+    const apiKeys = data.apiKeys || {};
+    const total = Object.values(apiKeys).reduce(
+      (n, arr) => n + (Array.isArray(arr) ? arr.length : 0),
+      0,
+    );
+    const hasLegacy = !!(data.apiKey && String(data.apiKey).trim());
+    if (total === 0 && !hasLegacy) activateTab("apikeys");
+  } catch (e) {
+    console.warn("[FeedWriter] maybeOpenKeysTabIfNoKeys failed", e);
+  }
+}
 
 // Initial roving tabindex for tabs
 allTabs.forEach((t) => {
@@ -290,28 +356,7 @@ allTabs.forEach((t) => {
 
 allTabs.forEach((tab) => {
   tab.addEventListener("click", () => {
-    allTabs.forEach((t) => {
-      t.classList.remove("active");
-      t.setAttribute("aria-selected", "false");
-      t.setAttribute("tabindex", "-1");
-    });
-    allTabContents.forEach((c) => {
-      c.classList.remove("active");
-      c.hidden = true;
-    });
-    tab.classList.add("active");
-    tab.setAttribute("aria-selected", "true");
-    tab.setAttribute("tabindex", "0");
-    const panel = document.getElementById("tab-" + tab.dataset.tab);
-    if (panel) {
-      panel.classList.add("active");
-      panel.hidden = false;
-    }
-    if (tab.dataset.tab === "history") {
-      loadHistory();
-      loadAgentStats();
-    }
-    if (tab.dataset.tab === "apikeys") loadKeyLists();
+    activateTab(tab.dataset.tab);
   });
 });
 

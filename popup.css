@@ -1,8 +1,8 @@
-/* FeedWriter Popup — rich saturated violet (boosted from Linear #5E6AD2)
- * Source: designmd.ai/chef/violet-issue (MIT) · see DESIGN.md
+/* FeedWriter Popup — Violet Issue (designmd.ai) · Primary #8B93F7
+ * Canonical tokens: --fw-*. Popup aliases (--bg/--accent) map to them. See DESIGN.md
  */
 :root {
-  /* Type scale (dense) */
+  /* Type scale (dense; meta ≥11px for Vietnamese) */
   --text-xs: 11px;
   --text-sm: 12px;
   --text-base: 13px;
@@ -18,94 +18,114 @@
   --space-5: 20px;
   --space-6: 24px;
 
-  /* Soft-dark + high contrast text/borders (WCAG-friendlier) */
-  --bg: #16161d;              /* L0 — deeper so cards pop */
-  --bg-card: #252532;         /* L1 — clear step above bg */
-  --bg-hover: #303042;        /* L2 */
+  /* Canonical Violet Issue (--fw-*) */
+  --fw-bg: #16161d;
+  --fw-surface: #252532;
+  --fw-surface-2: #303042;
+  --fw-elevated: #35354a;
+  --fw-border: #4a4a60;
+  --fw-border-strong: #6a6a84;
+  --fw-text: #f5f5f7;
+  --fw-text-2: #b4b8c4;
+  --fw-text-3: #9aa0ae;
+  --fw-accent: #8b93f7;
+  --fw-accent-hover: #9aa1ff;
+  --fw-accent-soft: rgba(139, 147, 247, 0.22);
+  --fw-accent-glow: rgba(139, 147, 247, 0.38);
+  --fw-danger: #eb5757;
+  --fw-warn: #f0c000;
+  --fw-ok: #3dd68c;
+  --fw-radius: 12px;
+  --fw-radius-sm: 6px;
+  --fw-radius-md: 8px;
+  --fw-radius-pill: 9999px;
+  --fw-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
+  --fw-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --fw-font-mono: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Popup aliases → canonical */
+  --bg: var(--fw-bg);
+  --bg-card: var(--fw-surface);
+  --bg-hover: var(--fw-surface-2);
   --bg-input: #1c1c28;
   --bg-input-focus: #2c2c3c;
-  --bg-nest: #35354a;         /* L3 */
+  --bg-nest: var(--fw-elevated);
 
-  --border: #4a4a60;          /* visible edges */
-  --border-light: #4a4a60;
-  --border-hover: #6a6a84;
+  --border: var(--fw-border);
+  --border-light: var(--fw-border);
+  --border-hover: var(--fw-border-strong);
 
-  --text: #f5f5f7;            /* body ~15:1 on card */
-  --text-secondary: #b4b8c4;  /* meta ≥4.5:1 */
-  --text-muted: #9aa0ae;
+  --text: var(--fw-text);
+  --text-secondary: var(--fw-text-2);
+  --text-muted: var(--fw-text-3);
   --text-heading: #ffffff;
 
-  /* Rich violet — higher saturation for punch on dark UI */
-  --accent: #8b93f7;
-  --accent-hover: #9aa1ff;
-  --accent-bg: rgba(139, 147, 247, 0.22);
-  --accent-ring: rgba(139, 147, 247, 0.38);
-  --success: #3dd68c;
+  --accent: var(--fw-accent);
+  --accent-hover: var(--fw-accent-hover);
+  --accent-bg: var(--fw-accent-soft);
+  --accent-ring: var(--fw-accent-glow);
+  --success: var(--fw-ok);
   --success-bg: rgba(61, 214, 140, 0.14);
-  --danger: #ff6b6b;
-  --danger-bg: rgba(255, 107, 107, 0.14);
-  --warn: #f0c000;
+  --danger: var(--fw-danger);
+  --danger-bg: rgba(235, 87, 87, 0.14);
+  --warn: var(--fw-warn);
   --warn-bg: rgba(240, 192, 0, 0.14);
-  --info: #b4b8c4;
+  --info: var(--fw-text-2);
   --info-bg: rgba(180, 184, 196, 0.12);
 
-  --scrollbar: #4a4a60;
-  --scrollbar-hover: #6a6a84;
+  --scrollbar: var(--fw-border);
+  --scrollbar-hover: var(--fw-border-strong);
 
-  /* Active tab = elevated surface, not solid primary wash */
-  --tab-active-bg: #303042;
+  --tab-active-bg: var(--fw-surface-2);
   --tab-active-fg: #ffffff;
 
-  --radius: 8px;
-  --radius-sm: 6px;
+  --radius: var(--fw-radius-md);
+  --radius-sm: var(--fw-radius-sm);
   --radius-xs: 4px;
-  --radius-lg: 12px;
+  --radius-lg: var(--fw-radius);
   --radius-xl: 16px;
-  --radius-popup: 20px;       /* outer popup shell (visible round) */
-  --radius-pill: 9999px;
-  --control-h: 32px;       /* Violet Issue default */
-  --control-h-sm: 28px;    /* compact toolbar / secondary */
-  --row-h: 36px;           /* list / history / key rows */
+  --radius-popup: 20px;
+  --radius-pill: var(--fw-radius-pill);
+  --control-h: 32px;
+  --control-h-sm: 28px;
+  --row-h: 36px;
   --chip-h: 20px;
-  --shadow-modal: 0 24px 48px rgba(0, 0, 0, 0.4);
+  --shadow-modal: var(--fw-shadow);
 
-  --font: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-mono: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  --font: var(--fw-font);
+  --font-mono: var(--fw-font-mono);
   --color-scheme: dark;
 }
 
 /* Soft-light: gray canvas + near-white cards + darker type for contrast */
 body.light {
-  --bg: #e0e0e8;              /* canvas — clearly not white */
-  --bg-card: #fafafc;         /* cards lift off canvas */
-  --bg-hover: #ececf4;
+  --fw-bg: #e0e0e8;
+  --fw-surface: #fafafc;
+  --fw-surface-2: #ececf4;
+  --fw-elevated: #ffffff;
+  --fw-border: #b8b8c8;
+  --fw-border-strong: #8e8ea0;
+  --fw-text: #1a1a22;
+  --fw-text-2: #4a4a58;
+  --fw-text-3: #636374;
+  --fw-accent: #5b5fe8;
+  --fw-accent-hover: #4a4ed4;
+  --fw-accent-soft: rgba(91, 95, 232, 0.16);
+  --fw-accent-glow: rgba(91, 95, 232, 0.28);
+  --fw-danger: #b91c1c;
+  --fw-warn: #92400e;
+  --fw-ok: #166534;
+  --fw-shadow: 0 16px 40px rgba(20, 20, 35, 0.14);
+
   --bg-input: #ffffff;
   --bg-input-focus: #ffffff;
-  --bg-nest: #ffffff;
-  --border: #b8b8c8;          /* stronger edges */
-  --border-light: #c8c8d4;
-  --border-hover: #8e8ea0;
-  --text: #1a1a22;            /* body ≥12:1 on card */
-  --text-secondary: #4a4a58;  /* meta ≥7:1 */
-  --text-muted: #636374;
   --text-heading: #0f0f14;
-  --accent: #5b5fe8;          /* saturated violet on light */
-  --accent-hover: #4a4ed4;
-  --accent-bg: rgba(91, 95, 232, 0.16);
-  --accent-ring: rgba(91, 95, 232, 0.28);
-  --success: #166534;
   --success-bg: rgba(22, 101, 52, 0.12);
-  --danger: #b91c1c;
   --danger-bg: rgba(185, 28, 28, 0.1);
-  --warn: #92400e;
   --warn-bg: rgba(146, 64, 14, 0.12);
-  --info: #4a4a58;
   --info-bg: rgba(74, 74, 88, 0.1);
-  --scrollbar: #b0b0be;
-  --scrollbar-hover: #8e8ea0;
   --tab-active-bg: #ffffff;
   --tab-active-fg: #0f0f14;
-  --shadow-modal: 0 16px 40px rgba(20, 20, 35, 0.14);
   --color-scheme: light;
 }
 
@@ -420,9 +440,20 @@ textarea:focus,
 }
 .field-hint {
   margin-top: 5px;
-  font-size: 10.5px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
   line-height: 1.4;
+}
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
 }
 
 /* ── Checkbox ───────────────────────────────────────────── */
@@ -1141,6 +1172,11 @@ a { color: var(--accent); }
 .wizard-key-status { margin-top: var(--space-3); }
 .wizard-skip { text-align: center; margin-top: var(--space-3); }
 .wizard-skip-link {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  background: transparent;
+  font: inherit;
   font-size: var(--text-sm);
   color: var(--text-muted);
   text-decoration: none;
@@ -1320,7 +1356,7 @@ a { color: var(--accent); }
   letter-spacing: -0.01em;
 }
 .key-limit-badge {
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 650;
   color: var(--text-muted);
   white-space: nowrap;
@@ -1546,7 +1582,7 @@ a { color: var(--accent); }
   flex-shrink: 0;
 }
 .guide-meta {
-  font-size: 10.5px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
   text-align: right;
   overflow: visible;
@@ -1634,7 +1670,7 @@ a { color: var(--accent); }
 }
 .about-shortcut-key {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 10.5px;
+  font-size: var(--text-xs);
   font-weight: 700;
   padding: 3px 7px;
   border-radius: 6px;
@@ -1644,7 +1680,7 @@ a { color: var(--accent); }
   flex-shrink: 0;
 }
 .about-shortcut-note {
-  font-size: 10.5px;
+  font-size: var(--text-xs);
   font-weight: 650;
   color: var(--text-muted);
   flex-shrink: 0;

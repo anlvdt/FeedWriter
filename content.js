@@ -102,8 +102,9 @@ function _removeGroupSuggestionControls(element) {
 const FB_POST_BODY_SELECTOR =
   '[data-ad-preview="message"], [data-ad-comet-preview="message"], [data-testid="post_message"], [data-testid="post-message"]';
 
-// A generic "Xem thêm" appears in many Facebook widgets. Only use the ones
-// nested in Facebook's semantic post-body node; everything else is UI chrome.
+// A generic "Xem thêm" appears in many Facebook widgets. Prefer Facebook's
+// semantic post-body node; fall back to the heuristic status text finder so
+// organic posts without data-ad-preview still get Tóm tắt.
 function _findFacebookPostBodyFrom(element) {
   if (SITE !== "facebook" || !element) return null;
   const direct = element.closest?.(FB_POST_BODY_SELECTOR);
@@ -112,8 +113,12 @@ function _findFacebookPostBodyFrom(element) {
     'article[role="article"], [data-virtualized], div[data-pagelet^="FeedUnit"]',
   );
   if (!post || _isFacebookGroupSuggestion(post)) return null;
-  return Array.from(post.querySelectorAll(FB_POST_BODY_SELECTOR))
-    .find((body) => body.contains(element)) || null;
+  const semantic = Array.from(post.querySelectorAll(FB_POST_BODY_SELECTOR))
+    .find((body) => body.contains(element));
+  if (semantic) return semantic;
+  const fallback = _findFacebookStatusText(post);
+  if (fallback && (fallback === element || fallback.contains(element))) return fallback;
+  return null;
 }
 
 // Copy typography from Facebook's "Xem thêm" / status text so "Tóm tắt"
@@ -442,8 +447,20 @@ function _engagementGateShort(evalResult) {
 }
 
 function hideFlaggedPost(postContainer, evalResult, type) {
-  if (filteredPosts.has(postContainer)) return;
-  filteredPosts.add(postContainer);
+  if (!postContainer) return;
+  const expand =
+    typeof window.fbsExpandToFullPostCard === "function"
+      ? window.fbsExpandToFullPostCard
+      : null;
+  const isContentOnly =
+    typeof window.fbsIsContentOnlyPostSlice === "function"
+      ? window.fbsIsContentOnlyPostSlice
+      : null;
+  const target = (expand && expand(postContainer)) || postContainer;
+  // Refuse to hide a status/media slice that leaves author + action bar behind.
+  if (isContentOnly && isContentOnly(target)) return;
+  if (filteredPosts.has(target)) return;
+  filteredPosts.add(target);
 
   const displayMode = type === "sponsored" ? adDisplayMode : "collapse";
   // Skip noisy action_* keys in visible reason chips — actions already in label
@@ -456,13 +473,13 @@ function hideFlaggedPost(postContainer, evalResult, type) {
     type === "comment_gate" || type === "engagement_gate";
 
   if (displayMode === "hide") {
-    postContainer.style.display = "none";
+    target.style.display = "none";
     return;
   }
 
   if (displayMode === "mark") {
-    postContainer.style.outline = "1px solid rgba(139, 147, 247, 0.45)";
-    postContainer.style.outlineOffset = "3px";
+    target.style.outline = "1px solid rgba(139, 147, 247, 0.45)";
+    target.style.outlineOffset = "3px";
     const badge = document.createElement("div");
     badge.className = "fbs-mark-badge";
     const shortType = type === "sponsored"
@@ -471,8 +488,8 @@ function hideFlaggedPost(postContainer, evalResult, type) {
         ? _engagementGateShort(evalResult)
         : "Aff";
     badge.textContent = `${shortType} · ${confidence}%`;
-    postContainer.style.position = "relative";
-    postContainer.appendChild(badge);
+    target.style.position = "relative";
+    target.appendChild(badge);
     return;
   }
 
@@ -517,15 +534,15 @@ function hideFlaggedPost(postContainer, evalResult, type) {
   showBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     e.preventDefault();
-    postContainer.style.display = "";
+    target.style.display = "";
     indicator.remove();
-    filteredPosts.delete(postContainer);
+    filteredPosts.delete(target);
     telemetry.falsePositiveProxy++;
     saveTelemetry();
   });
 
-  postContainer.style.display = "none";
-  postContainer.parentElement?.insertBefore(indicator, postContainer);
+  target.style.display = "none";
+  target.parentElement?.insertBefore(indicator, target);
 }
 
 /** Nested feed unit? (comment thread, etc.) */
@@ -1286,8 +1303,19 @@ function openOverlay(html, streaming, type = "summary") {
     panelBody.scrollTop = panelBody.scrollHeight;
   if (!wasVisible) {
     requestAnimationFrame(() => {
-      const closeButton = panel?.querySelector(".fbs-close");
-      if (closeButton && panel.classList.contains("fbs-visible")) closeButton.focus();
+      if (!panel?.classList.contains("fbs-visible")) return;
+      // Prefer body / primary action over Close so keyboard users land in content.
+      const primary =
+        panel.querySelector(".fbs-sp-open-fb") ||
+        panel.querySelector(".fbs-copy-btn:not([style*='display: none'])") ||
+        panel.querySelector(".fbs-panel-body") ||
+        panel;
+      try {
+        if (primary === panel.querySelector(".fbs-panel-body")) {
+          primary.setAttribute("tabindex", "-1");
+        }
+        primary.focus({ preventScroll: true });
+      } catch (_) {}
     });
   }
 }
@@ -2258,8 +2286,8 @@ function showBatchProgress() {
         <div class="fbs-batch-title">Đang xử lý hàng loạt...</div>
         <button class="fbs-batch-cancel">Hủy</button>
       </div>
-      <div class="fbs-batch-bar">
-        <div class="fbs-batch-bar-fill" style="width: 0%"></div>
+      <div class="fbs-batch-overlay-track">
+        <div class="fbs-batch-overlay-fill" style="width: 0%"></div>
       </div>
       <div class="fbs-batch-status">0 / ${batchOperations.selectedTexts.length}</div>
     </div>
@@ -2277,7 +2305,7 @@ function showBatchProgress() {
 }
 
 function updateBatchProgress(current, total) {
-  const barFill = panel.querySelector('.fbs-batch-bar-fill');
+  const barFill = panel.querySelector('.fbs-batch-overlay-fill');
   const status = panel.querySelector('.fbs-batch-status');
 
   if (barFill) {
@@ -2923,7 +2951,10 @@ function processSeeMore(sm) {
   if (SITE === "facebook" && !postBody) return;
   const textContainer = postBody || findTextContainer(sm);
   if (!textContainer) return;
-  if ((textContainer.innerText || "").trim().length < MIN_LEN / 2) return;
+  // Do not gate on visible length: truncated previews are often << MIN_LEN
+  // even when the expanded post is summarizable. Presence of "Xem thêm" is
+  // the signal. Keep a tiny floor only to ignore chrome false positives.
+  if (_statusBodyTextLength(textContainer) < 40) return;
   const target = findInjectTarget(textContainer);
   if (
     injected.has(target) &&
@@ -2953,17 +2984,32 @@ function createFloatingToolbar() {
     ICON_BASE64 +
     '" width="13" height="13" alt=""> Tóm tắt</button>' +
     '<button class="fbs-floating-btn" data-action="translate" data-mode="auto" title="Dịch EN→VI">Dịch</button>' +
-    '<button class="fbs-floating-btn" data-action="translate" data-mode="slang" title="Slang / thành ngữ">Slang</button>' +
-    '<button class="fbs-floating-btn" data-action="translate" data-mode="collocation" title="Collocations">Cụm từ</button>' +
-    '<button class="fbs-floating-btn" data-action="translate" data-mode="shadowing" title="Shadowing luyện nói">Shadow</button>' +
+    '<div class="fbs-floating-more">' +
+    '<button type="button" class="fbs-floating-btn fbs-floating-more-toggle" aria-expanded="false" aria-haspopup="true" title="Thêm công cụ">···</button>' +
+    '<div class="fbs-floating-more-menu" hidden role="menu">' +
+    '<button class="fbs-floating-btn" role="menuitem" data-action="translate" data-mode="slang" title="Slang / thành ngữ">Slang</button>' +
+    '<button class="fbs-floating-btn" role="menuitem" data-action="translate" data-mode="collocation" title="Collocations">Cụm từ</button>' +
+    '<button class="fbs-floating-btn" role="menuitem" data-action="translate" data-mode="shadowing" title="Shadowing luyện nói">Shadow</button>' +
     (SITE === "facebook"
-      ? '<button class="fbs-floating-btn" data-action="batch" title="Chọn nhiều bài (Alt+B)">Batch</button>'
-      : "");
+      ? '<button class="fbs-floating-btn" role="menuitem" data-action="batch" title="Chọn nhiều bài (Alt+B)">Batch</button>'
+      : "") +
+    "</div></div>";
   document.body.appendChild(floatingToolbar);
 
   floatingToolbar.addEventListener("mousedown", (e) => e.preventDefault());
   floatingToolbar.addEventListener("click", (e) => {
     e.preventDefault();
+    const moreToggle = e.target.closest(".fbs-floating-more-toggle");
+    if (moreToggle) {
+      const menu = floatingToolbar.querySelector(".fbs-floating-more-menu");
+      const open = menu && menu.hasAttribute("hidden");
+      if (menu) {
+        if (open) menu.removeAttribute("hidden");
+        else menu.setAttribute("hidden", "");
+      }
+      moreToggle.setAttribute("aria-expanded", open ? "true" : "false");
+      return;
+    }
     const btn = e.target.closest("[data-action]");
     if (!btn) return;
     const action = btn.getAttribute("data-action");
@@ -2980,12 +3026,10 @@ function createFloatingToolbar() {
 
     if (action === "translate") {
       const mode = btn.getAttribute("data-mode") || "auto";
-      // Bridge to translate.js (separate content-script world) via window message
       window.postMessage(
         { source: "feedwriter", type: "translate", text, mode },
         "*"
       );
-      // Also try runtime message for pages where translate listens
       try {
         chrome.runtime.sendMessage({
           action: "relay-translate",
@@ -3002,12 +3046,16 @@ function createFloatingToolbar() {
   });
 
   const hideToolbar = () => {
-    if (floatingToolbar && floatingToolbar.classList.contains("fbs-visible"))
+    if (floatingToolbar && floatingToolbar.classList.contains("fbs-visible")) {
       floatingToolbar.classList.remove("fbs-visible");
+      const menu = floatingToolbar.querySelector(".fbs-floating-more-menu");
+      const toggle = floatingToolbar.querySelector(".fbs-floating-more-toggle");
+      if (menu) menu.setAttribute("hidden", "");
+      if (toggle) toggle.setAttribute("aria-expanded", "false");
+    }
   };
   document.addEventListener("scroll", hideToolbar, { capture: true, passive: true });
   listeners.push({ element: document, event: "scroll", handler: hideToolbar, options: { capture: true, passive: true } });
-  // A resize invalidates the stored coordinates → dismiss rather than mispoint.
   window.addEventListener("resize", hideToolbar, { passive: true });
   listeners.push({ element: window, event: "resize", handler: hideToolbar, options: { passive: true } });
 }
@@ -3285,6 +3333,29 @@ function _findFacebookStatusText(article) {
       }
     }
   }
+  if (best) return best;
+
+  // Fallback when Facebook drops semantic message attrs: prefer the longest
+  // dir=auto text block that isn't comment/composer chrome.
+  for (const node of article.querySelectorAll('div[dir="auto"], span[dir="auto"]')) {
+    if (node.closest("form") || node.closest("[role=dialog]")) continue;
+    if (node.closest('[aria-label*="bình luận" i], [aria-label*="comment" i], [aria-label*="Viết" i]')) {
+      continue;
+    }
+    // Prefer outer blocks; skip tiny name/timestamp chips.
+    const length = (node.innerText || node.textContent || "").replace(/\s+/g, " ").trim().length;
+    if (length < 40 || length <= bestLength) continue;
+    // Skip nested comment articles.
+    let articleDepth = 0;
+    let parent = node.parentElement;
+    while (parent && parent !== article) {
+      if (parent.getAttribute?.("role") === "article") articleDepth++;
+      parent = parent.parentElement;
+    }
+    if (articleDepth >= 1) continue;
+    best = node;
+    bestLength = length;
+  }
   return best;
 }
 
@@ -3425,11 +3496,11 @@ function scanFBAllPosts() {
       break;
     }
     if (seeMore) {
-      // Visible truncated body can be shorter than MIN_LEN; require half like processSeeMore.
-      if (_statusBodyTextLength(textEl) >= MIN_LEN / 2) {
-        inject(article, findClickable(seeMore), textEl, seeMore);
-      }
+      // "Xem thêm" means the full status is long even when the clamped
+      // preview is short — always place Tóm tắt next to the expander.
+      inject(article, findClickable(seeMore), textEl, seeMore);
     } else {
+      // No expander: only mount when the visible body is long enough to summarize.
       _mountInlineStatusChip(article, textEl, MIN_LEN);
     }
     fbAllPostInjected.add(article);
@@ -3576,11 +3647,34 @@ async function runBatch() {
   if (batchQueue.length === 0) return;
   const items = [...batchQueue];
   exitBatchMode();
-  for (let i = 0; i < items.length; i++) {
-    const { text, el } = items[i];
-    await summarizeText(text, "summary", el);
-    // Small delay between items so UI is responsive
-    await new Promise(r => setTimeout(r, 800));
+
+  const progress = document.createElement("div");
+  progress.className = "fbs-batch-progress fbs-batch-progress-live";
+  progress.setAttribute("data-fbs-ui", "v3");
+  progress.setAttribute("role", "status");
+  progress.setAttribute("aria-live", "polite");
+  progress.innerHTML =
+    '<div class="fbs-batch-progress-label">Đang tóm tắt batch…</div>' +
+    '<div class="fbs-batch-progress-track"><div class="fbs-batch-progress-fill"></div></div>' +
+    '<div class="fbs-batch-progress-meta">0 / ' + items.length + "</div>";
+  document.body.appendChild(progress);
+  const fill = progress.querySelector(".fbs-batch-progress-fill");
+  const meta = progress.querySelector(".fbs-batch-progress-meta");
+
+  try {
+    for (let i = 0; i < items.length; i++) {
+      const { text, el } = items[i];
+      if (fill) fill.style.width = Math.round(((i) / items.length) * 100) + "%";
+      if (meta) meta.textContent = i + " / " + items.length;
+      await summarizeText(text, "summary", el);
+      await new Promise((r) => setTimeout(r, 800));
+    }
+    if (fill) fill.style.width = "100%";
+    if (meta) meta.textContent = items.length + " / " + items.length;
+  } finally {
+    setTimeout(() => {
+      try { progress.remove(); } catch (_) {}
+    }, 600);
   }
 }
 
@@ -3630,20 +3724,69 @@ function showClutterToast(_count) {
 
 function _hideWrapper(wrapper) {
   // Instant hide — ads must disappear before user scrolls past (no 240ms anim)
-  let toHide = wrapper;
-  const par = wrapper.parentElement;
+  if (!wrapper) return;
+  const expand =
+    typeof window.fbsExpandToFullPostCard === "function"
+      ? window.fbsExpandToFullPostCard
+      : null;
+  const isContentOnly =
+    typeof window.fbsIsContentOnlyPostSlice === "function"
+      ? window.fbsIsContentOnlyPostSlice
+      : null;
+  let toHide = (expand && expand(wrapper)) || wrapper;
+  // Never leave a hollow post (author + action bar, no status/media).
+  if (isContentOnly && isContentOnly(toHide)) return;
+  const par = toHide.parentElement;
   if (
     par &&
     par !== document.body &&
     par.getAttribute("role") !== "feed" &&
     par.getAttribute("role") !== "main" &&
     par.children.length === 1 &&
-    (typeof _isFbLayoutColumn !== "function" || !_isFbLayoutColumn(par))
+    (typeof _isFbLayoutColumn !== "function" || !_isFbLayoutColumn(par)) &&
+    !(isContentOnly && isContentOnly(par))
   ) {
     toHide = par;
   }
+  if (isContentOnly && isContentOnly(toHide)) return;
   toHide.style.setProperty("display", "none", "important");
   toHide.setAttribute("data-fbs-hidden", "1");
+}
+
+/**
+ * Restore posts where only the status/media slice was display:none'd, leaving
+ * the author row and Like/Comment/Share bar visible (hollow-card bug).
+ */
+function healHollowFeedPosts(root) {
+  if (SITE !== "facebook") return;
+  const scope = root || document;
+  const messages = scope.querySelectorAll(
+    '[data-ad-rendering-role="story_message"], [data-ad-preview="message"], [data-ad-comet-preview="message"]',
+  );
+  for (const msg of messages) {
+    let node = msg.parentElement;
+    for (let i = 0; i < 6 && node; i++) {
+      const disp = node.style && node.style.getPropertyValue("display");
+      if (disp === "none") {
+        const parent = node.parentElement;
+        const parentHasProfile = !!parent?.querySelector?.(
+          '[data-ad-rendering-role="profile_name"]',
+        );
+        const nodeHasProfile = !!node.querySelector?.(
+          '[data-ad-rendering-role="profile_name"]',
+        );
+        if (parentHasProfile && !nodeHasProfile) {
+          node.style.removeProperty("display");
+          node.removeAttribute("data-fbs-hidden");
+          delete node.dataset.fbsHidden;
+          delete node.dataset.fbsHideReason;
+          filteredPosts.delete(node);
+        }
+        break;
+      }
+      node = node.parentElement;
+    }
+  }
 }
 
 
@@ -3744,6 +3887,9 @@ function scan() {
   if (SITE === "x") scanXPosts();
   // Sponsored first (fast) then rest
   scanSponsoredFast();
+  try {
+    healHollowFeedPosts(document);
+  } catch (_) {}
   try {
     _purgeBrokenChips(document);
   } catch (_) {}

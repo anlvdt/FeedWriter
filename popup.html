@@ -23,9 +23,9 @@
 
     <nav class="tabs" role="tablist" aria-label="Mục chính">
       <button class="tab active" role="tab" aria-selected="true" aria-controls="tab-settings" id="tabbtn-settings" data-tab="settings" type="button">Cài đặt</button>
-      <button class="tab" role="tab" aria-selected="false" aria-controls="tab-apikeys" id="tabbtn-apikeys" data-tab="apikeys" type="button">Keys</button>
+      <button class="tab" role="tab" aria-selected="false" aria-controls="tab-apikeys" id="tabbtn-apikeys" data-tab="apikeys" type="button">Khóa API</button>
       <button class="tab" role="tab" aria-selected="false" aria-controls="tab-history" id="tabbtn-history" data-tab="history" type="button">Lịch sử</button>
-      <button class="tab" role="tab" aria-selected="false" aria-controls="tab-about" id="tabbtn-about" data-tab="about" type="button">About</button>
+      <button class="tab" role="tab" aria-selected="false" aria-controls="tab-about" id="tabbtn-about" data-tab="about" type="button">Giới thiệu</button>
     </nav>
 
     
@@ -89,21 +89,7 @@
       </section>
 
       <div class="accordion advanced-accordion">
-        <button class="accordion-header" type="button" aria-expanded="false">Nguồn & đăng thủ công</button>
-        <div class="accordion-content">
-          <div class="field-hint workflow-hint">Workflow đề xuất: lọc feed → dùng Batch để chọn bài đáng đọc → preview, chỉnh sửa và đăng thủ công.</div>
-          <div class="field">
-            <label for="sourceTemplate">
-              Thông tin nguồn & tham khảo
-            </label>
-            <textarea id="sourceTemplate" rows="3" placeholder="• Nguồn bài viết: {platform} {author} {source}&#10;• Link gốc: {link}&#10;• Repo mặc định: {repo}"></textarea>
-            <div class="field-hint">{author} = tác giả, {platform} = nền tảng, {source} = nhóm/page, {link} = URL gốc, {repo} = repo mặc định nếu đã cấu hình</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="accordion advanced-accordion">
-        <button class="accordion-header" type="button" aria-expanded="false">Nâng cao</button>
+        <button class="accordion-header" type="button" aria-expanded="false">Tuỳ chọn nâng cao</button>
         <div class="accordion-content">
           <div class="field">
             <label for="adDisplayMode">Bài Được tài trợ / Sponsored</label>
@@ -140,11 +126,19 @@
         </div>
       </div>
 
-      <div class="accordion advanced-accordion">
-        <button class="accordion-header" type="button" aria-expanded="false">
-          Template Library
-        </button>
+      <div class="accordion advanced-accordion settings-management-accordion">
+        <button class="accordion-header" type="button" aria-expanded="false">Nguồn, template &amp; backup</button>
         <div class="accordion-content">
+          <div class="field-hint workflow-hint">Workflow đề xuất: lọc feed → dùng Batch để chọn bài đáng đọc → preview, chỉnh sửa và đăng thủ công.</div>
+          <div class="field">
+            <label for="sourceTemplate">
+              Thông tin nguồn & tham khảo
+            </label>
+            <textarea id="sourceTemplate" rows="3" placeholder="• Nguồn bài viết: {platform} {author} {source}&#10;• Link gốc: {link}&#10;• Repo mặc định: {repo}"></textarea>
+            <div class="field-hint">{author} = tác giả, {platform} = nền tảng, {source} = nhóm/page, {link} = URL gốc, {repo} = repo mặc định nếu đã cấu hình</div>
+          </div>
+
+          <label class="section-subhead">Template Library</label>
           <div class="field">
             <label for="templateName">Tên template</label>
             <input type="text" id="templateName" placeholder="VD: Review sản phẩm ngắn gọn">
@@ -170,17 +164,9 @@
             <label class="section-subhead">Templates đã lưu</label>
             <div id="templateList" class="template-list"></div>
           </div>
-        </div>
-      </div>
 
-      <!-- Settings Management -->
-      <div class="accordion advanced-accordion settings-management-accordion">
-        <button class="accordion-header" type="button" aria-expanded="false">
-          Quản lý cài đặt
-        </button>
-        <div class="accordion-content">
+          <label class="section-subhead">Backup &amp; Restore</label>
           <div class="field">
-            <label>Backup & Restore</label>
             <div class="inline-action-row">
               <button id="backupSettingsBtn" class="btn btn-secondary">Backup ngay</button>
               <button id="restoreSettingsBtn" class="btn btn-secondary">Restore</button>
@@ -422,12 +408,13 @@
       <p class="wizard-subtitle">Hãy cùng thiết lập để bắt đầu sử dụng</p>
     </div>
 
-    <div class="wizard-progress">
-      <div class="wizard-progress-dot active" data-step="0"></div>
-      <div class="wizard-progress-dot" data-step="1"></div>
-      <div class="wizard-progress-dot" data-step="2"></div>
-      <div class="wizard-progress-dot" data-step="3"></div>
+    <div class="wizard-progress" role="group" aria-label="Tiến trình thiết lập">
+      <div class="wizard-progress-dot active" data-step="0" aria-label="Bước 1/4"></div>
+      <div class="wizard-progress-dot" data-step="1" aria-label="Bước 2/4"></div>
+      <div class="wizard-progress-dot" data-step="2" aria-label="Bước 3/4"></div>
+      <div class="wizard-progress-dot" data-step="3" aria-label="Bước 4/4"></div>
     </div>
+    <div id="wizardStepLive" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 
     <!-- Step 1: Welcome -->
     <div class="wizard-step active" data-step="0">
@@ -468,9 +455,11 @@
 
       <div class="wizard-api-guide">
         <div class="wizard-api-guide-title">Lấy API Key miễn phí:</div>
-        <div class="wizard-api-guide-step">1. <a href="https://console.groq.com/keys" target="_blank">Groq</a> — 100K token/ngày</div>
-        <div class="wizard-api-guide-step">2. <a href="https://cloud.cerebras.ai" target="_blank">Cerebras</a> — 1M token/ngày</div>
-        <div class="wizard-api-guide-step">3. <a href="https://aistudio.google.com/apikey" target="_blank">Gemini</a> — 1500 req/ngày</div>
+        <div class="wizard-api-guide-step">1. <a href="https://console.groq.com/keys" target="_blank" rel="noopener">Groq</a> — 100K token/ngày</div>
+        <div class="wizard-api-guide-step">2. <a href="https://cloud.cerebras.ai" target="_blank" rel="noopener">Cerebras</a> — 1M token/ngày</div>
+        <div class="wizard-api-guide-step">3. <a href="https://cloud.sambanova.ai" target="_blank" rel="noopener">SambaNova</a> — $5 free · 20M tok/ngày</div>
+        <div class="wizard-api-guide-step">4. <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Gemini</a> — 1500 req/ngày</div>
+        <div class="wizard-api-guide-step">5. <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">OpenRouter</a> — 50 req/ngày</div>
       </div>
 
       <div id="wizardKeyStatus" class="status wizard-key-status" role="status" aria-live="polite"></div>
@@ -481,7 +470,7 @@
       </div>
 
       <div class="wizard-skip">
-        <a class="wizard-skip-link" id="wizardStep1Skip">Bỏ qua, thêm sau</a>
+        <button type="button" class="wizard-skip-link" id="wizardStep1Skip">Bỏ qua, thêm sau</button>
       </div>
     </div>
 
@@ -508,9 +497,6 @@
           <option value="medium" selected>Vừa phải (3-5 câu)</option>
           <option value="long">Chi tiết (nhiều hơn)</option>
         </select>
-      </div>
-
-      <div class="field">
       </div>
 
       <div class="wizard-actions">

@@ -94,7 +94,7 @@ describe("Feed summary control density", () => {
     assert.match(css, /\.fbs-wrap-inline \.fbs-inline-sep[\s\S]*?color:\s*var\(--fw-text-3\)\s*!important/);
     assert.match(css, /\.fbs-wrap-inline\[data-fbs-ui="v3"\][\s\S]*?margin:\s*0\s*!important/);
     assert.match(css, /button\.fbs-allpost-btn[\s\S]*?height:\s*28px\s*!important/);
-    assert.match(css, /\.fbs-chip-host:hover \.fbs-allpost-btn[\s\S]*?opacity:\s*0\.82\s*!important/);
+    assert.match(css, /\.fbs-chip-host:hover \.fbs-allpost-btn[\s\S]*?opacity:\s*1\s*!important/);
   });
 
   it("uses text-only inline summary controls", () => {
@@ -121,6 +121,78 @@ describe("Feed summary control density", () => {
       /if \(_statusBodyTextLength\(textEl\) < minimumLength\) return;/,
     );
     assert.match(content, /_matchInlineBtnTypography\(btn, textEl\)/);
+    // Truncated posts with "Xem thêm" must still get Tóm tắt even when the
+    // clamped preview is shorter than MIN_LEN / 2.
+    assert.match(
+      content,
+      /\/\/ "Xem thêm" means the full status is long[\s\S]*?inject\(article, findClickable\(seeMore\), textEl, seeMore\);/,
+    );
+    assert.doesNotMatch(
+      content,
+      /if \(_statusBodyTextLength\(textEl\) >= MIN_LEN \/ 2\) \{\s*inject\(article/,
+    );
+  });
+
+  it("refuses to hide content-only slices that leave hollow Facebook cards", () => {
+    assert.match(contentDom, /function _isContentOnlyPostSlice\(el\)/);
+    assert.match(contentDom, /function _expandToFullPostCard\(el\)/);
+    assert.match(content, /function healHollowFeedPosts\(/);
+    assert.match(content, /healHollowFeedPosts\(document\)/);
+    assert.match(content, /fbsIsContentOnlyPostSlice/);
+  });
+});
+
+describe("UI system v3 contracts", () => {
+  const popupCss = fs.readFileSync(path.join(root, "popup.css"), "utf8");
+  const contentCss = fs.readFileSync(path.join(root, "content.css"), "utf8");
+
+  it("keeps Facebook chip host clear of top-right native controls", () => {
+    assert.match(css, /\.fbs-chip-host[^\n]*\{[\s\S]*?right:\s*104px\s*!important/);
+    assert.match(css, /button\.fbs-allpost-btn[\s\S]*?opacity:\s*0\.72\s*!important/);
+  });
+
+  it("aliases popup and content tokens to canonical --fw-*", () => {
+    assert.match(popupCss, /--fw-accent:\s*#8b93f7/i);
+    assert.match(popupCss, /--bg:\s*var\(--fw-bg\)/);
+    assert.match(popupCss, /--accent:\s*var\(--fw-accent\)/);
+    assert.match(contentCss, /--fbs-accent:\s*var\(--fw-accent/);
+  });
+
+  it("restyles comment-summary without sage leftover and uses toolbar overflow", () => {
+    assert.doesNotMatch(contentCss, /fbs-comment-summary-btn[\s\S]{0,220}#A8C0B4/);
+    assert.match(content, /fbs-floating-more-menu/);
+    assert.match(content, /fbs-batch-progress-live/);
+    assert.match(css, /fwSheetIn/);
+  });
+
+  it("uses Vietnamese tab labels and keys-first empty state", () => {
+    assert.match(popup, />Khóa API</);
+    assert.match(popup, />Giới thiệu</);
+    assert.match(popup, /id="wizardStep1Skip"/);
+    assert.match(popup, /<button type="button" class="wizard-skip-link" id="wizardStep1Skip">/);
+    const popupJs = fs.readFileSync(path.join(root, "popup.js"), "utf8");
+    assert.match(popupJs, /activateTab\("apikeys"\)/);
+  });
+
+  it("compresses Settings into fewer advanced accordions", () => {
+    assert.match(popup, />Tuỳ chọn nâng cao</);
+    assert.match(popup, />Nguồn, template &amp; backup</);
+    assert.equal((popup.match(/class="accordion advanced-accordion/g) || []).length, 2);
+  });
+
+  it("keeps floating batch bar styles owned by ui.css", () => {
+    assert.doesNotMatch(contentCss, /rgba\(20,\s*10,\s*40/);
+    assert.match(content, /fbs-batch-overlay-track/);
+    assert.match(content, /fbs-batch-overlay-fill/);
+  });
+
+  it("focuses panel body or primary action instead of Close on open", () => {
+    assert.match(content, /\.fbs-sp-open-fb/);
+    assert.match(content, /primary\.focus\(\{ preventScroll: true \}\)/);
+    assert.doesNotMatch(
+      content.slice(content.indexOf("function openOverlay"), content.indexOf("function toggleMinimize")),
+      /closeButton\.focus\(\)/,
+    );
   });
 });
 
