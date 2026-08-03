@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "FeedWriter",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "description": "Tóm tắt bài viết bằng AI, chỉnh sửa & copy thành status. Dịch EN→VI: từ, đoạn văn, slang, collocations, shadowing.",
   "author": "Le An (anlvdt)",
   "homepage_url": "https://github.com/anlvdt/fb-post-summarizer",

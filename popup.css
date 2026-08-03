@@ -168,7 +168,8 @@ html.light {
  */
 html {
   width: 380px;
-  height: 100%;
+  height: auto;
+  max-height: 600px;
   /* Keep root transparent: a painted root background propagates to the whole
      Chrome popup canvas and squares off the body's rounded corners. */
   background: transparent !important;
@@ -183,6 +184,7 @@ html.light {
 
 body {
   width: 380px;
+  min-height: 120px;
   max-height: 600px;
   margin: 0;
   padding: 0;
@@ -191,14 +193,13 @@ body {
   color-scheme: var(--color-scheme);
   -webkit-font-smoothing: antialiased;
   line-height: 1.45;
-  /* Transparent + viewport clip: scrolling happens HERE so the rounded mask
-     stays fixed. Painting the paper on body would propagate square to the
-     Chrome popup canvas. */
+  /* The page root stays transparent so Chrome does not paint a square canvas.
+     body is the one, non-scrolling clipping surface for every popup view. */
   background: transparent !important;
   border-radius: var(--radius-popup, 20px);
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: hidden;
   clip-path: inset(0 round var(--radius-popup, 20px));
+  isolation: isolate;
 }
 
 ::-webkit-scrollbar { width: 6px; }
@@ -206,9 +207,8 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 999px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-hover); }
 
-/* Paper surface — grows with content; body clip-path masks the viewport.
-   Do NOT put overflow-y:auto here: Chrome then fails to honor border-radius
-   and the teal save bar squares the bottom corners. */
+/* The application shell owns scrolling. Its own radius + paint containment
+   prevent any tab, sticky action bar, or gradient from leaking into a corner. */
 #main-view,
 #wizard-view,
 .popup,
@@ -219,7 +219,11 @@ body {
     radial-gradient(90% 60% at 100% 0%, rgba(61, 74, 87, 0.05), transparent 50%),
     var(--bg) !important;
   border-radius: var(--radius-popup, 20px) !important;
-  overflow: visible;
+  background-clip: padding-box;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  contain: paint;
   isolation: isolate;
 }
 
@@ -227,8 +231,7 @@ body {
 #main-view.popup-v2,
 .popup.popup-v2 {
   width: 380px;
-  max-height: none;
-  overflow: visible;
+  max-height: 600px;
   padding: 14px 14px 18px;
   min-height: 120px;
   box-sizing: border-box;
@@ -237,8 +240,7 @@ body {
 #wizard-view,
 .wizard-container {
   width: 380px;
-  max-height: none;
-  overflow: visible;
+  max-height: 600px;
   box-sizing: border-box;
 }
 

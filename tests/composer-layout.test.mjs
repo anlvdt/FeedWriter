@@ -209,6 +209,17 @@ describe("UI system v3 contracts", () => {
     assert.match(popupCss, /background-color:\s*var\(--bg-input\)/);
   });
 
+  it("clips the Chrome popup once at the rounded body while the app shell scrolls", () => {
+    const bodyBlock = popupCss.match(/body\s*\{([\s\S]*?)\n\}/);
+    assert.ok(bodyBlock, "expected popup body rule");
+    assert.match(bodyBlock[1], /overflow:\s*hidden/);
+    assert.match(bodyBlock[1], /clip-path:\s*inset\(0 round var\(--radius-popup, 20px\)\)/);
+    const shellBlock = popupCss.match(/#main-view,\s*[\s\S]*?\.wizard-container\s*\{([\s\S]*?)\n\}/);
+    assert.ok(shellBlock, "expected popup shell rule");
+    assert.match(shellBlock[1], /overflow-y:\s*auto/);
+    assert.match(shellBlock[1], /contain:\s*paint/);
+  });
+
   it("restyles comment-summary without sage leftover and uses toolbar overflow", () => {
     assert.doesNotMatch(contentCss, /fbs-comment-summary-btn[\s\S]{0,220}#A8C0B4/);
     assert.match(content, /fbs-floating-more-menu/);
