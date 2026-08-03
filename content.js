@@ -185,7 +185,11 @@ function cleanup() {
     clearInterval(scanTimer);
     scanTimer = null;
   }
-  if (sponsoredCatchupTimer) {
+  if (typeof discoverTimer !== "undefined" && discoverTimer) {
+    clearInterval(discoverTimer);
+    discoverTimer = null;
+  }
+  if (typeof sponsoredCatchupTimer !== "undefined" && sponsoredCatchupTimer) {
     clearInterval(sponsoredCatchupTimer);
     sponsoredCatchupTimer = null;
   }
@@ -299,13 +303,13 @@ function throttledApplyTheme() {
   themeTimer = setTimeout(() => {
     themeTimer = null;
     applyTheme();
-  }, 500);
+  }, 2000);
 }
 setTimeout(applyTheme, 1000);
 const themeObserver = new MutationObserver(throttledApplyTheme);
-themeObserver.observe(document.body, {
+themeObserver.observe(document.documentElement, {
   attributes: true,
-  attributeFilter: ["class", "style"],
+  attributeFilter: ["class"],
 });
 observers.push(themeObserver);
 
@@ -458,11 +462,31 @@ function hideFlaggedPost(postContainer, evalResult, type) {
     typeof window.fbsIsContentOnlyPostSlice === "function"
       ? window.fbsIsContentOnlyPostSlice
       : null;
-  const target = (expand && expand(postContainer)) || postContainer;
+  const findWrap =
+    typeof findFeedWrapper === "function"
+      ? findFeedWrapper
+      : typeof window.fbsFindFeedWrapper === "function"
+        ? window.fbsFindFeedWrapper
+        : null;
+
+  let target = (expand && expand(postContainer)) || postContainer;
+  if (findWrap) {
+    const wrap = findWrap(target) || findWrap(postContainer);
+    if (wrap && !(isContentOnly && isContentOnly(wrap))) target = wrap;
+  }
   // Refuse to hide a status/media slice that leaves author + action bar behind.
   if (isContentOnly && isContentOnly(target)) return;
-  if (filteredPosts.has(target)) return;
-  filteredPosts.add(target);
+  // Full card must include author chrome — otherwise we hollow the post.
+  const hasAuthorChrome = !!target.querySelector?.(
+    '[data-ad-rendering-role="profile_name"], [data-ad-rendering-role="actor_name"]',
+  );
+  const hasMessage = !!target.querySelector?.(
+    '[data-ad-rendering-role="story_message"], [data-ad-preview="message"], [data-ad-comet-preview="message"], [data-testid="post_message"]',
+  );
+  if (hasMessage && !hasAuthorChrome) return;
+  // Already collapsed / marked — never insert another chip (overlapping
+  // article / data-virtualized / FeedUnit candidates used to loop forever).
+  if (_isAlreadyFiltered(target) || _isAlreadyFiltered(postContainer)) return;
 
   const displayMode = type === "sponsored" ? adDisplayMode : "collapse";
   // Skip noisy action_* keys in visible reason chips — actions already in label
@@ -475,11 +499,13 @@ function hideFlaggedPost(postContainer, evalResult, type) {
     type === "comment_gate" || type === "engagement_gate";
 
   if (displayMode === "hide") {
+    _markFilteredCluster(target);
     target.style.display = "none";
     return;
   }
 
   if (displayMode === "mark") {
+    _markFilteredCluster(target);
     target.style.outline = "1px solid rgba(15, 118, 110, 0.45)";
     target.style.outlineOffset = "3px";
     const badge = document.createElement("div");
@@ -504,6 +530,23 @@ function hideFlaggedPost(postContainer, evalResult, type) {
       : isEngage
         ? _engagementGateLabel(evalResult)
         : "Yêu cầu tương tác";
+
+  // Replace any leftover chip for this cluster before inserting a new one.
+  const parent = target.parentElement;
+  if (parent) {
+    for (const node of Array.from(parent.children)) {
+      if (
+        node !== target &&
+        node.classList?.contains("fbs-filter-indicator") &&
+        (node.nextElementSibling === target ||
+          node.previousElementSibling === target)
+      ) {
+        try {
+          node.remove();
+        } catch (_) {}
+      }
+    }
+  }
 
   const indicator = document.createElement("div");
   indicator.className = "fbs-filter-indicator fbs-hidden-chip";
@@ -538,13 +581,92 @@ function hideFlaggedPost(postContainer, evalResult, type) {
     e.preventDefault();
     target.style.display = "";
     indicator.remove();
-    filteredPosts.delete(target);
+    _clearFilteredCluster(target);
     telemetry.falsePositiveProxy++;
     saveTelemetry();
   });
 
+  _markFilteredCluster(target);
   target.style.display = "none";
-  target.parentElement?.insertBefore(indicator, target);
+  parent?.insertBefore(indicator, target);
+}
+
+/** Hash post text without FeedWriter chrome (chips would flip the fingerprint). */
+function _cheapPostStamp(el) {
+  if (!el) return "";
+  try {
+    const msg = el.querySelector?.(
+      '[data-ad-rendering-role="story_message"], [data-ad-preview="message"], [data-ad-comet-preview="message"], [data-testid="post_message"], [data-testid="post-message"]',
+    );
+    const raw = ((msg && msg.textContent) || "").replace(/\s+/g, " ").trim();
+    if (raw) {
+      return (
+        String(raw.length) +
+        ":" +
+        raw.slice(0, 64) +
+        ":" +
+        (raw.length > 64 ? raw.slice(-32) : "")
+      );
+    }
+    // No semantic message yet — short sample only (never clone the FeedUnit).
+    const fallback = (el.textContent || "").replace(/\s+/g, " ").trim();
+    return String(fallback.length) + ":" + fallback.slice(0, 80);
+  } catch (_) {
+    return "";
+  }
+}
+
+function _filterFingerprint(el) {
+  return hashText(_cheapPostStamp(el));
+}
+
+function _isAlreadyFiltered(el) {
+  if (!el) return true;
+  if (filteredPosts.has(el)) return true;
+  if (el.dataset?.fbsFiltered === "1") return true;
+  if (el.style?.display === "none") return true;
+  if (el.previousElementSibling?.classList?.contains("fbs-filter-indicator")) {
+    return true;
+  }
+  let anc = el.parentElement;
+  for (let i = 0; i < 12 && anc; i++) {
+    if (filteredPosts.has(anc) || anc.dataset?.fbsFiltered === "1") return true;
+    if (anc.style?.display === "none") return true;
+    anc = anc.parentElement;
+  }
+  return false;
+}
+
+function _markFilteredCluster(target) {
+  if (!target) return;
+  filteredPosts.add(target);
+  try {
+    target.dataset.fbsFiltered = "1";
+  } catch (_) {}
+  // Overlapping feed selectors (article + data-virtualized + FeedUnit) must all
+  // be marked or the next scan inserts another "đã ẩn" chip.
+  for (const node of _feedCandidates(target)) {
+    filteredPosts.add(node);
+    try {
+      node.dataset.fbsFiltered = "1";
+    } catch (_) {}
+  }
+  filteredPosts.add(target);
+}
+
+function _clearFilteredCluster(target) {
+  if (!target) return;
+  const clearOne = (node) => {
+    if (!node) return;
+    filteredPosts.delete(node);
+    try {
+      delete node.dataset.fbsFiltered;
+      delete node.dataset.fbsSponsoredHidden;
+      delete node.dataset.fbsEvalFingerprint;
+    } catch (_) {}
+  };
+  clearOne(target);
+  for (const node of _feedCandidates(target)) clearOne(node);
 }
 
 /** Nested feed unit? (comment thread, etc.) */
@@ -566,73 +688,157 @@ function _isNestedFeedUnit(article) {
 }
 
 function _feedCandidates(root) {
-  return [
-    ...root.querySelectorAll('article[role="article"]'),
-    ...root.querySelectorAll("[data-virtualized]"),
-    ...root.querySelectorAll('div[data-pagelet^="FeedUnit"]'),
-  ];
+  // Single combined query — three separate querySelectorAlls were thrashing style.
+  return Array.from(
+    root.querySelectorAll(
+      'article[role="article"], [data-virtualized], div[data-pagelet^="FeedUnit"]',
+    ),
+  );
 }
 
+/** Pagelet-only group shelf check — never walks headings on the hot path. */
+function _isGroupSuggestionCheap(el) {
+  if (SITE !== "facebook" || !el) return false;
+  let node = el;
+  for (let i = 0; i < 3 && node; i++, node = node.parentElement) {
+    const pagelet = (node.getAttribute?.("data-pagelet") || "").toLowerCase();
+    if (
+      /groups.*(?:suggest|recommend|shouldjoin)|(?:suggest|recommend).*groups/.test(
+        pagelet,
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Dedupe overlapping article / virtualized / FeedUnit nodes to one outermost card. */
+function _uniqueFeedPosts(root) {
+  const raw = _feedCandidates(root);
+  const out = [];
+  const seen = new Set();
+  for (const node of raw) {
+    if (!node || seen.has(node)) continue;
+    if (_isNestedFeedUnit(node)) continue;
+    // Skip if a parent is also a feed unit (prefer outer wrapper).
+    let parent = node.parentElement;
+    let nestedInCandidate = false;
+    for (let i = 0; i < 14 && parent; i++) {
+      if (
+        parent.getAttribute?.("role") === "article" ||
+        parent.hasAttribute?.("data-virtualized") ||
+        String(parent.getAttribute?.("data-pagelet") || "").startsWith("FeedUnit")
+      ) {
+        nestedInCandidate = true;
+        break;
+      }
+      parent = parent.parentElement;
+    }
+    if (nestedInCandidate) continue;
+    seen.add(node);
+    out.push(node);
+  }
+  return out;
+}
+
+/** Minimum confidence to auto-hide engagement bait (detector may still score softer). */
+const ENGAGEMENT_HIDE_MIN_CONFIDENCE = 90;
+
 function refreshReusedFeedUnit(article) {
-  const fingerprint = hashText((article.innerText || article.textContent || "").trim());
-  const previous = article.dataset.fbsFilterFingerprint;
-  if (previous && previous !== fingerprint) {
-    article.style.display = "";
+  const stamp = _cheapPostStamp(article);
+  const previous = article.dataset.fbsPostStamp;
+  if (article.dataset.fbsFiltered === "1" || article.style.display === "none") {
+    // Recycled DOM under a collapsed card — only un-hide when body text changes.
+    if (previous && previous !== stamp) {
+      article.style.display = "";
+      article.style.outline = "";
+      article.style.outlineOffset = "";
+      article.querySelectorAll(".fbs-mark-badge").forEach((badge) => badge.remove());
+      _clearFilteredCluster(article);
+      delete article.dataset.fbsSponsoredHidden;
+      delete article.dataset.fbsSponsoredChecked;
+      delete article.dataset.fbsEvalFingerprint;
+    }
+    article.dataset.fbsPostStamp = stamp;
+    return;
+  }
+  if (previous && previous !== stamp) {
+    delete article.dataset.fbsSponsoredChecked;
+    delete article.dataset.fbsEvalFingerprint;
     article.style.outline = "";
     article.style.outlineOffset = "";
     article.querySelectorAll(".fbs-mark-badge").forEach((badge) => badge.remove());
-    filteredPosts.delete(article);
-    delete article.dataset.fbsSponsoredHidden;
-    delete article.dataset.fbsEvalFingerprint;
   }
-  article.dataset.fbsFilterFingerprint = fingerprint;
+  article.dataset.fbsPostStamp = stamp;
 }
 
 /**
- * Fast path: sponsored only — no fingerprint lock, re-checks until hidden.
- * Called on every new DOM node so ads die before user scrolls past.
+ * Sponsored probe. Pass an iterable of posts for incremental work; omit to
+ * scan only currently visible units (never the whole infinite feed on hot path).
  */
-function scanSponsoredFast(rootEl) {
+function scanSponsoredFast(postsOrRoot, opts) {
   if (SITE !== "facebook") return;
   if (isFacebookPersonalProfileHome()) return;
-  const root =
-    rootEl ||
-    document.querySelector('div[role="main"]') ||
-    document.querySelector('div[id^="mount_0_0"]') ||
-    document.body;
+  if (_isFbScrollBusy()) return;
 
-  const detect =
+  const useFullDetect = !!(opts && opts.fullDetect);
+  const detectLight =
+    typeof window.fbsDetectSponsoredSignalsLight === "function"
+      ? window.fbsDetectSponsoredSignalsLight
+      : null;
+  const detectFull =
     typeof window.fbsDetectSponsoredSignals === "function"
       ? window.fbsDetectSponsoredSignals
       : typeof detectSponsoredSignals === "function"
         ? detectSponsoredSignals
         : null;
-  const isSp =
-    typeof isSponsored === "function"
-      ? isSponsored
-      : typeof window.fbsIsSponsored === "function"
-        ? window.fbsIsSponsored
-        : null;
+  const detect = useFullDetect
+    ? detectFull || detectLight
+    : detectLight || detectFull;
+  if (!detect) return;
 
-  for (const article of _feedCandidates(root)) {
-    if (_isFacebookGroupSuggestion(article)) {
-      _removeGroupSuggestionControls(article);
+  let articles;
+  if (postsOrRoot && typeof postsOrRoot[Symbol.iterator] === "function" && !postsOrRoot.querySelectorAll) {
+    articles = postsOrRoot;
+  } else if (postsOrRoot && postsOrRoot.nodeType === 1) {
+    articles = _uniqueFeedPosts(postsOrRoot);
+  } else if (typeof visiblePosts !== "undefined" && visiblePosts.size > 0) {
+    articles = Array.from(visiblePosts).slice(0, 14);
+  } else {
+    const root =
+      document.querySelector('div[role="main"]') ||
+      document.querySelector('div[id^="mount_0_0"]') ||
+      document.body;
+    articles = _uniqueFeedPosts(root).slice(0, 14);
+  }
+
+  let n = 0;
+  for (const article of articles) {
+    if (!article || !article.isConnected) continue;
+    if (++n > 16) break;
+    if (_isGroupSuggestionCheap(article)) continue;
+    // Skip recycle stamp work when already probed and not filtered.
+    if (
+      article.dataset.fbsSponsoredChecked === "1" &&
+      article.dataset.fbsSponsoredHidden !== "1" &&
+      article.dataset.fbsFiltered !== "1"
+    ) {
       continue;
     }
     refreshReusedFeedUnit(article);
-    if (filteredPosts.has(article)) continue;
+    if (_isAlreadyFiltered(article)) continue;
     if (article.dataset.fbsSponsoredHidden === "1") continue;
-    if (_isNestedFeedUnit(article)) continue;
+    if (article.dataset.fbsSponsoredChecked === "1") continue;
 
-    let hit = null;
-    if (detect) {
-      hit = detect(article);
-    } else if (isSp && isSp(article)) {
-      hit = { isSponsored: true, reasons: ["sponsored_keyword"], confidence: 85 };
+    const hit = detect(article);
+    if (!hit || !hit.isSponsored) {
+      article.dataset.fbsSponsoredChecked = "1";
+      continue;
     }
-    if (!hit || !hit.isSponsored) continue;
 
     article.dataset.fbsSponsoredHidden = "1";
+    article.dataset.fbsSponsoredChecked = "1";
     telemetry.postsFlaggedAds++;
     for (const r of hit.reasons || []) {
       telemetry.topReasons[r] = (telemetry.topReasons[r] || 0) + 1;
@@ -649,56 +855,152 @@ function scanSponsoredFast(rootEl) {
   }
 }
 
+/** Inject Tóm tắt for a small set of posts — no whole-feed walks. */
+function injectSummaryOnPosts(posts) {
+  if (!posts) return;
+  if (_isFbScrollBusy()) return;
+  let n = 0;
+  for (const article of posts) {
+    if (!article || !article.isConnected) continue;
+    if (++n > 10) break;
+    if (_isGroupSuggestionCheap(article)) continue;
+    if (article.dataset.fbsSponsoredHidden === "1" || _isAlreadyFiltered(article)) {
+      continue;
+    }
+    if (article.querySelector(".fbs-wrap-inline, .fbs-btn-inline[data-fbs-ui='v3']")) {
+      continue;
+    }
+    if (postObserver && !article.dataset.fbsObserved) {
+      article.dataset.fbsObserved = "1";
+      postObserver.observe(article);
+    }
+    const textEl = _findFacebookStatusText(article);
+    if (!textEl) continue;
+    let seeMore = null;
+    const controls = textEl.querySelectorAll(
+      '[role="button"], span[dir="auto"], div[dir="auto"]',
+    );
+    const limit = Math.min(controls.length, 24);
+    for (let i = 0; i < limit; i++) {
+      const label = (controls[i].textContent || "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase();
+      if (!SEE_MORE.some((kw) => label === kw || label.startsWith(kw))) continue;
+      seeMore = controls[i];
+      break;
+    }
+    if (seeMore) {
+      inject(article, findClickable(seeMore), textEl, seeMore);
+    } else {
+      _mountInlineStatusChip(article, textEl, MIN_LEN);
+    }
+  }
+}
+
+const _pendingFeedPosts = new Set();
+let _pendingFlushRaf = 0;
+let _pendingFlushIdle = 0;
+
+// While the user is scrolling, Facebook already saturates the main thread.
+// Queue work only — never probe DOM / inject UI until scroll is idle.
+let _fbScrollIdle = true;
+let _fbScrollIdleTimer = 0;
+// Short settle — long idle made "Tóm tắt" feel delayed after stopping.
+const FB_SCROLL_IDLE_MS = 90;
+
+function _isFbScrollBusy() {
+  return SITE === "facebook" && !_fbScrollIdle;
+}
+
+function _markFbScrollBusy() {
+  if (SITE !== "facebook") return;
+  _fbScrollIdle = false;
+  if (_fbScrollIdleTimer) clearTimeout(_fbScrollIdleTimer);
+  if (_pendingFlushRaf) {
+    try {
+      cancelAnimationFrame(_pendingFlushRaf);
+    } catch (_) {}
+    _pendingFlushRaf = 0;
+  }
+  if (_pendingFlushIdle && typeof cancelIdleCallback === "function") {
+    try {
+      cancelIdleCallback(_pendingFlushIdle);
+    } catch (_) {}
+    _pendingFlushIdle = 0;
+  }
+  _fbScrollIdleTimer = setTimeout(() => {
+    _fbScrollIdle = true;
+    _fbScrollIdleTimer = 0;
+    _schedulePendingFlush();
+  }, FB_SCROLL_IDLE_MS);
+}
+
+function _queueFeedPost(node) {
+  if (!node || node.nodeType !== 1) return;
+  if (_isNestedFeedUnit(node)) return;
+  _pendingFeedPosts.add(node);
+}
+
+function _flushPendingFeedPosts() {
+  _pendingFlushRaf = 0;
+  _pendingFlushIdle = 0;
+  if (_isFbScrollBusy() || document.hidden) return;
+  if (!_pendingFeedPosts.size) return;
+
+  const batch = [];
+  for (const node of _pendingFeedPosts) {
+    batch.push(node);
+    _pendingFeedPosts.delete(node);
+    if (batch.length >= 6) break;
+  }
+  // Tóm tắt first (user-visible); sponsored probe second (heavier).
+  try {
+    injectSummaryOnPosts(batch);
+  } catch (_) {}
+  try {
+    scanSponsoredFast(batch);
+  } catch (_) {}
+
+  if (_pendingFeedPosts.size) _schedulePendingFlush();
+}
+
+function _schedulePendingFlush() {
+  if (document.hidden || _isFbScrollBusy()) return;
+  if (_pendingFlushRaf || _pendingFlushIdle) return;
+  if (!_pendingFeedPosts.size) return;
+  // rAF — not requestIdleCallback (idle was delaying the button ~0.5–1.2s).
+  _pendingFlushRaf = requestAnimationFrame(_flushPendingFeedPosts);
+}
+
 function scanEngagementPosts() {
   if (SITE !== "facebook") return;
   if (isFacebookPersonalProfileHome()) return;
+  // Opt-in only — never run the heavy evaluate loop when the user left it off.
+  if (!filterEngagementGates) return;
   if (typeof window.fbsEvaluatePostSignals !== "function") return;
-
-  // Always run sponsored fast path first
-  scanSponsoredFast();
 
   const root =
     document.querySelector('div[role="main"]') ||
     document.querySelector('div[id^="mount_0_0"]') ||
     document.body;
 
-  for (const article of _feedCandidates(root)) {
-    if (_isFacebookGroupSuggestion(article)) {
+  // Prefer visible posts; never evaluate the entire virtualized history.
+  const articles =
+    visiblePosts && visiblePosts.size > 0
+      ? Array.from(visiblePosts).slice(0, 12)
+      : _uniqueFeedPosts(root).slice(0, 12);
+
+  for (const article of articles) {
+    if (_isGroupSuggestionCheap(article) || _isFacebookGroupSuggestion(article)) {
       _removeGroupSuggestionControls(article);
       continue;
     }
     refreshReusedFeedUnit(article);
-    if (filteredPosts.has(article)) continue;
-    if (_isNestedFeedUnit(article)) continue;
+    if (_isAlreadyFiltered(article)) continue;
+    if (article.dataset.fbsSponsoredHidden === "1") continue;
 
-    // Sponsored may appear after first paint (portal) — recheck if not yet hidden
-    if (article.dataset.fbsSponsoredHidden !== "1") {
-      const det =
-        typeof window.fbsDetectSponsoredSignals === "function"
-          ? window.fbsDetectSponsoredSignals(article)
-          : null;
-      if (det && det.isSponsored) {
-        article.dataset.fbsSponsoredHidden = "1";
-        telemetry.postsFlaggedAds++;
-        for (const r of det.reasons || []) {
-          telemetry.topReasons[r] = (telemetry.topReasons[r] || 0) + 1;
-        }
-        hideFlaggedPost(
-          article,
-          {
-            isSponsored: true,
-            reasons: det.reasons || [],
-            confidence: det.confidence || 90,
-          },
-          "sponsored",
-        );
-        continue;
-      }
-    }
-
-    const evalFingerprint = hashText(
-      (article.innerText || article.textContent || "").trim(),
-    );
+    const evalFingerprint = _filterFingerprint(article);
     if (article.dataset.fbsEvalFingerprint === evalFingerprint) continue;
 
     article.dataset.fbsEvalFingerprint = evalFingerprint;
@@ -716,8 +1018,11 @@ function scanEngagementPosts() {
       continue;
     }
 
-    // Engagement bait
-    if (filterEngagementGates && (evalResult.isEngagementGate || evalResult.isCommentGate)) {
+    const engageConf = Number(evalResult.confidence) || 0;
+    if (
+      (evalResult.isEngagementGate || evalResult.isCommentGate) &&
+      engageConf >= ENGAGEMENT_HIDE_MIN_CONFIDENCE
+    ) {
       telemetry.postsFlaggedCommentGate++;
       for (const r of evalResult.reasons) {
         telemetry.topReasons[r] = (telemetry.topReasons[r] || 0) + 1;
@@ -732,35 +1037,47 @@ function scanEngagementPosts() {
 // === SCAN LOGIC ===
 function findNewSeeMoreElements() {
   const results = [];
-  let roots = [];
-  
-  if (typeof visiblePosts !== "undefined" && visiblePosts.size > 0) {
-    roots = Array.from(visiblePosts);
-    // Eagerly scan newly rendered posts before async IntersectionObserver triggers
-    const rootEl = document.querySelector('div[role="main"]') || document.querySelector('div[id^="mount_0_0"]') || document.body;
-    if (rootEl && SITE === "facebook") {
-      const candidates = rootEl.querySelectorAll('article[role="article"], [data-virtualized], div[data-pagelet^="FeedUnit"]');
-      for (const c of candidates) {
-        if (!c.dataset.fbsObserved) {
-          roots.push(c);
-        }
-      }
+  const roots = [];
+  const rootEl =
+    document.querySelector('div[role="main"]') ||
+    document.querySelector('div[id^="mount_0_0"]') ||
+    document.querySelector("main") ||
+    document.body;
+
+  // Prefer posts already in the viewport — full-main walks freeze Facebook.
+  if (visiblePosts && visiblePosts.size > 0) {
+    for (const post of visiblePosts) roots.push(post);
+  }
+  if (rootEl && SITE === "facebook") {
+    let backlog = 0;
+    for (const c of rootEl.querySelectorAll(
+      'article[role="article"], [data-virtualized], div[data-pagelet^="FeedUnit"]',
+    )) {
+      if (c.dataset.fbsObserved) continue;
+      if (_isNestedFeedUnit(c)) continue;
+      roots.push(c);
+      if (++backlog >= 10) break;
     }
-  } else {
-    roots = [
-      document.querySelector('div[role="main"]') ||
-      document.querySelector('div[id^="mount_0_0"]') ||
-      document.querySelector("main") ||
-      document.body
-    ];
+  } else if (!roots.length && rootEl) {
+    roots.push(rootEl);
   }
 
-  for (const root of roots) {
+  const limitedRoots = roots.slice(0, 24);
+  for (const root of limitedRoots) {
     if (!root) continue;
-    const els = root.querySelectorAll(
+    // Stay inside the post body when possible — avoid scanning chrome/comments.
+    const scope =
+      (SITE === "facebook" &&
+        root.querySelector?.(
+          '[data-ad-preview="message"], [data-ad-comet-preview="message"], [data-testid="post_message"], [data-testid="post-message"], [data-ad-rendering-role="story_message"]',
+        )) ||
+      root;
+    const els = scope.querySelectorAll(
       'div[role="button"], span[role="button"], span[dir="auto"], div[dir="auto"]',
     );
-    for (const el of els) {
+    const limit = Math.min(els.length, 48);
+    for (let i = 0; i < limit; i++) {
+      const el = els[i];
       if (_isFacebookGroupSuggestion(el)) {
         el.dataset.fbsScanned = "1";
         continue;
@@ -776,10 +1093,9 @@ function findNewSeeMoreElements() {
         delete el.dataset.fbsScanned;
       }
       if (el.children.length > 6) continue;
-      // Normalize non-breaking spaces (\u00a0) to avoid match misses
-      const t = (el.innerText || el.textContent || "").replace(/\u00a0/g, " ").trim().toLowerCase();
+      // textContent avoids layout thrashing from innerText on every candidate.
+      const t = (el.textContent || "").replace(/\u00a0/g, " ").trim().toLowerCase();
       if (t.length > 30 || t.length < 4) continue;
-      // Clean ellipses, dots, and collapse double spaces to cover patterns like "... Xem thêm" or "xem thêm"
       const cleanT = t.replace(/\.+/g, "").replace(/\s+/g, " ").trim();
       if (SEE_MORE.some((kw) => cleanT === kw || cleanT.startsWith(kw) || t === kw || t === "..." + kw || t.startsWith(kw))) {
         el.dataset.fbsScanned = "1";
@@ -3143,9 +3459,16 @@ function handleSelection() {
   }, 0);
 }
 
+let _selectionTimer = null;
 const mouseupHandler = (e) => {
   if (floatingToolbar && floatingToolbar.contains(e.target)) return;
-  handleSelection();
+  // Debounce — Facebook click/scroll storms must not run selection logic every time.
+  clearTimeout(_selectionTimer);
+  _selectionTimer = setTimeout(() => {
+    try {
+      handleSelection();
+    } catch (_) {}
+  }, 120);
 };
 document.addEventListener("mouseup", mouseupHandler);
 listeners.push({ element: document, event: "mouseup", handler: mouseupHandler });
@@ -3159,18 +3482,82 @@ document.addEventListener("mousedown", mousedownHandler);
 listeners.push({ element: document, event: "mousedown", handler: mousedownHandler });
 
 // === VISIBLE POSTS TRACKER (IntersectionObserver) ===
+// Primary discovery path for Facebook — do NOT use a subtree MutationObserver
+// on the feed (FB mutates constantly while scrolling and freezes the tab).
 const visiblePosts = new Set();
 let postObserver = null;
 if (typeof IntersectionObserver !== "undefined") {
-  postObserver = new IntersectionObserver((entries) => {
-    for (const entry of entries) {
-      if (entry.isIntersecting) {
-        visiblePosts.add(entry.target);
-      } else {
-        visiblePosts.delete(entry.target);
+  postObserver = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        const el = entry.target;
+        if (entry.isIntersecting) {
+          visiblePosts.add(el);
+          // Queue only — never flush while scrolling (IO fires mid-scroll).
+          if (el.dataset.fbsViewportScanned !== "1") {
+            el.dataset.fbsViewportScanned = "1";
+            _queueFeedPost(el);
+          }
+        } else {
+          visiblePosts.delete(el);
+        }
       }
+      // Process after scroll settles (or immediately if already idle).
+      if (!_isFbScrollBusy()) _schedulePendingFlush();
+    },
+    { rootMargin: "100px 0px", threshold: 0 },
+  );
+}
+
+if (SITE === "facebook") {
+  window.addEventListener("scroll", _markFbScrollBusy, {
+    capture: true,
+    passive: true,
+  });
+  listeners.push({
+    element: window,
+    event: "scroll",
+    handler: _markFbScrollBusy,
+    options: { capture: true, passive: true },
+  });
+}
+
+/** Register new top-level feed units with the viewport observer (cheap poll). */
+function _discoverFeedUnitsForObserver() {
+  if (SITE !== "facebook" || document.hidden || !postObserver) return;
+  if (_isFbScrollBusy()) return;
+  if (isFacebookPersonalProfileHome()) return;
+  const root =
+    document.querySelector('div[role="feed"]') ||
+    document.querySelector('div[role="main"]');
+  if (!root) return;
+  // FeedUnit pagelets only — bare [data-virtualized] matches too much chrome.
+  const nodes = root.querySelectorAll('div[data-pagelet^="FeedUnit"]');
+  let registered = 0;
+  for (const node of nodes) {
+    if (registered >= 16) break;
+    if (node.dataset.fbsObserved === "1") continue;
+    if (_isNestedFeedUnit(node)) continue;
+    node.dataset.fbsObserved = "1";
+    try {
+      postObserver.observe(node);
+      registered++;
+    } catch (_) {}
+  }
+  if (registered === 0) {
+    for (const node of root.querySelectorAll(
+      '[data-virtualized], article[role="article"]',
+    )) {
+      if (registered >= 12) break;
+      if (node.dataset.fbsObserved === "1") continue;
+      if (_isNestedFeedUnit(node)) continue;
+      node.dataset.fbsObserved = "1";
+      try {
+        postObserver.observe(node);
+        registered++;
+      } catch (_) {}
     }
-  }, { rootMargin: "800px 0px" });
+  }
 }
 
 // === FB ALL POSTS (Feature 6) — one fixed chip per top-level feed post ===
@@ -3445,17 +3832,15 @@ function scanXPosts() {
 
 function scanFBAllPosts() {
   if (SITE !== "facebook") return;
-  const root =
-    document.querySelector('div[role="main"]') ||
-    document.querySelector('div[id^="mount_0_0"]') ||
-    document.body;
+  if (_isFbScrollBusy()) return;
+  // Visible-only — never fall back to a full-feed walk (innerText thrash).
+  if (!visiblePosts || visiblePosts.size === 0) return;
+  const posts = Array.from(visiblePosts);
 
-  _purgeBrokenChips(root);
-
-  const posts = _getTopLevelFeedPosts(root);
+  let processed = 0;
   for (const article of posts) {
-    if (_isFacebookGroupSuggestion(article)) {
-      _removeGroupSuggestionControls(article);
+    if (++processed > 12) break;
+    if (_isGroupSuggestionCheap(article)) {
       fbAllPostInjected.add(article);
       continue;
     }
@@ -3464,17 +3849,25 @@ function scanFBAllPosts() {
       postObserver.observe(article);
     }
 
-    // Remove the legacy corner chip so Facebook posts use the inline control.
-    article.querySelectorAll(':scope > .fbs-chip-host').forEach((el) => {
-      try { el.remove(); } catch (_) {}
+    article.querySelectorAll(":scope > .fbs-chip-host").forEach((el) => {
+      try {
+        el.remove();
+      } catch (_) {}
     });
 
-    if (isSponsored(article)) {
+    if (article.dataset.fbsSponsoredHidden === "1" || _isAlreadyFiltered(article)) {
       fbAllPostInjected.add(article);
       continue;
     }
+    // Never call full isSponsored() here — it walks the whole card.
+    if (article.dataset.fbsSponsoredChecked !== "1") {
+      scanSponsoredFast([article]);
+      if (article.dataset.fbsSponsoredHidden === "1") {
+        fbAllPostInjected.add(article);
+        continue;
+      }
+    }
 
-    // Skip if inline "Xem thêm" chip already present
     if (article.querySelector(".fbs-wrap-inline, .fbs-btn-inline[data-fbs-ui='v3']")) {
       fbAllPostInjected.add(article);
       continue;
@@ -3486,23 +3879,23 @@ function scanFBAllPosts() {
       continue;
     }
 
-    // Prefer sitting right after Facebook's "Xem thêm" when the post is truncated.
     let seeMore = null;
-    for (const control of textEl.querySelectorAll('[role="button"], span[dir="auto"], div[dir="auto"]')) {
-      const label = (control.innerText || control.textContent || "")
+    const controls = textEl.querySelectorAll(
+      '[role="button"], span[dir="auto"], div[dir="auto"]',
+    );
+    const controlLimit = Math.min(controls.length, 24);
+    for (let i = 0; i < controlLimit; i++) {
+      const label = (controls[i].textContent || "")
         .replace(/\s+/g, " ")
         .trim()
         .toLowerCase();
       if (!SEE_MORE.some((kw) => label === kw || label.startsWith(kw))) continue;
-      seeMore = control;
+      seeMore = controls[i];
       break;
     }
     if (seeMore) {
-      // "Xem thêm" means the full status is long even when the clamped
-      // preview is short — always place Tóm tắt next to the expander.
       inject(article, findClickable(seeMore), textEl, seeMore);
     } else {
-      // No expander: only mount when the visible body is long enough to summarize.
       _mountInlineStatusChip(article, textEl, MIN_LEN);
     }
     fbAllPostInjected.add(article);
@@ -3520,37 +3913,34 @@ function _isFacebookCommentActivityText(text) {
 
 function _visibleCommentEntries(article) {
   return Array.from(article.querySelectorAll('article[role="article"]'))
-    .map((element) => ({ element, text: (element.innerText || "").trim() }))
+    .map((element) => ({ element, text: (element.textContent || "").replace(/\s+/g, " ").trim() }))
     .filter(({ text }) => text.length > 10 && !_isFacebookCommentActivityText(text));
 }
 
 function scanCommentSections() {
   if (SITE !== "facebook") return;
   const root = document.querySelector('div[role="main"]') || document.querySelector('div[id^="mount_0_0"]') || document.body;
-  // Include both old (role="article") and new (data-virtualized) top-level post containers
-  const articles = [
-    ...root.querySelectorAll('article[role="article"]'),
-    ...root.querySelectorAll('[data-virtualized]'),
-  ];
-  for (const article of articles) {
-    if (_isFacebookGroupSuggestion(article)) continue;
-    // Only top-level post containers — not nested in another post
-    let depth = 0;
-    let ancestor = article.parentElement;
-    for (let j = 0; j < 20; j++) {
-      if (!ancestor || ancestor === document.body) break;
-      if (ancestor.getAttribute("role") === "article" || ancestor.hasAttribute("data-virtualized")) depth++;
-      ancestor = ancestor.parentElement;
+  // Prefer visible posts; fall back to a small top-level sample.
+  const articles = [];
+  if (visiblePosts && visiblePosts.size > 0) {
+    for (const post of visiblePosts) articles.push(post);
+  } else {
+    for (const node of _uniqueFeedPosts(root)) {
+      articles.push(node);
+      if (articles.length >= 12) break;
     }
-    if (depth >= 1) continue; // nested = not a top-level post
+  }
+  let checked = 0;
+  for (const article of articles) {
+    if (++checked > 16) break;
+    if (_isFacebookGroupSuggestion(article)) continue;
+    if (_isNestedFeedUnit(article)) continue;
     if (commentBtnInjected.has(article)) {
       if (article.querySelector(".fbs-comment-summary-btn")) continue;
       commentBtnInjected.delete(article);
     }
-    // Check for comment articles inside this post
     const commentArticles = article.querySelectorAll('article[role="article"]');
-    if (commentArticles.length < 2) continue; // need at least 2 visible comments
-    // Collect comment text
+    if (commentArticles.length < 2) continue;
     const commentEntries = _visibleCommentEntries(article);
     if (commentEntries.length < 2) continue;
     commentBtnInjected.add(article);
@@ -3567,7 +3957,6 @@ function scanCommentSections() {
         currentComments.map((t, i) => (i + 1) + ". " + t).join("\n\n");
       summarizeText(combined, "comment_summary", article);
     });
-    // Insert before the first comment article
     const firstComment = commentEntries[0].element;
     firstComment.parentElement?.insertBefore(btn, firstComment);
   }
@@ -3878,194 +4267,159 @@ function scanShopeeLinks() {
   }
 }
 
-function scan() {
+function scan(opts) {
   if (!isContextValid() || isBlocked) return;
   if (document.hidden) return;
+  if (_isFbScrollBusy()) return;
   if (isFacebookPersonalProfileHome()) {
     removePersonalProfileControls();
     return;
   }
+  const full = !!(opts && opts.full);
   if (SITE === "reddit") scanRedditPosts();
   if (SITE === "x") scanXPosts();
-  // Sponsored first (fast) then rest
-  scanSponsoredFast();
-  try {
-    healHollowFeedPosts(document);
-  } catch (_) {}
-  try {
-    _purgeBrokenChips(document);
-  } catch (_) {}
-  findNewSeeMoreElements().forEach(processSeeMore);
-  scanFBAllPosts();
-  if (!scan._skipComments) scanCommentSections();
-  scanEngagementPosts();
+  _discoverFeedUnitsForObserver();
+  scanSponsoredFast(undefined, { fullDetect: !!full });
+  if (SITE === "facebook") {
+    scanFBAllPosts();
+    if (full && filterEngagementGates) scanEngagementPosts();
+  }
 }
 
 let scanDebounceTimer = null;
 let scanScheduled = false;
-let sponsoredDebounceTimer = null;
-let sponsoredScheduled = false;
-// Keep short: new feed units already wait one rAF for the fast inject path;
-// this only batches follow-up full scans (comments, heal, etc.).
-const SCAN_DEBOUNCE_MS = 120;
-const SPONSORED_DEBOUNCE_MS = 32; // ~1 frame — hide ads ASAP
-const SCAN_SAFETY_INTERVAL_MS = 60_000;
+const SCAN_DEBOUNCE_MS = 4000;
+const SCAN_SAFETY_INTERVAL_MS = 180_000;
 let _scanSafetyCount = 0;
+let discoverTimer = null;
+let sponsoredCatchupTimer = null;
 
-/** Lightweight inject used on the first paint of new feed units. */
 function scanSummaryControlsFast() {
   if (!isContextValid() || isBlocked || document.hidden) return;
+  if (_isFbScrollBusy()) return;
   if (isFacebookPersonalProfileHome()) return;
-  findNewSeeMoreElements().forEach(processSeeMore);
+  if (_pendingFeedPosts.size) {
+    _flushPendingFeedPosts();
+    return;
+  }
   if (SITE === "facebook") scanFBAllPosts();
   if (SITE === "x") scanXPosts();
 }
 
 function scheduleScan() {
-  if (scanScheduled || document.hidden) return;
-  scanScheduled = true;
+  if (document.hidden || _isFbScrollBusy()) return;
   clearTimeout(scanDebounceTimer);
+  scanScheduled = true;
   scanDebounceTimer = setTimeout(() => {
     scanScheduled = false;
-    scan();
+    if (_isFbScrollBusy()) return;
+    const run = () => {
+      try {
+        scan({ full: filterEngagementGates });
+      } catch (_) {}
+    };
+    if (typeof requestIdleCallback === "function") {
+      requestIdleCallback(run, { timeout: 3000 });
+    } else {
+      run();
+    }
   }, SCAN_DEBOUNCE_MS);
 }
 
 function scheduleSponsoredFast() {
   if (document.hidden || SITE !== "facebook") return;
-  if (sponsoredScheduled) return;
-  sponsoredScheduled = true;
-  clearTimeout(sponsoredDebounceTimer);
-  sponsoredDebounceTimer = setTimeout(() => {
-    sponsoredScheduled = false;
+  _schedulePendingFlush();
+}
+
+// Boot: discover quickly so the first viewport gets "Tóm tắt" without waiting.
+if (SITE === "facebook") {
+  const bootDiscover = () => {
+    try {
+      _discoverFeedUnitsForObserver();
+      // Seed queue from anything already intersecting after observe().
+      for (const el of visiblePosts) {
+        if (el.dataset.fbsViewportScanned === "1") continue;
+        el.dataset.fbsViewportScanned = "1";
+        _queueFeedPost(el);
+      }
+      _schedulePendingFlush();
+    } catch (_) {}
+  };
+  // Fast path — do not wait for requestIdleCallback (felt like ~1s delay).
+  setTimeout(bootDiscover, 80);
+  requestAnimationFrame(bootDiscover);
+  // Discover new FeedUnits while idle; skip while scrolling.
+  discoverTimer = setInterval(() => {
+    if (document.hidden || _isFbScrollBusy()) return;
+    _discoverFeedUnitsForObserver();
+    _schedulePendingFlush();
+  }, 1500);
+} else {
+  setTimeout(() => {
+    try {
+      scan({ full: false });
+    } catch (_) {}
+  }, 600);
+}
+
+scanTimer = setInterval(() => {
+  if (document.hidden || _isFbScrollBusy()) return;
+  _scanSafetyCount++;
+  _discoverFeedUnitsForObserver();
+  if (filterEngagementGates && _scanSafetyCount % 2 === 0) {
+    scheduleScan();
+  } else {
     try {
       scanSponsoredFast();
     } catch (_) {}
-  }, SPONSORED_DEBOUNCE_MS);
-}
-
-// Immediate first pass
-scanSponsoredFast();
-scan();
-scheduleScan();
-
-// Catch ads that load portals slightly after the post (~0.3–1s)
-let sponsoredCatchup = 0;
-let sponsoredCatchupTimer = SITE === "facebook" ? setInterval(() => {
-  if (document.hidden) return;
-  scanSponsoredFast();
-  if (++sponsoredCatchup > 40) {
-    clearInterval(sponsoredCatchupTimer);
-    sponsoredCatchupTimer = null;
   }
-}, 500) : null;
-
-// Low-frequency recovery scan. Normal operation is driven by relevant DOM
-// mutations, visibility changes, and newly observed posts.
-scanTimer = setInterval(() => {
-  if (document.hidden) return;
-  _scanSafetyCount++;
-  scan._skipComments = _scanSafetyCount % 2 === 0;
-  scanSponsoredFast();
-  scan();
 }, SCAN_SAFETY_INTERVAL_MS);
 
 const resumeScan = () => {
-  if (document.visibilityState === "visible") {
-    scanSponsoredFast();
-    scan();
+  if (document.visibilityState === "visible" && !_isFbScrollBusy()) {
+    _discoverFeedUnitsForObserver();
+    _schedulePendingFlush();
   }
 };
 document.addEventListener("visibilitychange", resumeScan);
-window.addEventListener("focus", resumeScan);
-window.addEventListener("pageshow", resumeScan);
 listeners.push({ element: document, event: "visibilitychange", handler: resumeScan });
-listeners.push({ element: window, event: "focus", handler: resumeScan });
-listeners.push({ element: window, event: "pageshow", handler: resumeScan });
 
-function _nodeLooksLikeSeeMoreControl(node) {
-  if (!node || node.nodeType !== 1) return false;
-  const matchesLabel = (el) => {
-    const t = (el.innerText || el.textContent || "")
-      .replace(/\u00a0/g, " ")
-      .trim()
-      .toLowerCase();
-    if (t.length > 30 || t.length < 4) return false;
-    const cleanT = t.replace(/\.+/g, "").replace(/\s+/g, " ").trim();
-    return SEE_MORE.some((kw) => cleanT === kw || cleanT.startsWith(kw) || t === kw);
-  };
-  if (
-    node.matches?.(
-      'div[role="button"], span[role="button"], span[dir="auto"], div[dir="auto"]',
-    ) &&
-    matchesLabel(node)
-  ) {
-    return true;
-  }
-  const els = node.querySelectorAll?.(
-    'div[role="button"], span[role="button"], span[dir="auto"], div[dir="auto"]',
-  );
-  if (!els || !els.length) return false;
-  const limit = Math.min(els.length, 16);
-  for (let i = 0; i < limit; i++) {
-    if (matchesLabel(els[i])) return true;
-  }
-  return false;
+// Facebook: no subtree MutationObserver on the feed — dominant scroll-jank source.
+if (SITE !== "facebook") {
+  const feedObserverRoot =
+    document.querySelector('div[role="main"]') ||
+    document.body ||
+    document.documentElement;
+  const feedTargetSelector =
+    'article[role="article"], [data-virtualized], [data-pagelet^="FeedUnit"]';
+  const scanObserver = new MutationObserver((mutations) => {
+    if (document.hidden) return;
+    let hit = false;
+    const maxMutations = Math.min(mutations.length, 12);
+    for (let mi = 0; mi < maxMutations; mi++) {
+      const nodes = mutations[mi].addedNodes;
+      const maxNodes = Math.min(nodes.length, 8);
+      for (let ni = 0; ni < maxNodes; ni++) {
+        const node = nodes[ni];
+        if (node.nodeType === 1 && node.matches?.(feedTargetSelector)) {
+          hit = true;
+          break;
+        }
+      }
+      if (hit) break;
+    }
+    if (hit) scheduleScan();
+  });
+  scanObserver.observe(feedObserverRoot, { childList: true, subtree: true });
+  observers.push(scanObserver);
 }
 
-let fastScanPending = false;
-const feedObserverRoot =
-  document.querySelector('div[role="main"]') || document.body || document.documentElement;
-const feedTargetSelector =
-  'article[role="article"], [data-virtualized], [data-pagelet^="FeedUnit"]';
-const scanObserver = new MutationObserver((mutations) => {
-  let hasNewPost = false;
-  let hasSeeMore = false;
-  for (const m of mutations) {
-    for (const node of m.addedNodes) {
-      if (node.nodeType !== 1) continue;
-      if (
-        node.matches?.(feedTargetSelector) ||
-        node.querySelector?.(feedTargetSelector)
-      ) {
-        hasNewPost = true;
-      }
-      if (!hasSeeMore && _nodeLooksLikeSeeMoreControl(node)) {
-        hasSeeMore = true;
-      }
-    }
-    if (hasNewPost && hasSeeMore) break;
-  }
-
-  if (hasNewPost) {
-    scheduleSponsoredFast();
-    if (!fastScanPending) {
-      fastScanPending = true;
-      requestAnimationFrame(() => {
-        fastScanPending = false;
-        scanSponsoredFast();
-        // Inject "Tóm tắt" on the first frame — do not wait for SCAN_DEBOUNCE_MS.
-        try {
-          scanSummaryControlsFast();
-        } catch (_) {}
-      });
-    }
-  }
-  // Rescan when Facebook hydrates "Xem thêm" inside an already-mounted post,
-  // or when a whole new feed unit arrives.
-  if (hasNewPost || hasSeeMore) scheduleScan();
-});
-scanObserver.observe(feedObserverRoot, {
-  childList: true,
-  subtree: true,
-});
-observers.push(scanObserver);
 window.buildCommentText = buildCommentText;
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.action === "rescan-feed") {
     try {
-      scan();
+      scan({ full: true });
       sendResponse({ ok: true });
     } catch (err) {
       console.warn("[FeedWriter] rescan-feed failed:", err?.message || err);

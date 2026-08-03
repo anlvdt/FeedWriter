@@ -267,6 +267,74 @@ function detectSponsoredSignals(container) {
   };
 }
 
+/**
+ * Hot-path sponsored probe — pagelet + ads links + a few portal ids only.
+ * Skips the expensive aria-label / short-text walks used by the full detector.
+ */
+function detectSponsoredSignalsLight(container) {
+  if (!container || SITE !== "facebook") {
+    return { isSponsored: false, reasons: [], confidence: 0, details: {} };
+  }
+  const reasons = [];
+  let confidence = 0;
+  const details = {};
+
+  const pagelet =
+    container.getAttribute?.("data-pagelet") ||
+    container.closest?.("[data-pagelet]")?.getAttribute("data-pagelet") ||
+    "";
+  if (/FeedUnit_Ad|SponsoredFeed|AdsFeed|FeedAds/i.test(pagelet)) {
+    reasons.push("ad_structure");
+    confidence = 92;
+  }
+
+  if (
+    container.querySelector?.(
+      'a[href*="/ads/about"], a[href*="about_ads"], a[href*="adchoices"], a[href*="/ads/preferences"]',
+    )
+  ) {
+    reasons.push("ads_about_link");
+    confidence = Math.max(confidence, 95);
+  }
+
+  // Cap portal walk — Facebook posts can have dozens of aria-describedby nodes.
+  const ariaRefs = container.querySelectorAll?.(
+    "[aria-describedby],[aria-labelledby]",
+  );
+  const portalLimit = Math.min(ariaRefs?.length || 0, 18);
+  for (let i = 0; i < portalLimit; i++) {
+    const ref = ariaRefs[i];
+    const ids = (
+      (ref.getAttribute("aria-describedby") || "") +
+      " " +
+      (ref.getAttribute("aria-labelledby") || "")
+    )
+      .trim()
+      .split(/\s+/);
+    for (const id of ids) {
+      if (!id || id.length > 40) continue;
+      const portal = document.getElementById(id);
+      if (!portal) continue;
+      const raw = (portal.textContent || "").trim();
+      if (raw.length < 5 || raw.length > 48) continue;
+      if (_matchesSponsoredNorm(_normLabelText(raw))) {
+        reasons.push("portal_label");
+        confidence = Math.max(confidence, 94);
+        details.portalText = raw.slice(0, 80);
+        break;
+      }
+    }
+    if (confidence >= 90) break;
+  }
+
+  return {
+    isSponsored: confidence >= 90,
+    reasons,
+    confidence,
+    details,
+  };
+}
+
 const CLUTTER_LABELS = [
   // Vietnamese — gợi ý / đề xuất
   "gợi ý cho bạn", "video gợi ý", "reels gợi ý", "nhóm gợi ý",
@@ -2465,16 +2533,121 @@ function extractPostContent(element) {
  *   sample?: string,
  * }
  */
+function _isInformationalCommentPointer(scan) {
+  // Author puts the resource in comments — not "do X to get Y".
+  const pointer =
+    /(?:link|url|chi\s*ti[eế]t|mã\s*nguồn|ma\s*nguon|github|repo|file).{0,72}(?:để|de|ở|o|dưới|duoi|trong|ngay).{0,28}(?:phần\s*)?(?:bình\s*luận|binh\s*luan|comment|cmt)\b/i.test(
+      scan,
+    ) ||
+    /(?:mình|toi|tôi|admin|ad)?\s*(?:để|de)\s*(?:ngay|ở|o|dưới|duoi|trong)?\s*(?:phần\s*)?(?:bình\s*luận|binh\s*luan|comment|cmt)\b/i.test(
+      scan,
+    );
+  if (!pointer) return false;
+  const engageToGet =
+    /(?:like|thích|thả\s*tim|react|share|chia\s*sẻ\s*public|follow|theo\s*dõi|để\s*lại\s*(?:cmt|comment)|cmt\s*[\"'“”1]|comment\s*[\"'“”]).{0,52}(?:để\s*nhận|de\s*nhan|để\s*lấy|inbox|\bib\b|nhận\s*(?:file|link|tài|prompt))/i.test(
+      scan,
+    );
+  return !engageToGet;
+}
+
+/**
+ * Strip "không cần cmt/like…" so soft patterns cannot treat a negation as the
+ * engagement action (e.g. "Không cần cmt, mình gửi file qua inbox").
+ */
+function _sanitizeEngagementScan(scan) {
+  return String(scan || "")
+    .replace(
+      /(?:không|ko|khong|chả|cha)\s*(?:cần|can|phải|bat\s*buoc|cần\s*phải)?\s*(?:like|thích|thik|cmt|comment|bình\s*luận|binh\s*luan|share|chia\s*sẻ|chia\s*se|follow|theo\s*dõi|theo\s*doi|tag|join|tham\s*gia)/gi,
+      " ",
+    )
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Posts that talk ABOUT bait (warnings, scam quotes, "ai từng…") — not bait.
+ */
+function _isEngagementMetaDiscussion(scan) {
+  if (!scan) return false;
+  // Explicit warning / "đừng cmt để nhận"
+  if (
+    /(?:đừng|dung|không\s*nên|ko\s*nên|khong\s*nen)\s*(?:cmt|comment|bình\s*luận|like|share).{0,55}(?:để\s*nhận|de\s*nhan|để\s*lấy|nhận\s*(?:file|link|quà)|nhan\s*(?:file|link))/i.test(
+      scan,
+    )
+  ) {
+    return true;
+  }
+  // Scam / chiêu / giáo dục quanh cụm "cmt để nhận"
+  if (
+    /(?:scam|lừa|lua\s*đảo|lua\s*dao|cảnh\s*báo|canh\s*bao|cảnh\s*giác|chiêu|chieu|mánh|manh|toàn\s*scam|toan\s*scam|ví\s*dụ\s*scam|vi\s*du\s*scam)/i.test(
+      scan,
+    ) &&
+    /(?:cmt|comment|bình\s*luận|binh\s*luan).{0,48}(?:để\s*nhận|de\s*nhan|để\s*lấy|de\s*lay|nhận\s*(?:file|link)|nhan\s*(?:file|link))/i.test(
+      scan,
+    )
+  ) {
+    return true;
+  }
+  // Educational framing: "nhận biết chiêu comment để lấy file"
+  if (
+    /(?:nhận\s*biết|nhan\s*biet|dạy\s*cách|day\s*cach|hướng\s*dẫn|huong\s*dan|hay\s*dùng|hay\s*dung).{0,55}(?:chiêu|chieu|mánh|manh)?\s*(?:cmt|comment|bình\s*luận).{0,40}(?:để\s*(?:nhận|lấy)|de\s*(?:nhan|lay))/i.test(
+      scan,
+    )
+  ) {
+    return true;
+  }
+  // Narrative past tense / rhetorical: "ai từng comment để nhận quà chưa?"
+  if (
+    /(?:ai\s*từng|từng\s*(?:bị|bi)|từng\s*(?:cmt|comment|like)).{0,50}(?:cmt|comment|bình\s*luận).{0,40}(?:để\s*nhận|de\s*nhan|để\s*lấy|nhận\s*(?:file|quà|qua|link))/i.test(
+      scan,
+    )
+  ) {
+    return true;
+  }
+  // Quoted bait as topic: … "cmt để nhận file" …
+  if (
+    /[\"'“”«].{0,8}(?:cmt|comment|bình\s*luận).{0,36}(?:để\s*nhận|de\s*nhan|để\s*lấy).{0,36}[\"'”»]/i.test(
+      scan,
+    ) &&
+    /(?:scam|lừa|lua|chiêu|chieu|cảnh\s*báo|từng|đừng|dung|nhưng|nhung)/i.test(scan)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/** Soft hits need an imperative "do X → get Y" cue, not mere co-occurrence. */
+function _hasEngagementImperative(sample, scan) {
+  const s = `${sample || ""} ${scan || ""}`;
+  return (
+    /(?:để\s*nhận|de\s*nhan|để\s*lấy|de\s*lay|rồi\s*nhận|roi\s*nhan|to\s*get)/i.test(s) ||
+    /(?:cmt|comment|để\s*lại|de\s*lai)\s*[\"'“”]?\s*(?:1|số\s*1|so\s*1|quan\s*tâm|quan\s*tam|xin\s*link|link|done|interested)/i.test(
+      s,
+    ) ||
+    /(?:mình|toi|tôi|ad|admin|bot)\s*(?:sẽ\s*)?(?:gửi|gui|ib|inbox|dm)/i.test(s) ||
+    /\b(?:i'?ll|will|we'?ll)\s*(?:send|dm|inbox)\b/i.test(s)
+  );
+}
+
 function _detectEngagementGateText(container) {
   const raw = _getEngagementScanText(container).replace(/\s+/g, " ").trim();
   if (!raw || raw.length < 12) return null;
   const text = raw.toLowerCase();
   // Cap scan length — gates almost always sit in first ~1.2k chars of post body
-  const scan = text.slice(0, 1400);
+  let scan = _sanitizeEngagementScan(text.slice(0, 1400));
+  if (!scan || scan.length < 12) return null;
+
+  // "Link mình để ngay/dưới bình luận" is an informational pointer, not
+  // "comment/like to receive X". Bail before soft patterns can FP on GitHub URLs.
+  if (_isInformationalCommentPointer(scan)) return null;
+  if (_isEngagementMetaDiscussion(scan)) return null;
+
+  // Short teencode forms need token edges so "scam"/"document" do not leak.
+  const CMT_TOKEN =
+    "(?:comment|bình\\s*luận|binh\\s*luan|(?:^|[^a-z0-9_])(?:cmt|cmb|cmnt)(?=[^a-z0-9_]|$)|để\\s*lại\\s*(?:cmt|comment|bình\\s*luận|ý\\s*kiến)|de\\s*lai\\s*(?:cmt|comment)|viết\\s*comment|viet\\s*cmt|gõ\\s*(?:cmt|comment)|go\\s*cmt|nhập\\s*(?:cmt|comment))";
 
   const ACTION = {
-    comment:
-      "(?:comment|bình\\s*luận|binh\\s*luan|cmt|cmb|cmnt|để\\s*lại\\s*(?:cmt|comment|bình\\s*luận|ý\\s*kiến)|de\\s*lai\\s*(?:cmt|comment)|viết\\s*comment|viet\\s*cmt|gõ\\s*(?:cmt|comment)|go\\s*cmt|nhập\\s*(?:cmt|comment))",
+    comment: CMT_TOKEN,
     like:
       "(?:like|thích|thik|tha\\s*tim|thả\\s*tim|tha\\s*❤|❤|❤️|♥|🔥|react|reaction|cảm\\s*xúc|cam\\s*xuc|thả\\s*cảm\\s*xúc|bấm\\s*like|bam\\s*like|nhấn\\s*like|nhan\\s*like|click\\s*like|double\\s*tap|thả\\s*tim|tym)",
     share:
@@ -2501,7 +2674,8 @@ function _detectEngagementGateText(container) {
   const DELIVER =
     "(?:nhận|nhan|lấy|lay|xin|gửi|gui|send|inbox|ib|dm|pm|mess(?:age)?|nhắn|nhan\\s*tin|gửi\\s*(?:qua|trong|ngay)|mình\\s*gửi|tôi\\s*gửi|toi\\s*gui|admin\\s*gửi|ad\\s*gửi|bot\\s*gửi|get|receive|give|ib\\s*ngay|gửi\\s*free|i'?ll\\s*send|will\\s*send)";
 
-  // Connectors — NEVER bare "de" (matches inside description/video/shared…)
+  // Connectors — NEVER bare "de"/"để" (matches "để học", "để dùng", "để ngay bình luận",
+  // and ASCII "de" inside description/video/shared…). Soft gates must say get/receive.
   const CONNECTOR =
     "(?:để\\s*nhận|de\\s*nhan|để\\s*lấy|de\\s*lay|rồi\\s*nhận|roi\\s*nhan|→|->|=>|to\\s*get|and\\s*(?:i'?ll|we'?ll)?\\s*(?:send|dm|inbox)|for\\s*(?:the\\s*)?(?:free|file))";
 
@@ -2563,7 +2737,8 @@ function _detectEngagementGateText(container) {
     "comment_gate",
     93,
     new RegExp(
-      `(?:${cmt}).{0,50}(?:${REWARD}).{0,70}(?:${DELIVER}|inbox|ib|dm)`,
+      // Require deliver after reward — not "cmt" leftover near unrelated "file…gửi".
+      `(?:${cmt}).{0,40}(?:${REWARD}).{0,50}(?:${DELIVER}|inbox|\\bib\\b|dm)`,
       "i",
     ),
     ["comment"],
@@ -2572,7 +2747,8 @@ function _detectEngagementGateText(container) {
     "comment_gate",
     92,
     new RegExp(
-      `(?:muốn|muon|cần|can|lấy|lay|nhận|nhan|xin|muốn\\s*xin).{0,40}(?:${REWARD}).{0,55}(?:${cmt})`,
+      // Want+reward must end in imperative cmt + deliver cue (not bare "comment đi").
+      `(?:muốn|muon|cần|\\bcan\\b|lấy|lay|nhận|nhan|xin|muốn\\s*xin).{0,40}(?:${REWARD}).{0,45}(?:để\\s*lại|de\\s*lai|thì\\s*)?(?:${cmt}).{0,40}(?:${DELIVER}|mình|toi|tôi|ad|admin|bot)`,
       "i",
     ),
     ["comment"],
@@ -2606,7 +2782,7 @@ function _detectEngagementGateText(container) {
   );
   tryHit(
     "comment_gate",
-    88,
+    90,
     new RegExp(
       `\\b(?:để\\s*lại|de\\s*lai|comment|cmt)\\b.{0,35}\\b(?:email|gmail|mail|sđt|sdt|zalo|telegram|tg)\\b.{0,70}\\b(?:${DELIVER}|${REWARD})\\b`,
       "i",
@@ -2615,13 +2791,13 @@ function _detectEngagementGateText(container) {
   );
   tryHit(
     "comment_gate",
-    87,
+    90,
     /\b(?:drop|leave)\b.{0,30}\b(?:a\s+)?(?:comment|email|keyword|\"interested\"|interested|link)\b.{0,70}\b(?:send|share|dm|inbox|get|receive|i'?ll\s+send)\b/i,
     ["comment"],
   );
   tryHit(
     "comment_gate",
-    86,
+    90,
     /\bcomment\s+[\"']?(done|interested|link|me|yes|yes\s*please)[\"']?.{0,50}\b(?:send|dm|inbox|link|file)\b/i,
     ["comment"],
   );
@@ -2635,7 +2811,7 @@ function _detectEngagementGateText(container) {
   tryHit(
     "comment_gate",
     91,
-    /(?:ai|bạn\s*nào|ban\s*nao|ae|anh\s*em|mọi\s*người|moi\s*nguoi).{0,40}(?:cần|can|muốn|muon|xin|lấy|lay).{0,40}(?:link|file|tài\s*liệu|tai\s*lieu|prompt|template|code).{0,40}(?:cmt|comment|bình\s*luận)/i,
+    /(?:ai|bạn\s*nào|ban\s*nao|ae|anh\s*em|mọi\s*người|moi\s*nguoi).{0,40}(?:cần|\bcan\b|muốn|muon|xin|lấy|lay).{0,40}(?:link|file|tài\s*liệu|tai\s*lieu|prompt|template).{0,40}(?:để\s*lại|de\s*lai|thì\s*)?(?:cmt|comment|bình\s*luận).{0,40}(?:gửi|gui|ib|inbox|dm|mình|ad|admin)/i,
     ["comment"],
   );
   tryHit(
@@ -2646,19 +2822,19 @@ function _detectEngagementGateText(container) {
   );
   tryHit(
     "comment_gate",
-    89,
+    90,
     /(?:cmt|comment).{0,20}(?:bên\s*dưới|ben\s*duoi|phía\s*dưới|phia\s*duoi|below).{0,50}(?:mình|toi|tôi|ad|admin).{0,30}(?:gửi|gui|ib|inbox|dm)/i,
     ["comment"],
   );
   tryHit(
     "comment_gate",
-    88,
+    90,
     /\b(?:type|write|comment)\b.{0,25}\b(?:[\"']?(?:yes|done|interested|link|me)[\"']?)\b.{0,60}\b(?:i'?ll|will|we'?ll)?\s*(?:send|dm|inbox|share)\b/i,
     ["comment"],
   );
   tryHit(
     "comment_gate",
-    87,
+    90,
     /(?:inbox|ib|dm)\s*[\"'“”]?\s*(?:link|xin|quan\s*tâm|quan\s*tam|1|file|prompt)\s*[\"'“”]?.{0,50}(?:nhận|nhan|gửi|gui|lấy|lay)/i,
     ["comment"],
   );
@@ -2669,23 +2845,24 @@ function _detectEngagementGateText(container) {
     "like_gate",
     90,
     new RegExp(
-      `(?:${like}).{0,70}(?:để|de|để\\s*nhận|de\\s*nhan|→|->|=>).{0,90}(?:${REWARD})`,
+      // Require get/receive connector — bare "để" FPs on "Thích … để học … GitHub".
+      `(?:${like}).{0,70}(?:${CONNECTOR}|để\\s*lấy|de\\s*lay).{0,90}(?:${REWARD})`,
       "i",
     ),
     ["like"],
   );
   tryHit(
     "like_gate",
-    88,
+    90,
     new RegExp(
-      `(?:muốn|muon|cần|can|lấy|lay|nhận|nhan|xin).{0,40}(?:${REWARD}).{0,50}(?:${like})`,
+      `(?:muốn|muon|cần|\\bcan\\b|lấy|lay|nhận|nhan|xin).{0,40}(?:${REWARD}).{0,45}(?:thì\\s*)?(?:${like}).{0,40}(?:${DELIVER}|${CONNECTOR}|mình|ad|admin)`,
       "i",
     ),
     ["like"],
   );
   tryHit(
     "like_gate",
-    87,
+    91,
     new RegExp(
       `(?:${like}).{0,40}\\+\\s*(?:${cmt}).{0,60}(?:${REWARD})`,
       "i",
@@ -2694,20 +2871,20 @@ function _detectEngagementGateText(container) {
   );
   tryHit(
     "like_gate",
-    85,
+    90,
     /(?:thả\s*❤|tha\s*tim|thả\s*tim|❤️|❤|🔥|tym).{0,50}(?:nhận|nhan|lấy|lay|xin|để\s*nhận|de\s*nhan|inbox|ib).{0,50}(?:link|file|tài\s*liệu|tai\s*lieu|prompt|quà|qua)/i,
     ["like"],
   );
   tryHit(
     "like_gate",
-    86,
-    /(?:bấm|bam|nhấn|nhan|click)\s*(?:like|thích|thik|❤|❤️).{0,50}(?:để|de|nhận|nhan|lấy|lay|xin).{0,50}(?:link|file|tài\s*liệu|prompt|quà)/i,
+    90,
+    /(?:bấm|bam|nhấn|nhan|click)\s*(?:like|thích|thik|❤|❤️).{0,50}(?:để\s*nhận|de\s*nhan|để\s*lấy|de\s*lay|nhận|nhan|lấy|lay|xin).{0,50}(?:link|file|tài\s*liệu|prompt|quà)/i,
     ["like"],
   );
   tryHit(
     "like_gate",
-    84,
-    /\b(?:react|drop)\b.{0,20}(?:❤|❤️|🔥|❤️‍🔥|love|like).{0,50}\b(?:to\s+get|for|and\s+(?:i'?ll\s+)?(?:send|dm)|link|file)\b/i,
+    90,
+    /\b(?:react|drop)\b.{0,20}(?:❤|❤️|🔥|❤️‍🔥|love|like).{0,50}\b(?:to\s+get|for\s+(?:the\s+)?(?:free|file)|and\s+(?:i'?ll\s+)?(?:send|dm))\b/i,
     ["like"],
   );
 
@@ -2736,7 +2913,7 @@ function _detectEngagementGateText(container) {
     "share_gate",
     91,
     new RegExp(
-      `(?:muốn|muon|cần|can|xin).{0,30}(?:${REWARD_SHARE}).{0,40}(?:thì\\s*)?(?:${share}).{0,20}(?:public|story|công\\s*khai)?`,
+      `(?:muốn|muon|cần|\\bcan\\b|xin).{0,30}(?:${REWARD_SHARE}).{0,40}(?:thì\\s*)?(?:${share}).{0,20}(?:public|story|công\\s*khai).{0,40}(?:${DELIVER}|${CONNECTOR}|nhận|nhan)?`,
       "i",
     ),
     ["share"],
@@ -2761,26 +2938,26 @@ function _detectEngagementGateText(container) {
   const follow = ACTION.follow;
   tryHit(
     "follow_gate",
-    88,
+    91,
     new RegExp(
-      `(?:${follow}).{0,60}(?:để|de|để\\s*nhận|de\\s*nhan|→|->).{0,80}(?:${REWARD})`,
+      `(?:${follow}).{0,60}(?:${CONNECTOR}|→|->|=>).{0,80}(?:${REWARD})`,
       "i",
     ),
     ["follow"],
   );
   tryHit(
     "follow_gate",
-    86,
+    90,
     new RegExp(
-      `(?:muốn|muon|cần|can|lấy|lay|nhận|nhan|xin).{0,40}(?:${REWARD}).{0,50}(?:${follow})`,
+      `(?:muốn|muon|cần|\\bcan\\b|lấy|lay|nhận|nhan|xin).{0,40}(?:${REWARD}).{0,45}(?:thì\\s*)?(?:${follow}).{0,35}(?:${DELIVER}|${CONNECTOR}|mình|ad)?`,
       "i",
     ),
     ["follow"],
   );
   tryHit(
     "follow_gate",
-    84,
-    /\bfollow\s+(?:me|us|page|my\s+page).{0,50}\b(?:for|to\s+get|and\s+get|link|free|dm)\b/i,
+    90,
+    /\bfollow\s+(?:me|us|page|my\s+page).{0,50}\b(?:to\s+get|and\s+(?:i'?ll\s+)?(?:send|dm)|for\s+(?:the\s+)?(?:free|file|link))\b/i,
     ["follow"],
   );
 
@@ -2789,24 +2966,24 @@ function _detectEngagementGateText(container) {
   const tag = ACTION.tag;
   tryHit(
     "tag_gate",
-    88,
+    91,
     new RegExp(
-      `(?:${tag}).{0,50}(?:bạn|ban|bạn\\s*bè|ban\\s*be|friends?|người|\\d+\\s*bạn).{0,70}(?:${DELIVER}|${REWARD})`,
+      `(?:${tag}).{0,50}(?:bạn|ban|bạn\\s*bè|ban\\s*be|friends?|người|\\d+\\s*bạn).{0,55}(?:${CONNECTOR}|${DELIVER}).{0,40}(?:${REWARD})`,
       "i",
     ),
     ["tag"],
   );
   tryHit(
     "tag_gate",
-    86,
-    /(?:tag|gắn\s*thẻ|gan\s*the|mention).{0,40}(?:\d+\s*)?(?:bạn|ban|friends?).{0,40}(?:để|de|nhận|nhan|lấy|lay|xin).{0,40}(?:link|file|quà|qua|gift|tài\s*liệu|prompt)/i,
+    90,
+    /(?:tag|gắn\s*thẻ|gan\s*the|mention).{0,40}(?:\d+\s*)?(?:bạn|ban|friends?).{0,40}(?:để\s*nhận|de\s*nhan|để\s*lấy|de\s*lay|nhận|nhan|lấy|lay|xin).{0,40}(?:link|file|quà|qua|gift|tài\s*liệu|prompt)/i,
     ["tag"],
   );
   tryHit(
     "tag_gate",
-    85,
+    90,
     new RegExp(
-      `(?:muốn|muon|cần|can|lấy|lay|nhận|nhan).{0,40}(?:${REWARD}).{0,50}(?:${tag})`,
+      `(?:muốn|muon|cần|\\bcan\\b|lấy|lay|nhận|nhan).{0,40}(?:${REWARD}).{0,45}(?:thì\\s*)?(?:${tag}).{0,35}(?:${DELIVER}|${CONNECTOR}|mình|ad)?`,
       "i",
     ),
     ["tag"],
@@ -2816,18 +2993,20 @@ function _detectEngagementGateText(container) {
   const join = ACTION.join;
   tryHit(
     "join_gate",
-    86,
+    91,
     new RegExp(
-      `(?:${join}).{0,60}(?:để|de|để\\s*nhận|de\\s*nhan|→|->).{0,80}(?:${REWARD})`,
+      // Community "join để nhận tài liệu hàng tuần" is often legit — require
+      // downloadable bait or inbox delivery, not bare "tài liệu".
+      `(?:${join}).{0,50}(?:${CONNECTOR}|→|->).{0,60}(?:file|pdf|ebook|prompt|template|mẫu|mau|drive|ggdrive|notion|vip|premium|full\\s*(?:bài|bai|file|pack)|miễn\\s*phí|mien\\s*phi|quà\\b|gift|voucher)`,
       "i",
     ),
     ["join"],
   );
   tryHit(
     "join_gate",
-    84,
+    90,
     new RegExp(
-      `(?:muốn|muon|cần|can|lấy|lay|nhận|nhan).{0,40}(?:${REWARD}).{0,50}(?:${join})`,
+      `(?:muốn|muon|cần|\\bcan\\b|lấy|lay|nhận|nhan).{0,40}(?:${REWARD}).{0,45}(?:thì\\s*)?(?:${join}).{0,35}(?:${DELIVER}|${CONNECTOR}|mình|ad)?`,
       "i",
     ),
     ["join"],
@@ -2901,7 +3080,7 @@ function _detectEngagementGateText(container) {
     "engagement_gate",
     84,
     new RegExp(
-      `\\b${save}\\b.{0,50}\\b(?:để|de|để\\s*nhận|de\\s*nhan|→|->)\\b.{0,70}\\b${REWARD}\\b`,
+      `\\b${save}\\b.{0,50}(?:${CONNECTOR}|→|->).{0,70}(?:${REWARD})`,
       "i",
     ),
     ["save"],
@@ -2980,7 +3159,7 @@ function _detectEngagementGateText(container) {
   }
 
   // ── 10) "Làm A để nhận B" — comment/like/tag only (not bare share) ─
-  if (!best || bestScore < 84) {
+  if (!best || bestScore < 90) {
     const doToGet = scan.match(
       /(?:hãy|hay|cứ|cu)?\s*(?:like|thích|thik|cmt|comment|bình\s*luận|binh\s*luan|tag)\b.{0,30}(?:để\s*nhận|de\s*nhan|để\s*lấy).{0,40}(?:file|tài\s*liệu|tai\s*lieu|prompt|template|pdf|drive|quà|gift|vip|full)/i,
     );
@@ -2991,19 +3170,34 @@ function _detectEngagementGateText(container) {
       if (/\btag\b/i.test(slice)) noteAction("tag");
       harvestRewards(slice);
       if (actionsFound.length) {
-        bestScore = 84;
+        bestScore = 91;
         best = {
           reason: "engagement_gate",
           pattern: "lam_A_de_nhan_B",
           sample: slice.slice(0, 120),
-          confidence: 84,
+          confidence: 91,
         };
       }
     }
   }
 
-  // Minimum confidence: soft share-like noise discarded
-  if (best && best.confidence < 84 && best.reason === "share_gate") {
+  // Minimum confidence: soft noise discarded. Soft hits also need an
+  // imperative "do X → get Y" cue so narrative/quoted bait does not hide.
+  const MIN_CONF = 90;
+  if (best && best.confidence < MIN_CONF) {
+    best = null;
+    bestScore = 0;
+  }
+  if (
+    best &&
+    best.confidence < 94 &&
+    !_hasEngagementImperative(best.sample, scan)
+  ) {
+    best = null;
+    bestScore = 0;
+  }
+  // Re-check meta on the matched sample (quoted scam phrases score 94).
+  if (best && _isEngagementMetaDiscussion(scan)) {
     best = null;
     bestScore = 0;
   }
@@ -3281,6 +3475,7 @@ window.fbsExtractImages = extractPostImages;
 window.fbsExtractPostContent = extractPostContent;
 window.fbsEvaluatePostSignals = evaluatePostSignals;
 window.fbsDetectSponsoredSignals = detectSponsoredSignals;
+window.fbsDetectSponsoredSignalsLight = detectSponsoredSignalsLight;
 window.fbsIsSponsored = isSponsored;
 window.fbsDiscoverRelatedSourceLinks = discoverRelatedSourceLinks;
 window.fbsCleanRelatedUrl = _cleanRelatedUrl;
@@ -3289,4 +3484,5 @@ window.fbsIsCommentActivityText = _fbIsCommentActivityText;
 window.fbsIsGroupSuggestion = _isFacebookGroupSuggestionContainer;
 window.fbsIsContentOnlyPostSlice = _isContentOnlyPostSlice;
 window.fbsExpandToFullPostCard = _expandToFullPostCard;
+window.fbsFindFeedWrapper = findFeedWrapper;
 window.fbsDisplayModes = DISPLAY_MODES;

@@ -191,12 +191,13 @@ body {
   color-scheme: var(--color-scheme);
   -webkit-font-smoothing: antialiased;
   line-height: 1.45;
-  /* Must stay transparent: any body background propagates to the Chrome
-     popup canvas and fills the corners as a square. The rounded paper
-     surface lives on #main-view below. */
+  /* Transparent + viewport clip: scrolling happens HERE so the rounded mask
+     stays fixed. Painting the paper on body would propagate square to the
+     Chrome popup canvas. */
   background: transparent !important;
   border-radius: var(--radius-popup, 20px);
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   clip-path: inset(0 round var(--radius-popup, 20px));
 }
 
@@ -205,9 +206,9 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 999px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-hover); }
 
-/* Inner shell — same radius, scrolls inside the clip. This is the element
-   that actually paints the rounded paper surface (html/body stay transparent
-   so the popup canvas does not square off the corners). */
+/* Paper surface — grows with content; body clip-path masks the viewport.
+   Do NOT put overflow-y:auto here: Chrome then fails to honor border-radius
+   and the teal save bar squares the bottom corners. */
 #main-view,
 #wizard-view,
 .popup,
@@ -218,7 +219,7 @@ body {
     radial-gradient(90% 60% at 100% 0%, rgba(61, 74, 87, 0.05), transparent 50%),
     var(--bg) !important;
   border-radius: var(--radius-popup, 20px) !important;
-  overflow: hidden;
+  overflow: visible;
   isolation: isolate;
 }
 
@@ -226,10 +227,9 @@ body {
 #main-view.popup-v2,
 .popup.popup-v2 {
   width: 380px;
-  max-height: 600px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  padding: 14px 14px 16px;
+  max-height: none;
+  overflow: visible;
+  padding: 14px 14px 18px;
   min-height: 120px;
   box-sizing: border-box;
 }
@@ -237,17 +237,22 @@ body {
 #wizard-view,
 .wizard-container {
   width: 380px;
-  max-height: 600px;
-  overflow-x: hidden;
-  overflow-y: auto;
+  max-height: none;
+  overflow: visible;
   box-sizing: border-box;
 }
 
-/* Sticky bars hug the bottom curve */
+/* Sticky bars hug the bottom curve — button itself must round too or the
+   solid primary fill paints square into the clipped corners. */
 .settings-footer.sticky-save,
 .keys-actions {
-  border-bottom-left-radius: calc(var(--radius-popup, 20px) - 4px);
-  border-bottom-right-radius: calc(var(--radius-popup, 20px) - 4px);
+  border-bottom-left-radius: calc(var(--radius-popup, 20px) - 6px);
+  border-bottom-right-radius: calc(var(--radius-popup, 20px) - 6px);
+  overflow: hidden;
+}
+.settings-footer.sticky-save .btn-primary,
+.keys-actions .btn-primary {
+  border-radius: 10px;
 }
 
 /* Header */
@@ -1843,12 +1848,16 @@ label:not(.switch-label),
    it from covering accordion rows in Chrome's short popup viewport. */
 .settings-footer.sticky-save {
   position: static;
-  margin: 12px -4px 0;
-  padding: 10px 4px 2px;
-  background: var(--bg);
+  margin: 12px 0 0;
+  padding: 10px 0 4px;
+  background: transparent;
+  border-bottom-left-radius: calc(var(--radius-popup, 20px) - 6px);
+  border-bottom-right-radius: calc(var(--radius-popup, 20px) - 6px);
+  overflow: hidden;
 }
 .settings-footer.sticky-save .btn-primary {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 4px 16px rgba(15, 118, 110, 0.22);
+  border-radius: 10px;
 }
 .settings-footer.sticky-save .status {
   margin-top: 8px;
@@ -1953,7 +1962,7 @@ label:not(.switch-label),
 
 /* Light theme save surface */
 body.light .settings-footer.sticky-save {
-  background: var(--bg);
+  background: transparent;
 }
 
 /* Ensure hidden tabpanels stay fully out of flow */

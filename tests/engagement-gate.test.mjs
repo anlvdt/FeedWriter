@@ -15,7 +15,7 @@ function loadEngagementDetector() {
   const src = fs.readFileSync(path.join(root, "content-dom.js"), "utf8");
   const helpersStart = src.indexOf("function _fbCleanName");
   const helpersMid = src.indexOf("function _getPrimaryPostText");
-  const detectStart = src.indexOf("function _detectEngagementGateText");
+  const detectStart = src.indexOf("function _isInformationalCommentPointer");
   const detectEnd = src.indexOf("/** @deprecated name kept for callers");
   const normalizeEnd = src.indexOf("function extractPostContent");
 
@@ -24,7 +24,7 @@ function loadEngagementDetector() {
     src.slice(helpersMid, normalizeEnd) +
     "\n" +
     src.slice(detectStart, detectEnd) +
-    "\nmodule.exports = { _detectEngagementGateText, _getEngagementScanText, _fbIsCommentActivityText };";
+    "\nmodule.exports = { _detectEngagementGateText, _getEngagementScanText, _fbIsCommentActivityText, _isInformationalCommentPointer, _isEngagementMetaDiscussion, _sanitizeEngagementScan };";
 
   const mod = {};
   const sandboxConsole = { log() {}, warn() {}, error() {} };
@@ -169,5 +169,94 @@ Bình B: cho mình xin link demo với`;
   it("does not treat 'phản hồi / góp ý' feedback requests as comment gates", () => {
     const body = "Mọi người phản hồi giúp mình với, mình gửi thêm hướng dẫn sau";
     assert.equal(_detectEngagementGateText(makeContainer(body, body)), null);
+  });
+
+  it("does not hide posts that only point to a link in comments", () => {
+    const body =
+      "Kho học Generative AI của Microsoft 21 bài, hơn 114 nghìn sao GitHub, có sẵn bản tiếng Việt.\n" +
+      "Khóa này dạy Python, TypeScript, RAG.\n" +
+      "Link mình để ngay bình luận nhé 👇";
+    assert.equal(_detectEngagementGateText(makeContainer(body, body)), null);
+    assert.equal(
+      _detectEngagementGateText(
+        makeContainer("Chi tiết mình để dưới bình luận đầu tiên nhé", "Chi tiết mình để dưới bình luận đầu tiên nhé"),
+      ),
+      null,
+    );
+  });
+
+  it("still catches like-to-get bait that mentions GitHub", () => {
+    const body = "Thả tim hoặc thích để nhận github repo khóa học này";
+    const hit = _detectEngagementGateText(makeContainer(body, body));
+    assert.ok(hit);
+    assert.equal(hit.reason, "like_gate");
+  });
+
+  it("does not hide voluntary inbox offers without a comment/like gate", () => {
+    assert.equal(
+      _detectEngagementGateText(
+        makeContainer(
+          "Nếu cần file mẫu Notion, inbox mình gửi luôn nhé",
+          "Nếu cần file mẫu Notion, inbox mình gửi luôn nhé",
+        ),
+      ),
+      null,
+    );
+    assert.equal(
+      _detectEngagementGateText(
+        makeContainer(
+          "Không cần cmt, mình gửi file Notion qua inbox",
+          "Không cần cmt, mình gửi file Notion qua inbox",
+        ),
+      ),
+      null,
+    );
+  });
+
+  it("does not hide posts that discuss or warn about engagement bait", () => {
+    const corpus = [
+      'Ai từng bị scam "cmt để nhận file" chưa?',
+      "Mấy page hay dùng chiêu cmt để nhận file nhưng toàn scam",
+      'Đừng cmt "1" để nhận file, toàn scam',
+      "Bài này dạy cách nhận biết chiêu comment để lấy file",
+      "Ai từng comment để nhận quà chưa?",
+    ];
+    for (const body of corpus) {
+      assert.equal(
+        _detectEngagementGateText(makeContainer(body, body)),
+        null,
+        body,
+      );
+    }
+  });
+
+  it("does not hide soft join-for-weekly-docs community posts", () => {
+    const body = "Join group để nhận tài liệu hàng tuần";
+    assert.equal(_detectEngagementGateText(makeContainer(body, body)), null);
+  });
+
+  it("does not treat bare want-file-then-comment as a gate without deliver cue", () => {
+    assert.equal(
+      _detectEngagementGateText(
+        makeContainer("Muốn file thì comment đi", "Muốn file thì comment đi"),
+      ),
+      null,
+    );
+  });
+
+  it("still catches strong comment/like gates after tightening", () => {
+    const cases = [
+      ['Comment "link" để nhận file prompt miễn phí', "comment_gate"],
+      ["Cmt số 1 mình ib file luôn", "comment_gate"],
+      ["Cần tài liệu thì để lại cmt mình gửi", "comment_gate"],
+      ["Thả tim hoặc thích để nhận github repo khóa học này", "like_gate"],
+      ["Share public để nhận file PDF miễn phí", "share_gate"],
+    ];
+    for (const [body, reason] of cases) {
+      const hit = _detectEngagementGateText(makeContainer(body, body));
+      assert.ok(hit, body);
+      assert.equal(hit.reason, reason, body);
+      assert.ok(hit.confidence >= 90, body);
+    }
   });
 });

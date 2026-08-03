@@ -381,7 +381,10 @@
       hideTranslateTooltip();
     }
   });
-  document.addEventListener("scroll", hideTranslateTooltip, {
+  document.addEventListener("scroll", () => {
+    if (!translateTooltip?.classList.contains("fbs-visible")) return;
+    hideTranslateTooltip();
+  }, {
     capture: true,
     passive: true,
   });

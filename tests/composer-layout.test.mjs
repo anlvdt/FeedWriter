@@ -41,29 +41,50 @@ describe("Facebook personal-profile exclusion", () => {
 
 describe("Feed scanning cost controls", () => {
   it("observes only the feed root and reacts only to added feed units", () => {
-    assert.match(content, /const feedObserverRoot\s*=/);
-    assert.match(content, /scanObserver\.observe\(feedObserverRoot/);
-    assert.match(content, /const feedTargetSelector\s*=/);
-    assert.doesNotMatch(content, /scanObserver\.observe\(document\.documentElement/);
-    assert.match(content, /function scanSummaryControlsFast\(\)/);
-    assert.match(content, /SCAN_DEBOUNCE_MS = 120/);
-    assert.match(content, /hasSeeMore/);
+    assert.match(content, /function _discoverFeedUnitsForObserver/);
+    assert.match(content, /IntersectionObserver/);
+    assert.match(content, /fbsViewportScanned/);
+    assert.match(content, /SCAN_DEBOUNCE_MS = 4000/);
+    assert.match(content, /function _cheapPostStamp/);
+    assert.match(content, /fbsSponsoredChecked/);
+    assert.match(content, /if \(!filterEngagementGates\) return/);
+    assert.match(content, /_pendingFeedPosts/);
+    assert.match(content, /function injectSummaryOnPosts/);
+    assert.match(content, /detectSponsoredSignalsLight|fbsDetectSponsoredSignalsLight/);
+    assert.match(contentDom, /function detectSponsoredSignalsLight/);
+    assert.match(contentDom, /fbsDetectSponsoredSignalsLight/);
+    assert.match(content, /_isFbScrollBusy/);
+    assert.match(content, /_markFbScrollBusy/);
+    assert.match(content, /FB_SCROLL_IDLE_MS/);
+    assert.match(content, /Queue only — never flush while scrolling/);
+    assert.match(
+      content,
+      /Facebook: no subtree MutationObserver on the feed/,
+    );
+    assert.match(content, /if \(SITE !== "facebook"\) \{/);
   });
 });
 
 describe("Feed false-positive safeguards", () => {
   it("resets filter state when Facebook recycles a feed node", () => {
     assert.match(content, /function refreshReusedFeedUnit\(article\)/);
-    assert.match(content, /filteredPosts\.delete\(article\)/);
-    assert.match(content, /delete article\.dataset\.fbsSponsoredHidden/);
+    assert.match(content, /function _markFilteredCluster\(/);
+    assert.match(content, /function _isAlreadyFiltered\(/);
+    assert.match(content, /dataset\.fbsFiltered/);
+    assert.match(content, /_clearFilteredCluster\(article\)/);
+    assert.match(content, /_filterFingerprint\(article\)/);
   });
 
   it("keeps sponsored posts recoverable and engagement filtering opt-in", () => {
     assert.match(content, /let adDisplayMode = "collapse"/);
     assert.match(content, /let filterEngagementGates = false/);
-    assert.match(content, /if \(filterEngagementGates && \(evalResult\.isEngagementGate/);
+    assert.match(content, /if \(!filterEngagementGates\) return/);
+    assert.match(content, /ENGAGEMENT_HIDE_MIN_CONFIDENCE/);
+    assert.match(content, /function _uniqueFeedPosts/);
     assert.match(contentDom, /isSponsored: confidence >= 90/);
     assert.match(contentDom, /confidence = Math\.max\(confidence, 80\)/);
+    assert.match(contentDom, /function _isEngagementMetaDiscussion/);
+    assert.match(contentDom, /const MIN_CONF = 90/);
     assert.ok(!popup.includes('<option value="hide" selected>Ẩn hoàn toàn</option>'));
   });
 
@@ -124,11 +145,10 @@ describe("Feed summary control density", () => {
       /if \(_statusBodyTextLength\(textEl\) < minimumLength\) return;/,
     );
     assert.match(content, /_matchInlineBtnTypography\(btn, textEl\)/);
-    // Truncated posts with "Xem thêm" must still get Tóm tắt even when the
-    // clamped preview is shorter than MIN_LEN / 2.
+    // Truncated posts with "Xem thêm" must still get Tóm tắt even when short.
     assert.match(
       content,
-      /\/\/ "Xem thêm" means the full status is long[\s\S]*?inject\(article, findClickable\(seeMore\), textEl, seeMore\);/,
+      /inject\(article, findClickable\(seeMore\), textEl, seeMore\)/,
     );
     assert.doesNotMatch(
       content,
@@ -140,7 +160,7 @@ describe("Feed summary control density", () => {
     assert.match(contentDom, /function _isContentOnlyPostSlice\(el\)/);
     assert.match(contentDom, /function _expandToFullPostCard\(el\)/);
     assert.match(content, /function healHollowFeedPosts\(/);
-    assert.match(content, /healHollowFeedPosts\(document\)/);
+    assert.match(content, /healHollowFeedPosts\(/);
     assert.match(content, /fbsIsContentOnlyPostSlice/);
   });
 });
