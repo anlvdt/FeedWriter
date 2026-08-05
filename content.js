@@ -397,6 +397,7 @@ function _getReasonText(reason) {
     portal_label: "Nhãn Được tài trợ",
     aria_label: "aria Sponsored",
     sponsored_keyword: "Sponsored / Được tài trợ",
+    ad_rendering_signature: "Cấu trúc quảng cáo mới của Facebook",
     ad_structure: "Cấu trúc ad",
     ads_library_link: "Ads Library",
     // Engagement bait: do X to get Y

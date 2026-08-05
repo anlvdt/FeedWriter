@@ -53,6 +53,11 @@ describe("Feed scanning cost controls", () => {
     assert.match(content, /detectSponsoredSignalsLight|fbsDetectSponsoredSignalsLight/);
     assert.match(contentDom, /function detectSponsoredSignalsLight/);
     assert.match(contentDom, /fbsDetectSponsoredSignalsLight/);
+    assert.match(contentDom, /function _findFacebookAdRenderingUnit/);
+    assert.match(contentDom, /\[data-ad-rendering-role="profile_name"\]/);
+    assert.match(contentDom, /\[data-ad-rendering-role="story_message"\]/);
+    assert.match(contentDom, /\[data-ad-rendering-role\^="cta-"\]/);
+    assert.match(contentDom, /ad_rendering_signature/);
     assert.match(content, /_isFbScrollBusy/);
     assert.match(content, /_markFbScrollBusy/);
     assert.match(content, /FB_SCROLL_IDLE_MS/);

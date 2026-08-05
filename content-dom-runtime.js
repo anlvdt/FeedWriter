@@ -122,8 +122,52 @@ function _matchesSponsoredNorm(tcNorm) {
 }
 
 /**
+ * Return the post unit matched by the current Facebook ad-rendering signature.
+ *
+ * Equivalent uBlock filter:
+ * facebook.com##[data-ad-rendering-role="profile_name"]:upward([aria-posinset]:has([data-ad-rendering-role="story_message"]):has([data-ad-rendering-role^="cta-"]))
+ *
+ * `:upward()` is a uBlock-only pseudo-class, so walk the ancestors here. The
+ * complete combination is deliberate: Facebook uses individual data-ad-* roles
+ * in ordinary posts too, but this three-part signature identifies an ad unit.
+ */
+function _findFacebookAdRenderingUnit(container) {
+  if (!container || SITE !== "facebook" || !container.querySelectorAll) return null;
+
+  const profiles = [];
+  if (container.matches?.('[data-ad-rendering-role="profile_name"]')) {
+    profiles.push(container);
+  }
+  for (const profile of container.querySelectorAll(
+    '[data-ad-rendering-role="profile_name"]',
+  )) {
+    profiles.push(profile);
+    // A feed card has one profile name; cap work in case Facebook duplicates it.
+    if (profiles.length >= 4) break;
+  }
+
+  for (const profile of profiles) {
+    let unit = profile.parentElement;
+    for (let depth = 0; depth < 16 && unit && unit !== document.body; depth++) {
+      if (
+        unit.hasAttribute("aria-posinset") &&
+        unit.querySelector('[data-ad-rendering-role="story_message"]') &&
+        unit.querySelector('[data-ad-rendering-role^="cta-"]')
+      ) {
+        return unit;
+      }
+      const role = unit.getAttribute("role") || "";
+      if (role === "feed" || role === "main" || role === "complementary") break;
+      unit = unit.parentElement;
+    }
+  }
+  return null;
+}
+
+/**
  * Sponsored detection — prefer label/disclosure signals over structure.
- * FB puts data-ad-* on many organic posts → do NOT use those alone.
+ * FB puts data-ad-* on many organic posts → do NOT use those alone. The
+ * composite ad-rendering signature above is the one structural exception.
  */
 function detectSponsoredSignals(container) {
   if (!container || SITE !== "facebook") {
@@ -133,6 +177,14 @@ function detectSponsoredSignals(container) {
   const reasons = [];
   let confidence = 0;
   const details = {};
+
+  // 0. Current feed-ad signature: profile + story message + CTA in one feed unit.
+  const adRenderingUnit = _findFacebookAdRenderingUnit(container);
+  if (adRenderingUnit) {
+    reasons.push("ad_rendering_signature");
+    confidence = Math.max(confidence, 99);
+    details.adRenderingSignature = true;
+  }
 
   // 1. Ads about / AdChoices (strong)
   if (
@@ -268,7 +320,8 @@ function detectSponsoredSignals(container) {
 }
 
 /**
- * Hot-path sponsored probe — pagelet + ads links + a few portal ids only.
+ * Hot-path sponsored probe — ad-rendering signature, pagelet + ads links, and
+ * a few portal ids only.
  * Skips the expensive aria-label / short-text walks used by the full detector.
  */
 function detectSponsoredSignalsLight(container) {
@@ -278,6 +331,13 @@ function detectSponsoredSignalsLight(container) {
   const reasons = [];
   let confidence = 0;
   const details = {};
+
+  const adRenderingUnit = _findFacebookAdRenderingUnit(container);
+  if (adRenderingUnit) {
+    reasons.push("ad_rendering_signature");
+    confidence = 99;
+    details.adRenderingSignature = true;
+  }
 
   const pagelet =
     container.getAttribute?.("data-pagelet") ||
