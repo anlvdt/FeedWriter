@@ -2130,6 +2130,17 @@ async function fetchImageBlob(imgSrc, filename = "image.png") {
 
   // Attempt 2: Via Background.js fetch (bypasses CORS)
   try {
+    try {
+      const origin = new URL(imgSrc).origin + "/*";
+      if (chrome.permissions?.request) {
+        await chrome.permissions.request({ origins: [origin, "https://*/*"] });
+      } else {
+        await chrome.runtime.sendMessage({
+          action: "request-optional-permission",
+          origins: [origin, "https://*/*"],
+        });
+      }
+    } catch (_) {}
     const resp = await new Promise((resolve) =>
       chrome.runtime.sendMessage(
         { action: "fetch-image", url: imgSrc },
@@ -2450,7 +2461,6 @@ function hideFeedClutter() {
 // === UNIFIED DETECTION ENGINE ===
 // Consolidates all ad/affiliate detection signals into a single pipeline.
 // Used by the feed filtering UI in content.js.
-
 
 
 function _getPrimaryPostText(container) {
@@ -3380,7 +3390,6 @@ function evaluatePostSignals(postEl) {
       result.details.commentGate = engagementGate; // legacy key
     }
   }
-
 
 
   // Dedupe reasons

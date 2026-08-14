@@ -18,7 +18,7 @@
           <p class="header-sub">Tóm tắt · Status · Dịch EN→VI</p>
         </div>
       </div>
-      <span class="header-badge" title="Phiên bản">v2.4</span>
+      <span class="header-badge" title="Phiên bản">v2.4.2</span>
     </header>
 
     <nav class="tabs" role="tablist" aria-label="Mục chính">
@@ -28,7 +28,7 @@
       <button class="tab" role="tab" aria-selected="false" aria-controls="tab-about" id="tabbtn-about" data-tab="about" type="button">Giới thiệu</button>
     </nav>
 
-    
+    <main class="popup-scroll" tabindex="-1">
     <!-- Settings Tab -->
     <div class="tab-content active" id="tab-settings" role="tabpanel" aria-labelledby="tabbtn-settings">
       <section class="card card-settings" id="accordion-basic">
@@ -37,9 +37,9 @@
             <h2 class="card-title">Đầu ra AI</h2>
             <p class="card-sub">Tuỳ chọn dùng khi tóm tắt bài viết</p>
           </div>
-          <label class="switch-label" title="Hiện thêm tuỳ chọn nâng cao">
-            <span class="switch-text">Nâng cao</span>
-            <input type="checkbox" id="advancedModeToggle" role="switch" aria-label="Chế độ nâng cao">
+          <label class="switch-label" title="Hiện thêm cài đặt mở rộng">
+            <span class="switch-text">Hiện thêm</span>
+            <input type="checkbox" id="advancedModeToggle" role="switch" aria-label="Hiển thị cài đặt mở rộng">
             <span class="slider-round" aria-hidden="true"></span>
           </label>
         </div>
@@ -89,8 +89,8 @@
       </section>
 
       <div class="accordion advanced-accordion">
-        <button class="accordion-header" type="button" aria-expanded="false">Tuỳ chọn nâng cao</button>
-        <div class="accordion-content">
+        <button class="accordion-header" type="button" aria-expanded="false" aria-controls="feed-filter-settings">Lọc feed &amp; hướng dẫn</button>
+        <div class="accordion-content" id="feed-filter-settings">
           <div class="field">
             <label for="adDisplayMode">Bài Được tài trợ / Sponsored</label>
             <select id="adDisplayMode">
@@ -127,8 +127,8 @@
       </div>
 
       <div class="accordion advanced-accordion settings-management-accordion">
-        <button class="accordion-header" type="button" aria-expanded="false">Nguồn, template &amp; backup</button>
-        <div class="accordion-content">
+        <button class="accordion-header" type="button" aria-expanded="false" aria-controls="source-template-settings">Nguồn, template &amp; backup</button>
+        <div class="accordion-content" id="source-template-settings">
           <div class="field-hint workflow-hint">Workflow đề xuất: lọc feed → dùng Batch để chọn bài đáng đọc → preview, chỉnh sửa và đăng thủ công.</div>
           <div class="field">
             <label for="sourceTemplate">
@@ -200,6 +200,7 @@
         </div>
         <div class="card-body">
           <div class="input-group keys-input-group">
+            <label class="sr-only" for="newApiKey">API key mới</label>
             <div class="keys-input-wrap">
               <input type="password" id="newApiKey" class="field-input keys-input" placeholder="Dán API key vào đây" autocomplete="off" autocapitalize="off" spellcheck="false">
               <button type="button" id="toggleNewApiKey" class="keys-reveal-btn" title="Hiện / ẩn key" aria-label="Hiện hoặc ẩn API key" aria-pressed="false">
@@ -326,17 +327,17 @@
       </div>
       <div id="postTimeSuggestBox" class="post-time-suggest" style="display:none"></div>
       <div id="historyList" class="history-list"></div>
-      <div id="historyDetail" class="history-detail" style="display:none">
-        <button id="historyBack" class="btn btn-secondary" style="margin-bottom:6px">Quay lại</button>
-        <div class="history-detail-date" id="historyDetailDate"></div>
+      <div id="historyDetail" class="history-detail" hidden>
+        <button id="historyBack" class="btn btn-secondary" type="button" style="margin-bottom:6px">Quay lại</button>
+        <div class="history-detail-date" id="historyDetailDate" role="heading" aria-level="2"></div>
         <div class="history-detail-body" id="historyDetailBody"></div>
-        <button id="historyDetailCopy" class="btn btn-secondary" style="margin-top:6px">Copy</button>
+        <button id="historyDetailCopy" class="btn btn-secondary" type="button" style="margin-top:6px">Copy</button>
       </div>
       <div id="historyActions">
-        <button id="rescanBtn" class="btn btn-secondary">Quét lại feed</button>
-        <button id="exportBtn" class="btn btn-secondary">Export JSON</button>
-        <button id="exportMdBtn" class="btn btn-secondary">Export Markdown</button>
-        <button id="clearBtn" class="btn btn-danger">Xóa lịch sử</button>
+        <button id="rescanBtn" class="btn btn-secondary" type="button">Quét lại feed</button>
+        <button id="exportBtn" class="btn btn-secondary" type="button">Export JSON</button>
+        <button id="exportMdBtn" class="btn btn-secondary" type="button">Export Markdown</button>
+        <button id="clearBtn" class="btn btn-danger" type="button">Xóa lịch sử</button>
       </div>
       <div id="historyStatus" class="status" role="status" aria-live="polite"></div>
     </div>
@@ -393,9 +394,10 @@
       </section>
 
       <div class="about-footer">
-        <a id="aboutVersion" href="https://github.com/anlvdt/fb-post-summarizer" target="_blank" rel="noopener">FeedWriter v2.4</a>
+        <a id="aboutVersion" href="https://github.com/anlvdt/fb-post-summarizer" target="_blank" rel="noopener">FeedWriter v2.4.2</a>
       </div>
     </div>
+    </main>
   </div>
 
   <!-- Setup Wizard View (Inline SPA) -->

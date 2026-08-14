@@ -9,6 +9,8 @@ Thumbs.db
 
 # Local agent worktrees
 .claude/worktrees/
+.claude/settings.local.json
+.claude/launch.json
 
 # Dependencies
 node_modules/

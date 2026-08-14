@@ -13,6 +13,7 @@ const {
   PROVIDER_PRIORITY,
   selectAvailableKey,
   parseRetryAfter,
+  hashKeyId,
 } = require(
   path.join(
     path.dirname(fileURLToPath(import.meta.url)),
@@ -306,9 +307,20 @@ describe("parseRetryAfter", () => {
     assert.equal(parseRetryAfter("Retry-After: 120"), 120_000);
   });
 
-  it("defaults to 30 minutes when no match", () => {
-    assert.equal(parseRetryAfter("unknown error"), 30 * 60 * 1000);
-    assert.equal(parseRetryAfter(null), 30 * 60 * 1000);
-    assert.equal(parseRetryAfter(undefined), 30 * 60 * 1000);
+  it("defaults to 15 minutes when no match", () => {
+    assert.equal(parseRetryAfter("unknown error"), 15 * 60 * 1000);
+    assert.equal(parseRetryAfter(null), 15 * 60 * 1000);
+    assert.equal(parseRetryAfter(undefined), 15 * 60 * 1000);
+  });
+});
+
+describe("hashKeyId", () => {
+  it("returns a stable short hex digest", async () => {
+    const a = await hashKeyId("gsk_test_key");
+    const b = await hashKeyId("gsk_test_key");
+    const c = await hashKeyId("gsk_other");
+    assert.equal(a, b);
+    assert.notEqual(a, c);
+    assert.match(a, /^[0-9a-f]{20}$/);
   });
 });

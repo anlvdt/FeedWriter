@@ -6,11 +6,11 @@
 
 <p align="center">
   Chrome Extension — Tóm tắt bài viết, viết status bằng AI, dịch EN→VI (từ · đoạn · slang · collocations · shadowing).<br>
-  Hỗ trợ workflow nguồn thủ công và bóc link Shopee.
+  Hỗ trợ workflow nguồn thủ công.
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.4.1-blue" alt="Version 2.4.1">
+  <img src="https://img.shields.io/badge/version-2.4.2-blue" alt="Version 2.4.2">
   <img src="https://img.shields.io/badge/manifest-v3-blue" alt="Manifest V3">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License">
   <img src="https://img.shields.io/badge/dependencies-zero-brightgreen" alt="Zero deps">
@@ -32,7 +32,7 @@ Tập trung **cách dùng thật** — slang, cụm hay đi kèm, luyện nói:
 
 | Chế độ | Khi nào dùng | Output |
 |--------|--------------|--------|
-| **Từ / cụm** | Double-click hoặc bôi 1–vài từ | Phiên âm, nghĩa, register, slang, collocations, tip shadowing |
+| **Từ / cụm** | Bôi 1–vài từ | Phiên âm, nghĩa, register, slang, collocations, tip shadowing |
 | **Đoạn văn** | Bôi đoạn dài hơn | Dịch trôi chảy + slang trong đoạn + collocations |
 | **Slang** | Thành ngữ / internet slang | Nghĩa đen · nghĩa lóng · register · tương đương VI · ví dụ |
 | **Collocations** | Học cụm hay đi kèm | verb+noun, adj+noun, prep patterns, cụm hay nhầm |
@@ -40,17 +40,15 @@ Tập trung **cách dùng thật** — slang, cụm hay đi kèm, luyện nói:
 
 **Cách gọi:**
 
-- Double-click từ tiếng Anh → tooltip dịch nhanh
 - Bôi đen → floating toolbar: **Dịch · Slang · Cụm từ · Shadow**
 - Chuột phải → FeedWriter → chọn chế độ dịch
 - Phím tắt: `Ctrl+Shift+T` / `Cmd+Shift+T` (dịch auto)
 
 ### Khác
 
-- **Bóc link Shopee**: bôi `shope.ee` → context menu → mở trang affiliate chính thức
-- **Ẩn bài affiliate / quảng cáo** (tuỳ chọn trong cài đặt) — chỉ lọc feed, không còn “chế bài affiliate”
+- **Ẩn bài quảng cáo / shopping** (tuỳ chọn trong cài đặt) — chỉ lọc feed
 
-> **Đã gỡ:** chức năng **viết / chế bài Affiliate** bằng AI.
+> **Đã gỡ:** viết bài Affiliate bằng AI và Bóc Link Shopee.
 
 ---
 
@@ -94,7 +92,7 @@ Sau mỗi lần sửa code trên EXTERNAL, chạy lại `./scripts/sync-local.sh
 
 **Tóm tắt / Status**
 
-- Nút **Tóm tắt** cạnh “Xem thêm” trên Facebook
+- Nút **Tóm tắt** cạnh “Xem thêm”; với bài hiển thị đầy đủ, nút nằm ở hàng compact ngay dưới nội dung
 - Bôi đen text → floating toolbar → **Tóm tắt**
 - Chuột phải → FeedWriter → Tóm tắt
 - Phím tắt: `Ctrl+Shift+S` / `Cmd+Shift+S`
@@ -106,14 +104,9 @@ Sau mỗi lần sửa code trên EXTERNAL, chạy lại `./scripts/sync-local.sh
 
 **Dịch EN → VI**
 
-- Double-click từ tiếng Anh
 - Bôi cụm / đoạn → toolbar **Dịch / Slang / Cụm từ / Shadow**
 - Chuột phải → **Dịch · Slang · Collocations · Shadowing**
 - `Ctrl+Shift+T` dịch vùng chọn
-
-**Bóc link Shopee**
-
-- Bôi link `shope.ee` → chuột phải → **Bóc Link Shopee**
 
 ## Nền tảng
 
@@ -124,11 +117,11 @@ Sau mỗi lần sửa code trên EXTERNAL, chạy lại `./scripts/sync-local.sh
 | LinkedIn | Thử nghiệm |
 | Reddit | Thử nghiệm |
 | Threads | Thử nghiệm |
-| Mọi trang https | Dịch (double-click / shortcut) |
+| Mọi trang https | Dịch (toolbar vùng chọn / shortcut) |
 
 ## Privacy
 
-- API key lưu local (`chrome.storage`)
+- API key lưu local (`chrome.storage.local`), không đồng bộ qua Chrome Sync
 - Nội dung gửi thẳng tới provider bạn chọn (Groq / Gemini / …)
 - Không thu thập analytics riêng
 

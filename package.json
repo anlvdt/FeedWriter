@@ -2,8 +2,8 @@
   "name": "feedwriter",
   "private": true,
   "scripts": {
-    "test": "node --test tests/**/*.test.mjs",
-    "check": "node --check background.js && node --check content.js && node --check popup.js && node --check content-composer.js && node --check status-formatter.js && node --check bg-api.js && node --check lib/pure-logic.js && node --check lib/message-schema.js && node --check lib/provider-rotation.js && node --check lib/scoring-profile.js && node --check lib/dom-el.js",
+    "test": "npm run verify:dom && npm run verify:composer && npm run verify:sw && node --test tests/**/*.test.mjs",
+    "check": "node scripts/check-js.mjs",
     "build:composer": "python3 scripts/build-content-composer.py",
     "verify:composer": "python3 scripts/build-content-composer.py --check",
     "build:dom": "python3 scripts/build-content-dom.py",
@@ -11,6 +11,6 @@
     "build:sw": "python3 scripts/build-sw.py",
     "verify:sw": "python3 scripts/build-sw.py --check",
     "build": "npm run build:dom && npm run build:composer && npm run build:sw",
-    "test:all": "npm run check && npm run verify:dom && npm run verify:composer && npm run verify:sw && npm test"
+    "test:all": "npm run check && npm test"
   }
 }

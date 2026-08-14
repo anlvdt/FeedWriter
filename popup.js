@@ -56,7 +56,9 @@ function showMainApp() {
     wizardView.hidden = true;
   }
   if (mainView) {
-    mainView.style.display = "block";
+    // Clear the inline override so CSS keeps the flex column layout;
+    // an inline "block" collapses the flex-sized .popup-scroll region.
+    mainView.style.removeProperty("display");
     mainView.hidden = false;
   }
   try {
@@ -167,8 +169,8 @@ function initWizard() {
           : ["groq", "gemini", "cerebras", "sambanova", "openrouter"];
       const provider =
         typeof detectProvider === "function" ? detectProvider(key) : "groq";
-      const data = await chrome.storage.sync.get(["apiKeys"]);
-      const apiKeys = data.apiKeys || {};
+      const { apiKeys: loaded } = await ensureApiKeysLoaded();
+      const apiKeys = loaded || {};
       for (const p of providers) {
         if (!apiKeys[p]) apiKeys[p] = [];
       }
@@ -177,8 +179,7 @@ function initWizard() {
         return true;
       }
       apiKeys[provider].push(key);
-      await chrome.storage.sync.set({ apiKeys });
-      await chrome.storage.local.set({ backupApiKeys: apiKeys });
+      await persistApiKeys(apiKeys);
       showWizardStatus("Đã thêm " + provider.toUpperCase() + " key", "success");
       return true;
     } catch (e) {
@@ -296,6 +297,7 @@ checkWizardStatus().catch((e) => {
 // Cache selectors for better performance
 const allTabs = document.querySelectorAll(".tab");
 const allTabContents = document.querySelectorAll(".tab-content");
+const popupScroll = document.querySelector(".popup-scroll");
 
 /** Activate a main popup tab by data-tab name (e.g. "apikeys"). */
 function activateTab(tabName) {
@@ -318,6 +320,7 @@ function activateTab(tabName) {
     panel.classList.add("active");
     panel.hidden = false;
   }
+  if (popupScroll) popupScroll.scrollTop = 0;
   if (tab.dataset.tab === "history") {
     loadHistory();
     loadAgentStats();
@@ -576,6 +579,10 @@ function esc(s) {
   return d.innerHTML;
 }
 
+function escAttr(s) {
+  return esc(s).replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
 // === API KEYS ===
 const newApiKeyInput = document.getElementById("newApiKey");
 const addKeyBtn = document.getElementById("addKeyBtn");
@@ -637,55 +644,62 @@ function _countApiKeys(apiKeys) {
   );
 }
 
+async function hashKeyId(key) {
+  if (!key) return "";
+  try {
+    const buf = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(String(key)),
+    );
+    return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, "0"))
+      .join("")
+      .slice(0, 20);
+  } catch (_) {
+    return "";
+  }
+}
+
+async function persistApiKeys(apiKeys) {
+  await chrome.storage.local.set({ apiKeys, backupApiKeys: apiKeys });
+  try {
+    await chrome.storage.sync.remove(["apiKeys", "apiKey"]);
+  } catch (_) {}
+}
+
 /**
- * Load apiKeys from sync; if empty, restore from local backupApiKeys
- * (same recovery path as the service worker).
+ * Load apiKeys from local first; migrate leftover sync keys once.
  * Returns { apiKeys, restoredFromBackup }.
  */
 async function ensureApiKeysLoaded() {
+  const local = await chrome.storage.local.get(["apiKeys", "backupApiKeys"]);
   const data = await chrome.storage.sync.get(["apiKeys", "apiKey", "provider"]);
-  let apiKeys = data.apiKeys || {};
+  let apiKeys = local.apiKeys || data.apiKeys || {};
   for (const p of ALL_PROVIDERS) {
     if (!Array.isArray(apiKeys[p])) apiKeys[p] = [];
   }
 
-  // Legacy single-key migration
   if (data.apiKey) {
     const provider = data.provider || detectProvider(data.apiKey);
     if (!apiKeys[provider]) apiKeys[provider] = [];
     if (!apiKeys[provider].includes(data.apiKey)) {
       apiKeys[provider].push(data.apiKey);
-      await chrome.storage.sync.set({ apiKeys });
-      await chrome.storage.local.set({ backupApiKeys: apiKeys });
     }
   }
 
   let restoredFromBackup = false;
   if (_countApiKeys(apiKeys) === 0) {
-    const local = await chrome.storage.local.get(["backupApiKeys"]);
     const backup = local.backupApiKeys;
     if (backup && _countApiKeys(backup) > 0) {
       apiKeys = backup;
       for (const p of ALL_PROVIDERS) {
         if (!Array.isArray(apiKeys[p])) apiKeys[p] = [];
       }
-      try {
-        await chrome.storage.sync.set({ apiKeys });
-        restoredFromBackup = true;
-        console.info(
-          "[FeedWriter] Restored",
-          _countApiKeys(apiKeys),
-          "API key(s) from local backup",
-        );
-      } catch (e) {
-        console.warn("[FeedWriter] Could not write restored keys to sync", e);
-      }
+      restoredFromBackup = true;
     }
-  } else {
-    // Keep local backup in sync with live keys (cheap insurance)
-    try {
-      await chrome.storage.local.set({ backupApiKeys: apiKeys });
-    } catch (_) {}
+  }
+
+  if (_countApiKeys(apiKeys) > 0) {
+    await persistApiKeys(apiKeys);
   }
 
   return { apiKeys, restoredFromBackup };
@@ -719,7 +733,12 @@ async function loadKeyLists() {
     const cap = p.charAt(0).toUpperCase() + p.slice(1);
     const wrapper = document.getElementById("keyList" + cap);
     if (wrapper) wrapper.style.display = keys.length > 0 ? "block" : "none";
-    renderKeyList(p, keys, ks);
+    const mapped = {};
+    for (const key of keys) {
+      const hashed = await hashKeyId(key);
+      mapped[key] = hashed ? (ks[hashed] || {}) : {};
+    }
+    renderKeyList(p, keys, mapped);
   }
   if (keyEmptyState) {
     const empty = totalKeys === 0;
@@ -780,19 +799,16 @@ function _normalizeImportedApiKeys(raw) {
 }
 
 async function mergeAndSaveApiKeys(incoming, { replace = false } = {}) {
-  const data = await chrome.storage.sync.get(["apiKeys"]);
-  const base = replace ? {} : data.apiKeys || {};
+  const { apiKeys: loaded } = replace ? { apiKeys: {} } : await ensureApiKeysLoaded();
+  const base = loaded || {};
   const apiKeys = {};
   for (const p of ALL_PROVIDERS) {
     const a = Array.isArray(base[p]) ? base[p].slice() : [];
     const b = Array.isArray(incoming[p]) ? incoming[p] : [];
     apiKeys[p] = [...new Set([...a, ...b])];
   }
-  await chrome.storage.sync.set({ apiKeys });
-  await chrome.storage.local.set({
-    backupApiKeys: apiKeys,
-    backupApiKeysAt: Date.now(),
-  });
+  await persistApiKeys(apiKeys);
+  await chrome.storage.local.set({ backupApiKeysAt: Date.now() });
   return _countApiKeys(apiKeys);
 }
 
@@ -872,7 +888,7 @@ function renderKeyList(provider, keys, keyStatusData) {
       }
       return (
         '<div class="key-item">' +
-          '<code class="key-item-text" title="' + esc(maskKey(key)) + '">' +
+          '<code class="key-item-text" title="' + escAttr(maskKey(key)) + '">' +
             esc(maskKey(key)) +
           "</code>" +
           '<span class="key-item-status ' + cls + '">' + esc(txt) + "</span>" +
@@ -893,12 +909,10 @@ function renderKeyList(provider, keys, keyStatusData) {
 document.addEventListener("click", async (e) => {
   const btn = e.target.closest(".key-item-delete");
   if (!btn) return;
-  const d = await chrome.storage.sync.get(["apiKeys"]);
-  const apiKeys = d.apiKeys || {};
+  const { apiKeys } = await ensureApiKeysLoaded();
   if (apiKeys[btn.dataset.provider])
     apiKeys[btn.dataset.provider].splice(+btn.dataset.idx, 1);
-  await chrome.storage.sync.set({ apiKeys });
-  await chrome.storage.local.set({ backupApiKeys: apiKeys });
+  await persistApiKeys(apiKeys);
   loadKeyLists();
   showKeyStatus("Đã xóa", "success");
 });
@@ -920,8 +934,7 @@ async function addApiKey() {
   addKeyBtn.disabled = true;
   try {
     const provider = detectProvider(key);
-    const data = await chrome.storage.sync.get(["apiKeys"]);
-    const apiKeys = data.apiKeys || {};
+    const { apiKeys } = await ensureApiKeysLoaded();
     for (const p of ALL_PROVIDERS) {
       if (!apiKeys[p]) apiKeys[p] = [];
     }
@@ -930,8 +943,7 @@ async function addApiKey() {
       return false;
     }
     apiKeys[provider].push(key);
-    await chrome.storage.sync.set({ apiKeys });
-    await chrome.storage.local.set({ backupApiKeys: apiKeys });
+    await persistApiKeys(apiKeys);
     newApiKeyInput.value = "";
     loadKeyLists();
     showKeyStatus(
@@ -993,8 +1005,8 @@ if (importKeysFile) {
 }
 
 async function handleTestConnection(btn) {
-  const data = await chrome.storage.sync.get(["apiKeys"]);
-  const total = Object.values(data.apiKeys || {}).reduce(
+  const { apiKeys } = await ensureApiKeysLoaded();
+  const total = Object.values(apiKeys || {}).reduce(
     (s, a) => s + (a ? a.length : 0),
     0,
   );
@@ -1011,7 +1023,7 @@ async function handleTestConnection(btn) {
       showKeyStatus("" + r.provider + (r.model ? " — " + r.model : " — OK"), "success");
     } else if (r?.error && r.error.includes("429")) {
       showKeyStatus("Rate limited — thử lại sau vài phút", "error");
-    } else if (r?.error && (r.error.includes("401") || r.error.includes("403"))) {
+    } else if (r?.allKeysInvalid) {
       showKeyStatus("Key không hợp lệ hoặc hết hạn", "error");
     } else if (r?.error && r.error.includes("network")) {
       showKeyStatus("Lỗi mạng — kiểm tra kết nối internet", "error");
@@ -1062,6 +1074,7 @@ loadKeyLists();
 
 // === HISTORY ===
 let historyData = [];
+let historyReturnFocus = null;
 
 function formatHm(ts) {
   return new Date(ts).toLocaleTimeString("vi", { hour: "2-digit", minute: "2-digit" });
@@ -1156,9 +1169,9 @@ async function loadHistory() {
   const list = document.getElementById("historyList");
   const detail = document.getElementById("historyDetail");
   const actions = document.getElementById("historyActions");
-  detail.style.display = "none";
-  list.style.display = "block";
-  actions.style.display = historyData.length > 0 ? "block" : "none";
+  detail.hidden = true;
+  list.hidden = false;
+  actions.hidden = historyData.length === 0;
   renderPostTimeSuggestions(historyData);
   if (historyData.length === 0) {
     list.innerHTML = '<p class="empty">Chưa có lịch sử</p>';
@@ -1183,7 +1196,7 @@ async function loadHistory() {
           '<div class="history-meta">' +
             '<time class="history-date">' + dateStr + "</time>" +
             (siteStr ? '<span class="history-site">' + siteStr + "</span>" : "") +
-            '<span class="history-badge history-badge--' + esc(bt) + '">' + badge + "</span>" +
+            '<span class="history-badge history-badge--' + escAttr(bt) + '">' + badge + "</span>" +
           "</div>" +
           '<div class="history-title">' + esc(title) + "</div>" +
           (excerpt ? '<div class="history-excerpt">' + esc(excerpt) + "</div>" : "") +
@@ -1212,9 +1225,10 @@ document.addEventListener("keydown", (e) => {
 function showHistoryDetail(idx) {
   const h = historyData[idx];
   if (!h) return;
-  document.getElementById("historyList").style.display = "none";
-  document.getElementById("historyActions").style.display = "none";
-  document.getElementById("historyDetail").style.display = "block";
+  historyReturnFocus = document.activeElement?.closest?.(".history-item") || null;
+  document.getElementById("historyList").hidden = true;
+  document.getElementById("historyActions").hidden = true;
+  document.getElementById("historyDetail").hidden = false;
   const siteLabel = formatSiteLabel(h.site);
   document.getElementById("historyDetailDate").textContent =
     new Date(h.date).toLocaleString("vi") +
@@ -1222,12 +1236,18 @@ function showHistoryDetail(idx) {
     " · " +
     typeBadgeLabel(h.type || "summary");
   document.getElementById("historyDetailBody").textContent = h.summary || "";
+  document.getElementById("historyBack").focus({ preventScroll: true });
 }
 
 document.getElementById("historyBack").addEventListener("click", () => {
-  document.getElementById("historyDetail").style.display = "none";
-  document.getElementById("historyList").style.display = "block";
-  document.getElementById("historyActions").style.display = "block";
+  document.getElementById("historyDetail").hidden = true;
+  document.getElementById("historyList").hidden = false;
+  document.getElementById("historyActions").hidden = historyData.length === 0;
+  const target = historyReturnFocus?.isConnected
+    ? historyReturnFocus
+    : document.querySelector(".history-item");
+  historyReturnFocus = null;
+  target?.focus({ preventScroll: true });
 });
 
 document.getElementById("historyDetailCopy").addEventListener("click", () => {
@@ -1561,7 +1581,7 @@ async function useTemplate(id) {
 
   if (!template) return;
 
-  // Apply template to summary prompt field (affiliate writing removed)
+  // Apply the template to the summary prompt field.
   customSummaryPromptEl.value = template.prompt;
 
   showTemplateStatus("Đã áp dụng template", "success");

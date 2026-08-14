@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import fs from "node:fs";
 
 const require = createRequire(import.meta.url);
 const schema = require(
@@ -16,6 +17,7 @@ const {
   SENDER,
   ACTION_SCHEMAS,
   classifySender,
+  isAllowedPendingSender,
   validateMessage,
   validate,
 } = schema;
@@ -31,6 +33,18 @@ const contentTabSender = {
   id: EXT_ID,
   tab: { id: 42 },
   url: "https://www.facebook.com/",
+};
+
+const redditContentSender = {
+  id: EXT_ID,
+  tab: { id: 43, url: "https://www.reddit.com/submit" },
+  url: "https://www.reddit.com/submit",
+};
+
+const untrustedContentSender = {
+  id: EXT_ID,
+  tab: { id: 44, url: "https://example.com/" },
+  url: "https://example.com/",
 };
 
 const unknownSender = {};
@@ -54,6 +68,17 @@ describe("classifySender", () => {
       classifySender({ id: EXT_ID, url: "https://evil.example/" }),
       "external",
     );
+  });
+});
+
+describe("isAllowedPendingSender", () => {
+  it("binds pending Facebook and Reddit handoffs to their destination sites", () => {
+    assert.equal(isAllowedPendingSender("facebook", contentTabSender), true);
+    assert.equal(isAllowedPendingSender("reddit", redditContentSender), true);
+    assert.equal(isAllowedPendingSender("facebook", redditContentSender), false);
+    assert.equal(isAllowedPendingSender("reddit", contentTabSender), false);
+    assert.equal(isAllowedPendingSender("facebook", untrustedContentSender), false);
+    assert.equal(isAllowedPendingSender("facebook", extensionPageSender), false);
   });
 });
 
@@ -153,6 +178,25 @@ describe("validate / ACTION_SCHEMAS", () => {
     }
   });
 
+  it("rejects key/settings actions from a content tab", () => {
+    for (const action of ["test-connection", "get-key-status", "backupSettings", "restoreSettings"]) {
+      const r = validate({ action }, contentTabSender);
+      assert.equal(r.ok, false, `expected ${action} blocked from content tab`);
+    }
+  });
+
+  it("rejects removed Shopee unshorten action", () => {
+    const request = { action: "unshorten-shopee-inline", url: "https://shope.ee/abc" };
+    assert.equal(validate(request, contentTabSender).ok, false);
+    assert.equal(ACTION_SCHEMAS["unshorten-shopee-inline"], undefined);
+  });
+
+  it("accepts relay-translate only from the requesting content tab", () => {
+    const request = { action: "relay-translate", text: "archive", mode: "word" };
+    assert.equal(validate(request, contentTabSender).ok, true);
+    assert.equal(validate(request, extensionPageSender).ok, false);
+  });
+
   it("accepts restoreSettings with optional backupIndex number", () => {
     assert.equal(
       validate({ action: "restoreSettings" }, extensionPageSender).ok,
@@ -168,38 +212,55 @@ describe("validate / ACTION_SCHEMAS", () => {
     );
   });
 
-  it("accepts shorten-url and translate-word with required strings", () => {
+  it("accepts shorten-url and explicit translate-text requests", () => {
     assert.equal(
       validate({ action: "shorten-url", url: "https://example.com/long" }, contentTabSender).ok,
       true,
     );
     assert.equal(
-      validate({ action: "translate-word", word: "hello" }, contentTabSender).ok,
+      validate({ action: "translate-text", text: "archive", mode: "word" }, contentTabSender).ok,
       true,
     );
     assert.equal(
-      validate({ action: "translate-word", word: "  " }, contentTabSender).ok,
+      validate({ action: "translate-text", text: "  " }, contentTabSender).ok,
+      false,
+    );
+    assert.equal(
+      validate({ action: "translate-word", word: "hello" }, contentTabSender).ok,
       false,
     );
   });
 
-  it("accepts contextual technical translation requests", () => {
-    const r = validate(
-      {
-        action: "translate-text",
-        text: "archive",
-        mode: "word",
-        context: "Extract the downloaded archive file before running the code.",
-      },
-      contentTabSender,
+  it("accepts pending-post bridges only from their intended sender class", () => {
+    const pending = { action: "get-pending-post", kind: "facebook", id: "abc123" };
+    assert.equal(validate(pending, contentTabSender).ok, true);
+    assert.equal(validate(pending, extensionPageSender).ok, false);
+    assert.equal(
+      validate({ action: "complete-pending-post", kind: "reddit", id: "abc123" }, redditContentSender).ok,
+      true,
     );
-    assert.equal(r.ok, true);
+    assert.equal(
+      validate({ action: "store-pending-post", kind: "reddit", postData: {} }, redditContentSender).ok,
+      true,
+    );
+    assert.equal(
+      validate({ action: "store-pending-post", kind: "reddit", postData: {} }, extensionPageSender).ok,
+      false,
+    );
   });
 
   it("validateMessage rejects when schemas map is empty for action", () => {
     const r = validateMessage("ping", { action: "ping" }, extensionPageSender, {});
     assert.equal(r.ok, false);
     assert.equal(r.error, "Unknown action");
+  });
+
+  it("is bundled into the service worker source list", () => {
+    const swBuild = fs.readFileSync(
+      path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "scripts", "build-sw.py"),
+      "utf8",
+    );
+    assert.match(swBuild, /lib\/message-schema\.js/);
   });
 
   it("exports SENDER constants used by schemas", () => {

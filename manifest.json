@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "FeedWriter",
-  "version": "2.4.1",
+  "version": "2.4.2",
   "description": "Tóm tắt bài viết bằng AI, chỉnh sửa & copy thành status. Dịch EN→VI: từ, đoạn văn, slang, collocations, shadowing.",
   "author": "Le An (anlvdt)",
   "homepage_url": "https://github.com/anlvdt/fb-post-summarizer",
@@ -9,10 +9,13 @@
     "storage",
     "contextMenus",
     "activeTab",
-    "cookies",
-    "scripting",
-    "alarms",
+    "scripting"
+  ],
+  "optional_permissions": [
     "clipboardRead"
+  ],
+  "optional_host_permissions": [
+    "https://*/*"
   ],
   "host_permissions": [
     "https://generativelanguage.googleapis.com/*",
@@ -78,16 +81,7 @@
       "run_at": "document_end"
     },
     {
-      "matches": [
-        "https://www.facebook.com/*",
-        "https://web.facebook.com/*",
-        "https://m.facebook.com/*",
-        "https://*.threads.net/*",
-        "https://x.com/*",
-        "https://twitter.com/*",
-        "https://www.linkedin.com/*",
-        "https://www.reddit.com/*"
-      ],
+      "matches": ["https://*/*"],
       "js": [
         "translate.js"
       ],

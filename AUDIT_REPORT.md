@@ -1,5 +1,7 @@
 # FeedWriter Deep Audit
 
+**Superseded for runtime truth:** 2026-08-14 shipped **v2.4.2**. This file described a planned v2.5.1 surface (Labs UI, optional cookies, schema already in the SW). Treat the 2026-08-14 audit + current `manifest.json` as source of truth.
+
 Audit date: 2026-07-11 (supersedes 2026-06-12)  
 Implementation wave: **v2.5.1** (after v2.5.0) — message schemas, namespace, scoring profile, provider tests.
 

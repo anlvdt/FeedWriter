@@ -6,7 +6,7 @@
   --tr-bg: var(--fw-elevated, #2a343d);
   --tr-border: var(--fw-border, #3a4652);
   --tr-text: var(--fw-text, #eef2f5);
-  --tr-muted: var(--fw-text-3, #7a8794);
+  --tr-muted: var(--fw-text-3, #8c99a6);
   --tr-secondary: var(--fw-text-2, #a8b4c0);
   --tr-body: var(--fw-text, #eef2f5);
   --tr-danger: var(--fw-danger, #eb5757);
@@ -53,6 +53,31 @@
   transform: translateY(0);
 }
 
+.fbs-translate-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tr-secondary);
+  font: inherit;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.fbs-translate-close:hover {
+  background: var(--tr-accent-soft);
+  color: var(--tr-text);
+}
+.fbs-translate-close:focus-visible {
+  outline: 2px solid var(--tr-accent);
+  outline-offset: 1px;
+}
+
 .fbs-translate-tooltip *,
 .fbs-translate-tooltip *::before,
 .fbs-translate-tooltip *::after {
@@ -65,6 +90,7 @@
   justify-content: space-between;
   gap: 10px;
   margin-bottom: 10px;
+  padding-right: 24px;
 }
 
 .fbs-translate-word {

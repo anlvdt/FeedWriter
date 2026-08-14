@@ -44,7 +44,7 @@ describe("Feed scanning cost controls", () => {
     assert.match(content, /function _discoverFeedUnitsForObserver/);
     assert.match(content, /IntersectionObserver/);
     assert.match(content, /fbsViewportScanned/);
-    assert.match(content, /SCAN_DEBOUNCE_MS = 4000/);
+    assert.match(content, /SCAN_DEBOUNCE_MS = SITE === "facebook" \? 4000 : 400/);
     assert.match(content, /function _cheapPostStamp/);
     assert.match(content, /fbsSponsoredChecked/);
     assert.match(content, /if \(!filterEngagementGates\) return/);
@@ -74,6 +74,16 @@ describe("Feed scanning cost controls", () => {
     assert.match(content, /if \(SITE !== "facebook"\) \{/);
   });
 
+  it("discovers wrapped X tweets and marker-less Facebook feed children", () => {
+    // X wraps each tweet in a plain div — the observer must probe descendants.
+    assert.match(content, /node\.querySelector\?\.\(feedTargetSelector\)/);
+    // Facebook builds without FeedUnit/virtualized markers: direct feed kids.
+    assert.match(content, /parentElement\?\.getAttribute\("role"\) === "feed"/);
+    assert.match(content, /querySelectorAll\('div\[role="feed"\] > div'\)/);
+    // Repeat X scans skip settled tweets before the controls walk.
+    assert.match(content, /\.fbs-wrap-inline\[data-fbs-ui="v3"\]'\)\) continue;/);
+  });
+
   it("keeps expensive feed discovery sparse and avoids cloning post bodies for the length gate", () => {
     const facebookBoot = content.slice(
       content.indexOf('// Boot: discover quickly'),
@@ -86,6 +96,19 @@ describe("Feed scanning cost controls", () => {
       content,
       /function _statusBodyTextLength\(textEl\)[\s\S]{0,600}cloneNode\(true\)/,
     );
+    const viewportFingerprint = content.slice(
+      content.indexOf("function _viewportFingerprint"),
+      content.indexOf("function _isViewportScanCurrent"),
+    );
+    assert.match(viewportFingerprint, /textContent/);
+    assert.doesNotMatch(viewportFingerprint, /innerText/);
+
+    const facebookStatusFinder = content.slice(
+      content.indexOf("function _findFacebookStatusText"),
+      content.indexOf("function _mountInlineStatusChip"),
+    );
+    assert.match(facebookStatusFinder, /querySelectorAll\(FB_POST_BODY_SELECTOR\)/);
+    assert.doesNotMatch(facebookStatusFinder, /innerText/);
   });
 });
 
@@ -145,12 +168,14 @@ describe("Feed summary control density", () => {
     assert.match(css, /\.fbs-chip-host:hover \.fbs-allpost-btn[\s\S]*?opacity:\s*1\s*!important/);
   });
 
-  it("uses text-only inline summary controls", () => {
+  it("uses text-only inline summary controls with dialog semantics", () => {
     const inlineFactory = content.slice(
       content.indexOf("function createInlineBtn()"),
       content.indexOf("// === POST METADATA EXTRACTION ==="),
     );
-    assert.match(inlineFactory, /d\.innerHTML\s*=\s*'<span title="Tóm tắt nội dung">Tóm tắt<\/span>'/);
+    assert.match(inlineFactory, /class="fbs-inline-label"/);
+    assert.match(inlineFactory, /aria-label", "Tóm tắt bài viết"/);
+    assert.match(inlineFactory, /aria-haspopup", "dialog"/);
     assert.doesNotMatch(inlineFactory, /ICON_BASE64/);
   });
 
@@ -160,6 +185,36 @@ describe("Feed summary control density", () => {
     assert.match(content, /afterEl\.parentElement\.insertBefore\(wrap, afterEl\.nextSibling\)/);
     assert.match(content, /sep\.className = "fbs-inline-sep"/);
     assert.match(content, /sep\.textContent = " · "/);
+  });
+
+  it("places full Facebook summaries below the status body", () => {
+    assert.match(content, /const isFacebookRow = SITE === "facebook"/);
+    assert.match(content, /"fbs-wrap fbs-summary-control fbs-summary-row"/);
+    assert.match(
+      content,
+      /textEl\.parentElement\.insertBefore\(wrap, textEl\.nextSibling\)/,
+    );
+    assert.match(
+      css,
+      /\.fbs-summary-row\[data-fbs-ui="v3"\][\s\S]*?justify-content:\s*flex-end\s*!important/,
+    );
+    assert.match(
+      css,
+      /\.fbs-wrap:not\(\.fbs-wrap-inline\):not\(\.fbs-summary-row\)/,
+    );
+  });
+
+  it("exposes focus and busy states on summary controls", () => {
+    assert.match(content, /btn\.setAttribute\("aria-busy", "true"\)/);
+    assert.match(content, /label\.textContent = "Đang tóm tắt…"/);
+    assert.match(
+      css,
+      /\.fbs-btn-inline\[data-fbs-ui="v3"\]:focus-visible[\s\S]*?outline:\s*2px solid var\(--fw-accent\)/,
+    );
+    assert.match(
+      css,
+      /\.fbs-btn-inline\[data-fbs-ui="v3"\]\[aria-busy="true"\][\s\S]*?cursor:\s*progress/,
+    );
   });
 
   it("does not mount inline summaries on short Facebook status bodies", () => {
@@ -198,6 +253,14 @@ describe("UI system v3 contracts", () => {
     assert.match(css, /button\.fbs-allpost-btn[\s\S]*?opacity:\s*0\.72\s*!important/);
   });
 
+  it("keeps the light-theme summarize chip legible on white feed cards", () => {
+    const block = css.match(/\.fbs-chip-host\[data-fbs-theme="light"\] \.fbs-allpost-btn[^{]*\{([^}]*)\}/);
+    assert.ok(block, "expected light-theme chip override");
+    assert.match(block[1], /background:\s*#ffffff\s*!important/);
+    assert.match(block[1], /color:\s*var\(--fw-accent\)\s*!important/);
+    assert.match(block[1], /opacity:\s*0\.95\s*!important/);
+  });
+
   it("aliases popup and content tokens to canonical --fw-*", () => {
     assert.match(popupCss, /--fw-accent:\s*#0f766e/i);
     assert.match(popupCss, /--bg:\s*var\(--fw-bg\)/);
@@ -214,15 +277,41 @@ describe("UI system v3 contracts", () => {
     assert.match(popupCss, /background-color:\s*var\(--bg-input\)/);
   });
 
-  it("clips the Chrome popup once at the rounded body while the app shell scrolls", () => {
+  it("rounds the popup shell while bounding it to the viewport", () => {
     const bodyBlock = popupCss.match(/body\s*\{([\s\S]*?)\n\}/);
     assert.ok(bodyBlock, "expected popup body rule");
     assert.match(bodyBlock[1], /overflow:\s*hidden/);
-    assert.match(bodyBlock[1], /clip-path:\s*inset\(0 round var\(--radius-popup, 20px\)\)/);
+    assert.match(bodyBlock[1], /height:\s*min\(600px,\s*100vh\)/);
+    assert.match(bodyBlock[1], /background:\s*var\(--bg\)\s*!important/);
+    assert.match(bodyBlock[1], /border-radius:\s*var\(--radius-popup/);
+    assert.match(bodyBlock[1], /clip-path:\s*inset\(0 round var\(--radius-popup/);
+    const htmlBlock = popupCss.match(/html\s*\{([\s\S]*?)\n\}/);
+    assert.ok(htmlBlock, "expected popup html rule");
+    assert.match(htmlBlock[1], /height:\s*600px/);
+    assert.match(htmlBlock[1], /background:\s*transparent\s*!important/);
+    assert.match(htmlBlock[1], /border-radius:\s*0/);
+    assert.match(htmlBlock[1], /clip-path:\s*none/);
+    assert.doesNotMatch(popupCss, /#popup-window\s*\{/);
+    assert.doesNotMatch(popup, /id="popup-window"/);
     const shellBlock = popupCss.match(/#main-view,\s*[\s\S]*?\.wizard-container\s*\{([\s\S]*?)\n\}/);
     assert.ok(shellBlock, "expected popup shell rule");
-    assert.match(shellBlock[1], /overflow-y:\s*auto/);
+    assert.match(shellBlock[1], /overflow-y:\s*hidden/);
     assert.match(shellBlock[1], /contain:\s*paint/);
+    assert.match(shellBlock[1], /border-radius:\s*14px\s*!important/);
+    assert.match(popupCss, /\.popup-scroll\s*\{[\s\S]*?height:\s*0/);
+    assert.match(popupCss, /\.popup-scroll\s*\{[\s\S]*?flex:\s*1 1 0/);
+    assert.match(popupCss, /\.popup-scroll\s*\{[\s\S]*?overflow-y:\s*auto/);
+    assert.match(popupCss, /\.popup-scroll::-webkit-scrollbar\s*\{\s*width:\s*4px/);
+    assert.match(popupCss, /\.settings-footer\.sticky-save\s*\{[\s\S]*?position:\s*static/);
+    for (const m of popupCss.matchAll(/\.settings-footer\.sticky-save \.btn-primary[^{]*\{([^}]*)\}/g)) {
+      assert.doesNotMatch(m[1], /border-radius:\s*0/, "save button must stay rounded");
+    }
+    // An inline display:block on #main-view collapses the flex-sized
+    // .popup-scroll region to its padding; JS must defer to the CSS layout.
+    const popupJs = fs.readFileSync(path.join(root, "popup.js"), "utf8");
+    assert.doesNotMatch(popupJs, /mainView\.style\.display\s*=\s*"block"/);
+    assert.match(popupJs, /mainView\.style\.removeProperty\("display"\)/);
+    assert.match(popupCss, /#main-view\[hidden\][\s\S]*?display:\s*none\s*!important/);
   });
 
   it("restyles comment-summary without sage leftover and uses toolbar overflow", () => {
@@ -239,10 +328,12 @@ describe("UI system v3 contracts", () => {
     assert.match(popup, /<button type="button" class="wizard-skip-link" id="wizardStep1Skip">/);
     const popupJs = fs.readFileSync(path.join(root, "popup.js"), "utf8");
     assert.match(popupJs, /activateTab\("apikeys"\)/);
+    assert.match(popupJs, /popupScroll\.scrollTop = 0/);
   });
 
-  it("compresses Settings into fewer advanced accordions", () => {
-    assert.match(popup, />Tuỳ chọn nâng cao</);
+  it("uses distinct labels for expanded settings and feed filtering", () => {
+    assert.match(popup, />Hiện thêm</);
+    assert.match(popup, />Lọc feed &amp; hướng dẫn</);
     assert.match(popup, />Nguồn, template &amp; backup</);
     assert.equal((popup.match(/class="accordion advanced-accordion/g) || []).length, 2);
   });
@@ -280,13 +371,14 @@ describe("Composer source-card density", () => {
 });
 
 describe("No autonomous Facebook publishing", () => {
-  it("does not expose the legacy autonomous publisher", () => {
+  it("keeps publishing behind an explicit user action", () => {
+    assert.match(composer, /class="fbs-sp-open-fb"/);
     assert.doesNotMatch(composer, /window\.fbsAgentPost\s*=/);
-    assert.match(composer, /publishing and source[\s\S]*always performed by the user/);
+    assert.doesNotMatch(composer, /agent-posted|legacyAutopostRemoved/);
   });
 
   it("does not ship archived automation code to social pages", () => {
-    assert.doesNotMatch(composerRuntime, /legacyAutopostRemoved/);
+    assert.doesNotMatch(composerRuntime, /legacyAutopostRemoved|agent-posted/);
     assert.doesNotMatch(composerRuntime, /Removed legacy autonomous posting implementation/);
   });
 });

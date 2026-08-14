@@ -15,12 +15,12 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-ORDER = ["utils.js", "bg-prompts.js", "bg-api.js", "background.js"]
+ORDER = ["utils.js", "lib/message-schema.js", "bg-prompts.js", "bg-api.js", "background.js"]
 OUT = ROOT / "service-worker.js"
 
 HEADER = """/* ==========================================================================
  * FeedWriter service-worker.js (GENERATED — do not edit by hand)
- * Bundle of: utils.js + bg-prompts.js + bg-api.js + background.js
+ * Bundle of: utils.js + lib/message-schema.js + bg-prompts.js + bg-api.js + background.js
  * Rebuild: python3 scripts/build-sw.py
  * ========================================================================== */
 """
@@ -53,6 +53,14 @@ def main() -> int:
     if check_only:
         if not OUT.is_file() or OUT.read_text(encoding="utf-8") != output:
             print(f"stale generated file: {OUT}; run python3 scripts/build-sw.py", file=sys.stderr)
+            return 1
+        r = subprocess.run(
+            ["node", "--check", str(OUT)],
+            capture_output=True,
+            text=True,
+        )
+        if r.returncode != 0:
+            print(r.stderr, file=sys.stderr)
             return 1
         print(f"OK verified {OUT} ({OUT.stat().st_size} bytes)")
         return 0

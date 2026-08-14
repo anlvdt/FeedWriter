@@ -14,13 +14,18 @@ describe("manifest scope", () => {
     assert.ok(!manifest.host_permissions.includes("http://*/*"));
   });
 
-  it("runs translation only on supported social platforms", () => {
+  it("runs translation on all https pages", () => {
     const translation = manifest.content_scripts.at(-1);
-    const coreMatches = manifest.content_scripts
-      .slice(0, -1)
-      .flatMap((entry) => entry.matches)
-      .sort();
-    assert.deepEqual(translation.matches.slice().sort(), coreMatches);
+    assert.deepEqual(translation.matches, ["https://*/*"]);
+    assert.ok(translation.js.includes("translate.js"));
+  });
+
+  it("keeps clipboardRead optional and drops Shopee hosts and cookies", () => {
+    assert.ok((manifest.optional_permissions || []).includes("clipboardRead"));
+    assert.ok(!(manifest.permissions || []).includes("clipboardRead"));
+    assert.ok(!(manifest.permissions || []).includes("cookies"));
+    assert.ok(!manifest.host_permissions.some((h) => /shopee|shope\.ee/i.test(h)));
+    assert.ok((manifest.optional_host_permissions || []).includes("https://*/*"));
   });
 
   it("loads only one platform-specific posting adapter per social site", () => {
@@ -36,6 +41,10 @@ describe("popup controls", () => {
   it("uses native buttons for accordion headers", () => {
     assert.equal((popup.match(/<button class="accordion-header"/g) || []).length, 2);
     assert.ok(!popup.includes('<div class="accordion-header"'));
+    for (const id of ["feed-filter-settings", "source-template-settings"]) {
+      assert.match(popup, new RegExp(`aria-controls="${id}"`));
+      assert.match(popup, new RegExp(`id="${id}"`));
+    }
   });
 
   it("keeps layout styling in the stylesheet instead of inline markup", () => {

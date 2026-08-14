@@ -45,7 +45,7 @@
 ## Surfaces
 
 - **Popup** — tabs, settings, keys, history, sticky save  
-- **Feed chip** — 28–32px host, neutral pill, `right: 104px`  
+- **Feed summary action** — cạnh `Xem thêm`; hàng compact canh phải ngay dưới status khi bài hiển thị đầy đủ
 - **Result panel** — header · body · tone · footer  
 - **Composer** — source card + quality badge  
 - **Translate** — L3 nest surface  
@@ -57,6 +57,6 @@
 2. Popup light canvas `#EEF2F5` / cards white; dark `#12171C` / `#1A2229`  
 3. Focus ring teal soft `rgba(15,118,110,0.14)` (light)  
 4. Primary buttons `#0F766E` (light) / `#2DD4BF` (dark); tabs **not** solid accent wash  
-5. Chip host clears FB top-right controls (`right: 104px`)  
+5. Nút tóm tắt không che media/native controls; bài đầy đủ đặt ngay dưới status body
 6. Mobile panel is a bottom sheet with safe-area padding  
 7. Inputs readable in light + dark (no white-on-white)  

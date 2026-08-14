@@ -1,6 +1,6 @@
 /**
- * Tests for output guardrails, Labs risk gate, and platform helpers.
- * Pure logic from lib/pure-logic.js (mirrors background.js / planned Labs gate).
+ * Tests for output guardrails and platform helpers.
+ * Pure logic from lib/pure-logic.js (mirrors shipped extension behavior).
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -16,9 +16,7 @@ const pure = require(
 const {
   computeNgramOverlap,
   detectRepetition,
-  labsGateAllows,
   isMacPlatform,
-  LABS_CONFIRM_PHRASE,
 } = pure;
 
 describe("computeNgramOverlap", () => {
@@ -85,39 +83,6 @@ describe("detectRepetition", () => {
   });
 });
 
-describe("labsGateAllows", () => {
-  it("requires labsAutomationEnabled and confirm phrase TOI HIEU RUI RO", () => {
-    assert.equal(labsGateAllows({ labsAutomationEnabled: true }, LABS_CONFIRM_PHRASE), true);
-    assert.equal(
-      labsGateAllows(
-        { labsAutomationEnabled: true, labsConfirmText: LABS_CONFIRM_PHRASE },
-      ),
-      true,
-    );
-  });
-
-  it("denies when Labs is off even with correct phrase", () => {
-    assert.equal(
-      labsGateAllows({ labsAutomationEnabled: false }, LABS_CONFIRM_PHRASE),
-      false,
-    );
-    assert.equal(labsGateAllows({}, LABS_CONFIRM_PHRASE), false);
-    assert.equal(labsGateAllows(null, LABS_CONFIRM_PHRASE), false);
-  });
-
-  it("denies wrong or missing confirm phrase", () => {
-    assert.equal(
-      labsGateAllows({ labsAutomationEnabled: true }, "toi hieu rui ro"),
-      false,
-    );
-    assert.equal(
-      labsGateAllows({ labsAutomationEnabled: true }, "I understand"),
-      false,
-    );
-    assert.equal(labsGateAllows({ labsAutomationEnabled: true }, ""), false);
-    assert.equal(labsGateAllows({ labsAutomationEnabled: true }), false);
-  });
-});
 
 describe("isMacPlatform", () => {
   it("detects Mac / iOS user agents", () => {

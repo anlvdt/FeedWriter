@@ -2130,6 +2130,17 @@ async function fetchImageBlob(imgSrc, filename = "image.png") {
 
   // Attempt 2: Via Background.js fetch (bypasses CORS)
   try {
+    try {
+      const origin = new URL(imgSrc).origin + "/*";
+      if (chrome.permissions?.request) {
+        await chrome.permissions.request({ origins: [origin, "https://*/*"] });
+      } else {
+        await chrome.runtime.sendMessage({
+          action: "request-optional-permission",
+          origins: [origin, "https://*/*"],
+        });
+      }
+    } catch (_) {}
     const resp = await new Promise((resolve) =>
       chrome.runtime.sendMessage(
         { action: "fetch-image", url: imgSrc },
@@ -2451,117 +2462,6 @@ function hideFeedClutter() {
 // Consolidates all ad/affiliate detection signals into a single pipeline.
 // Used by the feed filtering UI in content.js.
 
-/* REMOVED_AFFILIATE_RUNTIME_START
-const AFFILIATE_DOMAINS = [
-  "shope.ee", "shopee.vn", "lazada.vn", "tiki.vn", "tiktok.com/@shop",
-  "sendo.vn", "accesstrade.vn", "go.isclix.com", "invol.co",
-];
-
-const SHORTENER_DOMAINS = [
-  "bit.ly", "tinyurl.com", "cutt.ly", "s.id", "bom.so", "rb.gy",
-  "shorturl.at", "linktr.ee", "beacons.ai", "lnk.bio", "solo.to",
-  "is.gd", "v.gd", "da.gd",
-];
-
-const AFFILIATE_URL_PARAMS = ["aff", "ref", "utm_source", "utm_medium", "subid", "clickid", "affiliate_id"];
-
-const IMAGE_CLICKOUT_SELECTORS = [
-  '[data-ad-rendering-role="image"] a[href]',
-  'a[href] img',
-  'a[href][target="_blank"]:has(img)',
-];
-
-function _resolveFbRedirectUrl(href) {
-  if (!href) return "";
-  try {
-    if (href.includes("l.facebook.com/l.php") || href.includes("lm.facebook.com/l.php")) {
-      const u = new URL(href);
-      const target = u.searchParams.get("u");
-      if (target) return decodeURIComponent(target);
-    }
-  } catch (_) {}
-  return href;
-}
-
-function _detectAffiliateUrl(href) {
-  if (!href) return null;
-  const resolved = _resolveFbRedirectUrl(href);
-  const lower = (resolved || href).toLowerCase();
-
-  // Direct affiliate domains
-  for (const domain of AFFILIATE_DOMAINS) {
-    if (lower.includes(domain)) {
-      return { reason: "affiliate_domain", domain };
-    }
-  }
-
-  // URL shorteners
-  for (const short of SHORTENER_DOMAINS) {
-    if (lower.includes(short)) {
-      return { reason: "shortener_link", domain: short };
-    }
-  }
-
-  // Affiliate URL parameters
-  try {
-    const u = new URL(resolved || href);
-    for (const param of AFFILIATE_URL_PARAMS) {
-      if (u.searchParams.has(param)) {
-        return { reason: "affiliate_param", param };
-      }
-    }
-  } catch (_) {}
-
-  // Facebook redirect wrapper
-  if (lower.includes("l.facebook.com/l.php") || lower.includes("lm.facebook.com/l.php")) {
-    return { reason: "redirect_wrapper" };
-  }
-
-  return null;
-}
-
-function _detectImageClickout(container) {
-  for (const selector of IMAGE_CLICKOUT_SELECTORS) {
-    const nodes = container.querySelectorAll(selector);
-    for (const node of nodes) {
-      const anchor = node.tagName === "A" ? node : node.closest("a[href]");
-      if (!anchor) continue;
-      const href = anchor.href;
-      if (!href) continue;
-
-      // Skip internal Facebook links
-      if (href.includes("facebook.com/") && !href.includes("l.php")) continue;
-
-      const affiliate = _detectAffiliateUrl(href);
-      if (affiliate) {
-        return { detected: true, ...affiliate };
-      }
-    }
-  }
-  return null;
-}
-
-function _detectAffiliateText(container) {
-  const text = (container.innerText || container.textContent || "").toLowerCase();
-
-  for (const domain of AFFILIATE_DOMAINS) {
-    if (text.includes(domain)) {
-      return { reason: "affiliate_text", domain };
-    }
-  }
-
-  // Common affiliate call-to-action patterns require a concrete outbound/link signal.
-  const affiliatePatterns = ["mua ngay", "đặt hàng", "shop ngay", "link sản phẩm"];
-  const hasOutboundSignal = /https?:\/\/|www\.|shope\.ee|s\.lazada|tiki\.vn|vt\.tiktok\.com/i.test(text);
-  for (const pattern of affiliatePatterns) {
-    if (text.includes(pattern) && hasOutboundSignal) {
-      return { reason: "affiliate_cta", pattern };
-    }
-  }
-
-  return null;
-}
-REMOVED_AFFILIATE_RUNTIME_END */
 
 function _getPrimaryPostText(container) {
   if (!container) return "";
@@ -3491,44 +3391,6 @@ function evaluatePostSignals(postEl) {
     }
   }
 
-  /* REMOVED_AFFILIATE_EVAL_START
-  // === AFFILIATE DETECTION ===
-  if (container) {
-
-    // 1. Image click-out with affiliate/shortener link (confidence 70-85)
-    const imageClickout = _detectImageClickout(container);
-    if (imageClickout) {
-      result.isAffiliate = true;
-      result.reasons.push(imageClickout.reason);
-      result.confidence = Math.max(result.confidence, imageClickout.reason === "affiliate_domain" ? 85 : 70);
-      result.details.imageClickout = imageClickout;
-    }
-
-    // 2. Direct affiliate links in text (confidence 80-90)
-    const links = container.querySelectorAll('a[href]');
-    for (const link of links) {
-      const affiliate = _detectAffiliateUrl(link.href);
-      if (affiliate) {
-        result.isAffiliate = true;
-        result.reasons.push(affiliate.reason);
-        result.confidence = Math.max(result.confidence, affiliate.reason === "affiliate_domain" ? 85 : 70);
-        result.details.affiliateLink = affiliate;
-        break;
-      }
-    }
-
-    // 3. Affiliate text detection (confidence 50-65)
-    if (!result.isAffiliate) {
-      const textAffiliate = _detectAffiliateText(container);
-      if (textAffiliate) {
-        result.isAffiliate = true;
-        result.reasons.push(textAffiliate.reason);
-        result.confidence = Math.max(result.confidence, 55);
-        result.details.affiliateText = textAffiliate;
-      }
-    }
-  }
-  REMOVED_AFFILIATE_EVAL_END */
 
   // Dedupe reasons
   result.reasons = [...new Set(result.reasons)];

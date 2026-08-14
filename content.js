@@ -122,7 +122,7 @@ function _removeGroupSuggestionControls(element) {
 }
 
 const FB_POST_BODY_SELECTOR =
-  '[data-ad-preview="message"], [data-ad-comet-preview="message"], [data-testid="post_message"], [data-testid="post-message"]';
+  '[data-ad-preview="message"], [data-ad-comet-preview="message"], [data-testid="post_message"], [data-testid="post-message"], [data-ad-rendering-role="story_message"]';
 
 // A generic "Xem thêm" appears in many Facebook widgets. Prefer Facebook's
 // semantic post-body node; fall back to the heuristic status text finder so
@@ -179,6 +179,24 @@ function _statusBodyTextLength(textEl) {
   // sufficient for the length gate and avoids cloning a large Facebook post
   // plus forcing layout through innerText on every newly visible card.
   return (textEl.textContent || "").replace(/\s+/g, " ").trim().length;
+}
+
+function _findSeeMoreControl(textEl, maximum = 24) {
+  if (!textEl) return null;
+  const controls = textEl.querySelectorAll(
+    '[role="button"], span[dir="auto"], div[dir="auto"]',
+  );
+  const limit = Math.min(controls.length, maximum);
+  for (let i = 0; i < limit; i++) {
+    const label = (controls[i].textContent || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+    if (SEE_MORE.some((keyword) => label === keyword || label.startsWith(keyword))) {
+      return controls[i];
+    }
+  }
+  return null;
 }
 
 // Batch operations state
@@ -347,15 +365,15 @@ let telemetry = {
   lastResetDate: new Date().toDateString(),
 };
 
-// Load telemetry from storage
-chrome.storage.local.get(["fbsTelemetry"], (d) => {
-  if (d.fbsTelemetry) {
-    const today = new Date().toDateString();
-    if (d.fbsTelemetry.lastResetDate !== today) {
-      telemetry = { ...telemetry, lastResetDate: today };
-    } else {
-      telemetry = { ...telemetry, ...d.fbsTelemetry };
-    }
+// Content scripts cannot access local storage; load the narrow telemetry record
+// through the service worker's validated bridge.
+chrome.runtime.sendMessage({ action: "get-feed-telemetry" }, (response) => {
+  if (chrome.runtime.lastError || !response?.ok || !response.telemetry) return;
+  const today = new Date().toDateString();
+  if (response.telemetry.lastResetDate !== today) {
+    telemetry = { ...telemetry, lastResetDate: today };
+  } else {
+    telemetry = { ...telemetry, ...response.telemetry };
   }
 });
 
@@ -366,7 +384,10 @@ function saveTelemetry() {
     telemetryWriteTimer = null;
     if (!isContextValid()) return;
     try {
-      const write = chrome.storage.local.set({ fbsTelemetry: telemetry });
+      const write = chrome.runtime.sendMessage({
+        action: "save-feed-telemetry",
+        telemetry,
+      });
       if (write?.catch) {
         write.catch((err) => {
           if (isContextValid()) {
@@ -898,20 +919,7 @@ function injectSummaryOnPosts(posts) {
     }
     const textEl = _findFacebookStatusText(article);
     if (!textEl) continue;
-    let seeMore = null;
-    const controls = textEl.querySelectorAll(
-      '[role="button"], span[dir="auto"], div[dir="auto"]',
-    );
-    const limit = Math.min(controls.length, 24);
-    for (let i = 0; i < limit; i++) {
-      const label = (controls[i].textContent || "")
-        .replace(/\s+/g, " ")
-        .trim()
-        .toLowerCase();
-      if (!SEE_MORE.some((kw) => label === kw || label.startsWith(kw))) continue;
-      seeMore = controls[i];
-      break;
-    }
+    const seeMore = _findSeeMoreControl(textEl);
     if (seeMore) {
       inject(article, findClickable(seeMore), textEl, seeMore);
     } else {
@@ -929,7 +937,9 @@ let _pendingFlushIdle = 0;
 let _fbScrollIdle = true;
 let _fbScrollIdleTimer = 0;
 // Leave enough room for kinetic-scroll work to settle before touching a post.
-const FB_SCROLL_IDLE_MS = 180;
+// 120ms only fires after scroll events fully stop, so it stays jank-free while
+// getting the button on screen noticeably sooner after a scroll pause.
+const FB_SCROLL_IDLE_MS = 120;
 const FB_PENDING_POSTS_PER_FRAME = 2;
 
 function _isFbScrollBusy() {
@@ -1616,7 +1626,7 @@ function openOverlay(html, streaming, type = "summary") {
     !isSummarizing &&
       !streaming &&
       html.includes("fbs-result") &&
-      SITE === "facebook",
+      SITE !== "other",
   );
   setVis(
     ".fbs-regen-btn",
@@ -2182,6 +2192,16 @@ async function _fbCopyLinkViaShareMenu(postContainer) {
   }
   if (!shareBtn) return "";
 
+  try {
+    if (chrome.permissions?.request) {
+      await chrome.permissions.request({ permissions: ["clipboardRead"] });
+    } else {
+      await chrome.runtime.sendMessage({
+        action: "request-optional-permission",
+        permissions: ["clipboardRead"],
+      });
+    }
+  } catch (_) {}
   const oldClip = await navigator.clipboard.readText().catch(() => "");
   const existingSurfaces = new Set(
     document.querySelectorAll('div[role="dialog"], [role="menu"], [role="listbox"]'),
@@ -2320,7 +2340,7 @@ function displayError(errorData) {
       }
 
       if (errorData.actionUrl) {
-        errorHtml += '<button class="fbs-error-btn" onclick="chrome.runtime.openOptionsPage()">' +
+        errorHtml += '<button type="button" class="fbs-error-btn" data-fbs-open-popup>' +
                      esc(errorData.actionButton) + '</button>';
       }
 
@@ -2470,9 +2490,12 @@ function createInlineBtn() {
   d.setAttribute("role", "button");
   d.setAttribute("tabindex", "0");
   d.setAttribute("data-fbs-ui", "v3");
+  d.setAttribute("data-fbs-action", "summarize");
+  d.setAttribute("aria-label", "Tóm tắt bài viết");
+  d.setAttribute("aria-haspopup", "dialog");
   d.style.cssText =
     "cursor:pointer;font-size:inherit;font-family:inherit;background:none;border:none;padding:0;margin:0;display:inline;line-height:inherit;vertical-align:baseline;height:auto;width:auto;max-height:none;writing-mode:horizontal-tb;";
-  d.innerHTML = '<span title="Tóm tắt nội dung">Tóm tắt</span>';
+  d.innerHTML = '<span class="fbs-inline-label" title="Tóm tắt nội dung">Tóm tắt</span>';
   return d;
 }
 
@@ -2846,6 +2869,17 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
     isSummarizing = false;
     return;
   }
+  let settleSummarize = null;
+  const summarizeDone = new Promise((resolve) => {
+    settleSummarize = resolve;
+  });
+  const finishSummarize = (value) => {
+    if (!settleSummarize) return;
+    const done = settleSummarize;
+    settleSummarize = null;
+    done(value || { ok: false });
+  };
+
   try {
     currentPort = chrome.runtime.connect({ name: "summarize-stream" });
   } catch (e) {
@@ -2861,7 +2895,8 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
       type,
     );
     isSummarizing = false;
-    return;
+    finishSummarize({ ok: false, error: e.message });
+    return summarizeDone;
   }
   // Extract post metadata for enriched history (multi-strategy)
   const _el = lastSummarizeParams._element;
@@ -2908,6 +2943,7 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
       currentPort?.disconnect();
     } catch (_) {}
     currentPort = null;
+    finishSummarize({ ok: false, error: "timeout" });
   }, 90000);
 
   function renderStream() {
@@ -3023,6 +3059,7 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
         currentPort.disconnect();
       } catch (_) {}
       currentPort = null;
+      finishSummarize({ ok: true, summary: msg.full });
     } else if (msg.action === "error") {
       clearTimeout(summaryTimeoutId);
       isSummarizing = false;
@@ -3035,6 +3072,7 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
         currentPort.disconnect();
       } catch (_) {}
       currentPort = null;
+      finishSummarize({ ok: false, error: msg.error });
     }
   });
 
@@ -3048,8 +3086,10 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
       } else if (panelBody) {
         openOverlay(panelBody.innerHTML, false, type);
       }
+      finishSummarize({ ok: false, error: "disconnected" });
     }
   });
+  return summarizeDone;
 }
 
 // === MESSAGES (CONTEXT MENU, SHORTCUTS & UNSHORTEN) ===
@@ -3074,10 +3114,11 @@ chrome.runtime.onMessage.addListener((msg) => {
   if (msg.action === "shortcut-translate-shortcut") {
     const text = window.getSelection().toString().trim();
     if (text) {
-      window.postMessage(
-        { source: "feedwriter", type: "translate", text, mode: "auto" },
-        "*"
-      );
+      chrome.runtime.sendMessage({
+        action: "relay-translate",
+        text,
+        mode: "auto",
+      }).catch(() => {});
     } else {
       openOverlay(
         '<div class="fbs-error">Bôi đen văn bản tiếng Anh trước khi dịch (Ctrl+Shift+T).</div>',
@@ -3085,39 +3126,7 @@ chrome.runtime.onMessage.addListener((msg) => {
       );
     }
   }
-  if (msg.action === "translate-selection" && msg.text) {
-    window.postMessage(
-      {
-        source: "feedwriter",
-        type: "translate",
-        text: msg.text,
-        mode: msg.mode || "auto",
-      },
-      "*"
-    );
-  }
-  if (msg.action === "unshorten-result") {
-    if (msg.error) {
-      finishUnshorten("Bóc link lỗi", true);
-      openOverlay(
-        '<div class="fbs-error">' + esc(msg.error) + "</div>",
-        false,
-      );
-    } else if (msg.text) {
-      navigator.clipboard
-        .writeText(msg.text)
-        .then(() => finishUnshorten("Đã copy link", false))
-        .catch(() => {
-          finishUnshorten("Lỗi clipboard", true);
-          openOverlay(
-            '<div class="fbs-error">Lỗi ghi clipboard. Link gốc là:<br><code>' +
-              esc(msg.text) +
-              "</code></div>",
-            false,
-          );
-        });
-    }
-  }
+  // translate-selection is handled by translate.js in its own isolated world.
 });
 
 // === INJECT BUTTON ===
@@ -3144,7 +3153,7 @@ function inject(target, seeMoreClickable, textContainer, seeMoreOriginal) {
   if (canInline) {
     const wrap = document.createElement("span");
     wrap.setAttribute("data-fbs-ui", "v3");
-    wrap.className = "fbs-wrap fbs-wrap-inline";
+    wrap.className = "fbs-wrap fbs-wrap-inline fbs-summary-control";
     const btnNode = createInlineBtn();
     if (btnNode.setAttribute) btnNode.setAttribute("data-fbs-ui", "v3");
     if ((SITE === "x" || SITE === "facebook") && btnNode.firstChild?.nodeType === Node.TEXT_NODE) {
@@ -3238,43 +3247,54 @@ function inject(target, seeMoreClickable, textContainer, seeMoreOriginal) {
   btnEl.addEventListener("click", async (e) => {
     e.stopPropagation();
     e.preventDefault();
+    if (btnEl.getAttribute("aria-busy") === "true") return;
+
     const type = "summary";
-    openOverlay(
-      '<div class="fbs-loading"><div class="fbs-spinner"></div><span>Đang tóm tắt...</span></div>',
-      false,
-      type,
-    );
+    const label = btnEl.querySelector(".fbs-inline-label");
+    btnEl.setAttribute("aria-busy", "true");
+    if (label) label.textContent = "Đang tóm tắt…";
 
-    // Expand to get full text
-    if (seeMoreClickable) {
-      try {
-        seeMoreClickable.click();
-      } catch (_) {}
-      await new Promise((r) => setTimeout(r, 1200));
+    try {
+      openOverlay(
+        '<div class="fbs-loading"><div class="fbs-spinner"></div><span>Đang tóm tắt...</span></div>',
+        false,
+        type,
+      );
+
+      // Expand to get full text
+      if (seeMoreClickable) {
+        try {
+          seeMoreClickable.click();
+        } catch (_) {}
+        await new Promise((r) => setTimeout(r, 1200));
+      }
+
+      const sourceElement = textContainer || target;
+      const text = cleanText(
+        (typeof window.fbsExtractPostContent === "function" &&
+          window.fbsExtractPostContent(sourceElement)) ||
+          extractMainContent(sourceElement) ||
+          sourceElement.innerText ||
+          "",
+      );
+
+      // Collapse back
+      const collapseBtn = findCollapseBtn(textContainer || target);
+      if (collapseBtn) {
+        try {
+          collapseBtn.click();
+        } catch (_) {}
+      } else if (seeMoreClickable) {
+        try {
+          seeMoreClickable.click();
+        } catch (_) {}
+      }
+
+      await summarizeText(text, type, textContainer || target);
+    } finally {
+      btnEl.removeAttribute("aria-busy");
+      if (label) label.textContent = "Tóm tắt";
     }
-
-    const sourceElement = textContainer || target;
-    const text = cleanText(
-      (typeof window.fbsExtractPostContent === "function" &&
-        window.fbsExtractPostContent(sourceElement)) ||
-        extractMainContent(sourceElement) ||
-        sourceElement.innerText ||
-        "",
-    );
-
-    // Collapse back
-    const collapseBtn = findCollapseBtn(textContainer || target);
-    if (collapseBtn) {
-      try {
-        collapseBtn.click();
-      } catch (_) {}
-    } else if (seeMoreClickable) {
-      try {
-        seeMoreClickable.click();
-      } catch (_) {}
-    }
-
-    await summarizeText(text, type, textContainer || target);
   });
 }
 
@@ -3374,17 +3394,11 @@ function createFloatingToolbar() {
 
     if (action === "translate") {
       const mode = btn.getAttribute("data-mode") || "auto";
-      window.postMessage(
-        { source: "feedwriter", type: "translate", text, mode },
-        "*"
-      );
-      try {
-        chrome.runtime.sendMessage({
-          action: "relay-translate",
-          text,
-          mode,
-        });
-      } catch (_) {}
+      chrome.runtime.sendMessage({
+        action: "relay-translate",
+        text,
+        mode,
+      }).catch(() => {});
       return;
     }
 
@@ -3514,6 +3528,20 @@ listeners.push({ element: document, event: "mousedown", handler: mousedownHandle
 // === VISIBLE POSTS TRACKER (IntersectionObserver) ===
 // Primary discovery path for Facebook — do NOT use a subtree MutationObserver
 // on the feed (FB mutates constantly while scrolling and freezes the tab).
+const viewportScanSig = new WeakMap();
+function _viewportFingerprint(el) {
+  return ((el && el.textContent) || "").replace(/\s+/g, " ").trim().slice(0, 120);
+}
+function _isViewportScanCurrent(el) {
+  if (!el || el.dataset.fbsViewportScanned !== "1") return false;
+  return viewportScanSig.get(el) === _viewportFingerprint(el);
+}
+function _markViewportScanned(el) {
+  if (!el) return;
+  el.dataset.fbsViewportScanned = "1";
+  viewportScanSig.set(el, _viewportFingerprint(el));
+}
+
 const visiblePosts = new Set();
 let postObserver = null;
 let feedRootObserver = null;
@@ -3530,8 +3558,8 @@ if (typeof IntersectionObserver !== "undefined") {
         if (entry.isIntersecting) {
           visiblePosts.add(el);
           // Queue only — never flush while scrolling (IO fires mid-scroll).
-          if (el.dataset.fbsViewportScanned !== "1") {
-            el.dataset.fbsViewportScanned = "1";
+          if (!_isViewportScanCurrent(el)) {
+            _markViewportScanned(el);
             _queueFeedPost(el);
           }
         } else {
@@ -3581,6 +3609,16 @@ function _observeFeedUnitsFromAddedNode(node) {
     'div[data-pagelet^="FeedUnit"], [data-virtualized], article[role="article"]';
   const candidates = [];
   if (node.matches?.(selector)) candidates.push(node);
+  // Newer Facebook builds render posts as anonymous direct children of the
+  // role="feed" element with none of the markers above — observe those too.
+  // The IntersectionObserver + status-text gate filter out non-post shells.
+  if (
+    !candidates.length &&
+    node.tagName === "DIV" &&
+    node.parentElement?.getAttribute("role") === "feed"
+  ) {
+    candidates.push(node);
+  }
   if (node.querySelectorAll) {
     for (const candidate of node.querySelectorAll(selector)) {
       candidates.push(candidate);
@@ -3659,19 +3697,34 @@ function _discoverFeedUnitsForObserver({ force = false } = {}) {
   lastFallbackFeedDiscoveryAt = now;
 
   // FeedUnit pagelets only — bare [data-virtualized] matches too much chrome.
-  const nodes = root.querySelectorAll('div[data-pagelet^="FeedUnit"]');
-  let registered = 0;
-  for (const node of nodes) {
-    if (registered >= 16) break;
-    if (_observeFeedUnit(node)) registered++;
+  const markerNodes = root.querySelectorAll('div[data-pagelet^="FeedUnit"]');
+  if (markerNodes.length > 0) {
+    let registered = 0;
+    for (const node of markerNodes) {
+      if (registered >= 16) break;
+      if (_observeFeedUnit(node)) registered++;
+    }
+    return;
   }
-  if (registered === 0) {
-    for (const node of root.querySelectorAll(
-      '[data-virtualized], article[role="article"]',
-    )) {
+
+  const virtualizedNodes = root.querySelectorAll(
+    '[data-virtualized], article[role="article"]',
+  );
+  if (virtualizedNodes.length > 0) {
+    let registered = 0;
+    for (const node of virtualizedNodes) {
       if (registered >= 12) break;
       if (_observeFeedUnit(node)) registered++;
     }
+    return;
+  }
+
+  // Marker-less builds: fall back to the feed's direct children (same source
+  // _getTopLevelFeedPosts trusts). Bounded, and deduped via data-fbs-observed.
+  let registered = 0;
+  for (const node of root.querySelectorAll('div[role="feed"] > div')) {
+    if (registered >= 12) break;
+    if (_observeFeedUnit(node)) registered++;
   }
 }
 
@@ -3814,27 +3867,18 @@ function _mountPostChip(article) {
   article.appendChild(host);
 }
 
-// Statuses without a Show more control still need the action inside the body.
-// The old fallback used an absolute corner chip, which obscured the post and
-// did not match the inline Facebook-style control.
+// Prefer Facebook's semantic status node. The fallback is bounded to text
+// nodes inside the current post and never reads innerText on the scroll path.
 function _findFacebookStatusText(article) {
   if (!article) return null;
-  const selectors = [
-    '[data-ad-preview="message"]',
-    '[data-ad-comet-preview="message"]',
-    '[data-testid="post_message"]',
-    '[data-testid="post-message"]',
-  ];
   let best = null;
   let bestLength = 0;
-  for (const selector of selectors) {
-    for (const node of article.querySelectorAll(selector)) {
-      if (node.closest("form") || node.closest("[role=dialog]")) continue;
-      const length = (node.innerText || node.textContent || "").trim().length;
-      if (length > bestLength) {
-        best = node;
-        bestLength = length;
-      }
+  for (const node of article.querySelectorAll(FB_POST_BODY_SELECTOR)) {
+    if (node.closest("form") || node.closest("[role=dialog]")) continue;
+    const length = (node.textContent || "").replace(/\s+/g, " ").trim().length;
+    if (length > bestLength) {
+      best = node;
+      bestLength = length;
     }
   }
   if (best) return best;
@@ -3846,10 +3890,8 @@ function _findFacebookStatusText(article) {
     if (node.closest('[aria-label*="bình luận" i], [aria-label*="comment" i], [aria-label*="Viết" i]')) {
       continue;
     }
-    // Prefer outer blocks; skip tiny name/timestamp chips.
-    const length = (node.innerText || node.textContent || "").replace(/\s+/g, " ").trim().length;
+    const length = (node.textContent || "").replace(/\s+/g, " ").trim().length;
     if (length < 40 || length <= bestLength) continue;
-    // Skip nested comment articles.
     let articleDepth = 0;
     let parent = node.parentElement;
     while (parent && parent !== article) {
@@ -3864,7 +3906,13 @@ function _findFacebookStatusText(article) {
 }
 
 function _mountInlineStatusChip(post, textEl, minimumLength = 50) {
-  if (!post || !textEl || textEl.querySelector('.fbs-wrap-inline[data-fbs-ui="v3"]')) return;
+  if (
+    !post ||
+    !textEl ||
+    post.querySelector('.fbs-summary-control[data-fbs-ui="v3"]')
+  ) {
+    return;
+  }
   // Gate on the real status body — feed-unit chrome (author/comments/UI) can
   // make the outer article look long even when the status is one sentence.
   if (_statusBodyTextLength(textEl) < minimumLength) return;
@@ -3874,28 +3922,49 @@ function _mountInlineStatusChip(post, textEl, minimumLength = 50) {
     try { el.remove(); } catch (_) {}
   });
 
-  const wrap = document.createElement("span");
-  wrap.className = "fbs-wrap fbs-wrap-inline fbs-x-status-inline";
+  const isFacebookRow = SITE === "facebook";
+  const wrap = document.createElement(isFacebookRow ? "div" : "span");
+  wrap.className = isFacebookRow
+    ? "fbs-wrap fbs-summary-control fbs-summary-row"
+    : "fbs-wrap fbs-wrap-inline fbs-x-status-inline fbs-summary-control";
   wrap.setAttribute("data-fbs-ui", "v3");
   const btn = createInlineBtn();
   if (btn.firstChild?.nodeType === Node.TEXT_NODE) btn.firstChild.textContent = "";
   wrap.appendChild(btn);
-  _matchInlineBtnTypography(btn, textEl);
-  textEl.appendChild(document.createTextNode(" "));
-  textEl.appendChild(wrap);
 
-  const summarizeTweet = (event) => {
+  if (isFacebookRow && textEl.parentElement) {
+    textEl.parentElement.insertBefore(wrap, textEl.nextSibling);
+  } else {
+    _matchInlineBtnTypography(btn, textEl);
+    textEl.appendChild(document.createTextNode(" "));
+    textEl.appendChild(wrap);
+  }
+
+  const summarizePost = async (event) => {
     event.preventDefault();
     event.stopPropagation();
-    const currentTextEl = post.querySelector('[data-testid="tweetText"]') || textEl;
-    const clone = currentTextEl.cloneNode(true);
-    clone.querySelectorAll("[data-fbs-ui]").forEach((el) => el.remove());
-    const text = (clone.innerText || clone.textContent || "").trim();
-    if (text.length >= minimumLength) summarizeText(text, "summary", post);
+    if (btn.getAttribute("aria-busy") === "true") return;
+    btn.setAttribute("aria-busy", "true");
+    const label = btn.querySelector(".fbs-inline-label");
+    if (label) label.textContent = "Đang tóm tắt…";
+    try {
+      const currentTextEl = post.querySelector('[data-testid="tweetText"]') || textEl;
+      const clone = currentTextEl.cloneNode(true);
+      clone.querySelectorAll("[data-fbs-ui]").forEach((el) => el.remove());
+      const text = (clone.textContent || "").replace(/\s+/g, " ").trim();
+      if (text.length < minimumLength) {
+        wrap.remove();
+        return;
+      }
+      await summarizeText(text, "summary", post);
+    } finally {
+      btn.removeAttribute("aria-busy");
+      if (label) label.textContent = "Tóm tắt";
+    }
   };
-  btn.addEventListener("click", summarizeTweet);
+  btn.addEventListener("click", summarizePost);
   btn.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" || event.key === " ") summarizeTweet(event);
+    if (event.key === "Enter" || event.key === " ") summarizePost(event);
   });
 }
 
@@ -3904,9 +3973,11 @@ function _mountInlineStatusChip(post, textEl, minimumLength = 50) {
 // sees them. Mount one summary chip per tweet and let the mutation observer
 // pick up newly virtualized timeline items.
 function scanXPosts() {
-  if (SITE !== "x") return;
+  if (SITE !== "x" || document.hidden) return;
   const posts = document.querySelectorAll('article[data-testid="tweet"]');
   for (const post of posts) {
+    // Settled tweet — skip before the expensive controls walk below.
+    if (post.querySelector('.fbs-wrap-inline[data-fbs-ui="v3"]')) continue;
     const textEl = post.querySelector('[data-testid="tweetText"]');
     const text = (textEl?.innerText || textEl?.textContent || "").trim();
     // Tweets are intentionally short; the global Facebook-oriented default is
@@ -3994,20 +4065,7 @@ function scanFBAllPosts() {
       continue;
     }
 
-    let seeMore = null;
-    const controls = textEl.querySelectorAll(
-      '[role="button"], span[dir="auto"], div[dir="auto"]',
-    );
-    const controlLimit = Math.min(controls.length, 24);
-    for (let i = 0; i < controlLimit; i++) {
-      const label = (controls[i].textContent || "")
-        .replace(/\s+/g, " ")
-        .trim()
-        .toLowerCase();
-      if (!SEE_MORE.some((kw) => label === kw || label.startsWith(kw))) continue;
-      seeMore = controls[i];
-      break;
-    }
+    const seeMore = _findSeeMoreControl(textEl);
     if (seeMore) {
       inject(article, findClickable(seeMore), textEl, seeMore);
     } else {
@@ -4298,6 +4356,45 @@ function healHollowFeedPosts(root) {
 
 
 // === REDDIT ===
+function scanThreadsPosts() {
+  if (SITE !== "threads" || document.hidden) return;
+  const posts = document.querySelectorAll(
+    '[data-pressable-container="true"], article, div[role="article"]',
+  );
+  for (const post of posts) {
+    if (post.dataset.fbsScanned) continue;
+    if (post.querySelector('.fbs-wrap, .fbs-btn, .fbs-chip-host')) {
+      post.dataset.fbsScanned = "1";
+      continue;
+    }
+    const text = (post.innerText || "").replace(/\s+/g, " ").trim();
+    if (text.length < 50) continue;
+    post.dataset.fbsScanned = "1";
+    _mountInlineStatusChip(post, post, 50);
+  }
+}
+
+function scanLinkedinPosts() {
+  if (SITE !== "linkedin" || document.hidden) return;
+  const posts = document.querySelectorAll(
+    ".feed-shared-update-v2, .occludable-update, article.feed-shared-update-v2",
+  );
+  for (const post of posts) {
+    if (post.dataset.fbsScanned) continue;
+    if (post.querySelector('.fbs-wrap, .fbs-btn, .fbs-chip-host')) {
+      post.dataset.fbsScanned = "1";
+      continue;
+    }
+    const textEl = post.querySelector(
+      ".feed-shared-update-v2__description, .update-components-text, .feed-shared-inline-show-more-text",
+    );
+    const text = ((textEl && textEl.innerText) || post.innerText || "").replace(/\s+/g, " ").trim();
+    if (text.length < 50) continue;
+    post.dataset.fbsScanned = "1";
+    _mountInlineStatusChip(post, textEl || post, 50);
+  }
+}
+
 function scanRedditPosts() {
   const posts = document.querySelectorAll(
     'shreddit-post, div[data-testid="post-container"]',
@@ -4315,73 +4412,6 @@ function scanRedditPosts() {
 }
 
 // === MAIN SCAN ===
-// "Bóc Link" runs a network fetch in the background (up to 30s) and the result
-// comes back asynchronously via the "unshorten-result" message. We track a
-// single in-flight request + its triggering pill so we can show a loading
-// state, surface success/failure on the button itself, and stop repeat clicks
-// from spawning duplicate fetches (and duplicate affiliate tabs).
-let unshortenInFlight = false;
-let activeUnshortenPill = null;
-let activeUnshortenOriginalHTML = "";
-let unshortenTimeout = null;
-
-const UNSHORTEN_PILL_STYLE =
-  "cursor:pointer;display:inline-flex;align-items:center;gap:4px;padding:0px 6px 1px;border-radius:6px;background:rgba(255,107,107,0.15);color:#ff6b6b;font-size:0.85em;font-weight:bold;margin-left:4px;";
-
-// Restore the active pill to its idle state after a brief result message.
-function finishUnshorten(message, isError) {
-  clearTimeout(unshortenTimeout);
-  unshortenInFlight = false;
-  const pill = activeUnshortenPill;
-  activeUnshortenPill = null;
-  if (!pill) return;
-  pill.style.pointerEvents = "";
-  pill.style.color = isError ? "#ff6b6b" : "#2ed573";
-  pill.textContent = message;
-  const original = activeUnshortenOriginalHTML;
-  setTimeout(() => {
-    pill.innerHTML = original;
-    pill.style.opacity = "";
-    pill.style.color = "";
-  }, 2500);
-}
-
-function scanShopeeLinks() {
-  const links = document.querySelectorAll('a[href*="shope.ee/"]');
-  for (const a of links) {
-    if (a.dataset.fbsUnshorten) continue;
-    a.dataset.fbsUnshorten = "1";
-    const btn = document.createElement("span");
-    btn.innerHTML =
-      ' <span class="fbs-unshorten-pill" title="Bóc Link Không Cookie" style="' +
-      UNSHORTEN_PILL_STYLE +
-      '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>Bóc Link</span>';
-    const pill = btn.querySelector("span");
-    const originalHTML = pill.innerHTML;
-    pill.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      // Single in-flight: ignore clicks (this or other pills) while one runs.
-      if (unshortenInFlight) return;
-      unshortenInFlight = true;
-      activeUnshortenPill = pill;
-      activeUnshortenOriginalHTML = originalHTML;
-      pill.style.opacity = "0.65";
-      pill.style.pointerEvents = "none";
-      pill.style.color = "";
-      pill.textContent = "Đang bóc link…";
-      clearTimeout(unshortenTimeout);
-      unshortenTimeout = setTimeout(() => {
-        finishUnshorten("Quá hạn — thử lại", true);
-      }, 35000);
-      chrome.runtime
-        .sendMessage({ action: "unshorten-shopee-inline", url: a.href })
-        .catch(() => finishUnshorten("Lỗi gửi yêu cầu", true));
-    });
-    a.insertAdjacentElement("afterend", btn);
-  }
-}
-
 function scan(opts) {
   if (!isContextValid() || isBlocked) return;
   if (document.hidden) return;
@@ -4393,17 +4423,24 @@ function scan(opts) {
   const full = !!(opts && opts.full);
   if (SITE === "reddit") scanRedditPosts();
   if (SITE === "x") scanXPosts();
+  if (SITE === "threads") scanThreadsPosts();
+  if (SITE === "linkedin") scanLinkedinPosts();
   _discoverFeedUnitsForObserver();
   scanSponsoredFast(undefined, { fullDetect: !!full });
   if (SITE === "facebook") {
     scanFBAllPosts();
     if (full && filterEngagementGates) scanEngagementPosts();
+    scanCommentSections();
+    healHollowFeedPosts();
   }
 }
 
 let scanDebounceTimer = null;
 let scanScheduled = false;
-const SCAN_DEBOUNCE_MS = 4000;
+// Non-Facebook feeds rescan only when the mutation observer sees a new post
+// land, so the debounce just coalesces one insertion burst — keep it short or
+// the button visibly lags the tweet.
+const SCAN_DEBOUNCE_MS = SITE === "facebook" ? 4000 : 400;
 const SCAN_SAFETY_INTERVAL_MS = 180_000;
 let _scanSafetyCount = 0;
 let discoverTimer = null;
@@ -4434,7 +4471,9 @@ function scheduleScan() {
       } catch (_) {}
     };
     if (typeof requestIdleCallback === "function") {
-      requestIdleCallback(run, { timeout: 3000 });
+      // Short timeout: yield to pending frame work but never let "idle
+      // starvation" during continuous feed updates delay the button.
+      requestIdleCallback(run, { timeout: 800 });
     } else {
       run();
     }
@@ -4453,8 +4492,8 @@ if (SITE === "facebook") {
       _discoverFeedUnitsForObserver();
       // Seed queue from anything already intersecting after observe().
       for (const el of visiblePosts) {
-        if (el.dataset.fbsViewportScanned === "1") continue;
-        el.dataset.fbsViewportScanned = "1";
+        if (_isViewportScanCurrent(el)) continue;
+        _markViewportScanned(el);
         _queueFeedPost(el);
       }
       _schedulePendingFlush();
@@ -4472,11 +4511,16 @@ if (SITE === "facebook") {
     _schedulePendingFlush();
   }, FB_DISCOVERY_FALLBACK_MS);
 } else {
-  setTimeout(() => {
-    try {
-      scan({ full: false });
-    } catch (_) {}
-  }, 600);
+  // X/Reddit render their timeline well after document_end; a single early
+  // scan lands before any post exists. Retry a few times — each pass is cheap
+  // and no-ops once posts carry their button.
+  for (const delay of [600, 1600, 3500]) {
+    setTimeout(() => {
+      try {
+        scan({ full: false });
+      } catch (_) {}
+    }, delay);
+  }
 }
 
 scanTimer = setInterval(() => {
@@ -4518,7 +4562,13 @@ if (SITE !== "facebook") {
       const maxNodes = Math.min(nodes.length, 8);
       for (let ni = 0; ni < maxNodes; ni++) {
         const node = nodes[ni];
-        if (node.nodeType === 1 && node.matches?.(feedTargetSelector)) {
+        // X (and Reddit) wrap each post in a plain container div, so the
+        // added node itself never matches — probe one level into it too.
+        if (
+          node.nodeType === 1 &&
+          (node.matches?.(feedTargetSelector) ||
+            node.querySelector?.(feedTargetSelector))
+        ) {
           hit = true;
           break;
         }
@@ -4547,9 +4597,24 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   return false;
 });
 
+function clearPendingPostToken(url) {
+  url.searchParams.delete("feedwriter_compose");
+  history.replaceState(history.state, "", url.pathname + url.search + url.hash);
+}
+
+async function requestPendingPost(action, kind, id) {
+  const response = await chrome.runtime.sendMessage({ action, kind, id });
+  if (!response?.ok) {
+    const error = new Error(response?.error || "Không thể đọc bài chờ đăng.");
+    error.code = response?.code || "pending_error";
+    throw error;
+  }
+  return response.pending;
+}
+
 // A status summarized on X can be handed to a newly opened Facebook tab.
-// The query token keeps the payload out of the URL; storage is consumed once
-// so refreshing Facebook cannot reopen the composer with stale content.
+// The opaque query token references a trusted-context storage record. The
+// record remains available for refresh/retry until the composer is ready.
 async function consumePendingFacebookPost() {
   if (SITE !== "facebook") return;
   let url;
@@ -4561,18 +4626,8 @@ async function consumePendingFacebookPost() {
   const id = url.searchParams.get("feedwriter_compose");
   if (!id || !/^[0-9a-f-]{20,}$/i.test(id)) return;
 
-  const key = "pendingFacebookPost:" + id;
   try {
-    const stored = await chrome.storage.local.get(key);
-    await chrome.storage.local.remove(key);
-    url.searchParams.delete("feedwriter_compose");
-    history.replaceState(history.state, "", url.pathname + url.search + url.hash);
-
-    const pending = stored[key];
-    if (!pending?.postData || Date.now() - Number(pending.createdAt || 0) > 5 * 60 * 1000) {
-      throw new Error("Bài chờ đăng đã hết hạn. Hãy quay lại X và thử lại.");
-    }
-
+    const pending = await requestPendingPost("get-pending-post", "facebook", id);
     for (let i = 0; i < 30 && !document.querySelector('div[role="main"]'); i++) {
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
@@ -4583,10 +4638,19 @@ async function consumePendingFacebookPost() {
     if (!result?.ok) {
       throw new Error("Không mở được composer Facebook: " + (result?.reason || "unknown"));
     }
+    try {
+      await requestPendingPost("complete-pending-post", "facebook", id);
+    } finally {
+      clearPendingPostToken(url);
+    }
   } catch (error) {
+    const terminal = ["pending_invalid", "pending_missing", "pending_expired"].includes(error.code);
+    if (terminal) clearPendingPostToken(url);
     console.error("[FeedWriter] Facebook handoff failed:", error);
     openOverlay(
-      '<div class="fbs-error">' + esc(error?.message || String(error)) + "</div>",
+      '<div class="fbs-error">' + esc(error?.message || String(error)) +
+        (!terminal ? "<br>Tải lại trang để thử lại." : "") +
+        "</div>",
       false,
     );
   }
@@ -4594,7 +4658,51 @@ async function consumePendingFacebookPost() {
 
 consumePendingFacebookPost();
 
-// Note: the auto-generated Shopee affiliate suggestion (search URL + aff_sid)
-// was removed — that link format does not earn commission. Affiliate links are
-// now created manually via the "Bóc Link" pill (scanShopeeLinks) which opens
-// the official Shopee custom-link generator.
+async function consumePendingRedditPost() {
+  if (SITE !== "reddit" || !location.pathname.includes("/submit")) return;
+  let url;
+  try {
+    url = new URL(location.href);
+  } catch (_) {
+    return;
+  }
+  const id = url.searchParams.get("feedwriter_compose");
+  if (!id || !/^[0-9a-f-]{20,}$/i.test(id)) return;
+
+  try {
+    const pending = await requestPendingPost("get-pending-post", "reddit", id);
+    if (typeof PosterReddit === "undefined") {
+      throw new Error("Không tải được bộ đăng Reddit");
+    }
+    const result = await PosterReddit.post(pending.postData);
+    if (!result?.ok) {
+      throw new Error("Không điền được form Reddit: " + (result?.reason || "unknown"));
+    }
+    try {
+      await requestPendingPost("complete-pending-post", "reddit", id);
+    } finally {
+      clearPendingPostToken(url);
+    }
+  } catch (error) {
+    const terminal = ["pending_invalid", "pending_missing", "pending_expired"].includes(error.code);
+    if (terminal) clearPendingPostToken(url);
+    console.error("[FeedWriter] Reddit handoff failed:", error);
+    openOverlay(
+      '<div class="fbs-error">' + esc(error?.message || String(error)) +
+        (!terminal ? "<br>Tải lại trang để thử lại." : "") +
+        "</div>",
+      false,
+    );
+  }
+}
+
+consumePendingRedditPost();
+
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-fbs-open-popup]");
+  if (!btn) return;
+  e.preventDefault();
+  try {
+    if (chrome.action?.openPopup) chrome.action.openPopup();
+  } catch (_) {}
+});

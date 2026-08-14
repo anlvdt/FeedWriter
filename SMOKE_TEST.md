@@ -36,7 +36,7 @@ Expected:
 ## Feed Post Button
 
 - [ ] On Facebook feed, scroll until long posts appear
-- [ ] Confirm FeedWriter injects a summarize button near eligible posts
+- [ ] Confirm FeedWriter places **Tóm tắt** beside “Xem thêm”, or in a compact right-aligned row directly below a fully visible post body
 - [ ] Click summarize on a feed post
 - [ ] Result includes useful text and no unrelated comment/sidebar content
 - [ ] Close overlay and scroll further
@@ -46,6 +46,7 @@ Expected:
 
 - Page remains responsive while scrolling.
 - Buttons are not duplicated on the same post.
+- Summary controls never cover media, author controls, or Facebook’s reaction bar.
 
 ## Batch Summarize
 
@@ -81,29 +82,18 @@ Expected:
 
 ## Translation Tooltip
 
-- [ ] Double-click an English word
-- [ ] Tooltip appears near the selected word
+- [ ] Select English text
+- [ ] Click `Dịch` in the selection toolbar, use `Ctrl/Cmd+Shift+T`, or choose the translate context-menu item
+- [ ] Tooltip appears near the selected text
 - [ ] Result is translated into Vietnamese
 - [ ] Copy translation button copies the meaning
-- [ ] Click outside to close
+- [ ] Click outside or press Escape to close
 
 Expected:
 
+- Selection alone and double-click alone do not send text to the AI.
 - Tooltip stays within viewport.
 - Later responses do not overwrite a newer lookup.
-
-## Shopee Link Flow
-
-- [ ] Find or open a page with a `https://shope.ee/...` link
-- [ ] Confirm `Bóc Link` pill appears next to the link
-- [ ] Click the pill
-- [ ] Confirm the pill shows loading, then success or a readable error
-- [ ] Confirm Shopee Affiliate custom link page opens
-
-Expected:
-
-- Duplicate clicks do not open duplicate affiliate tabs.
-- The extension does not claim to generate a commission link by itself.
 
 ## Popup Settings
 
@@ -119,51 +109,36 @@ Expected:
 - Settings persist after closing/reopening popup.
 - API keys remain masked.
 
-## GitHub Auto-Post
+## Retired Surfaces
 
-Warning: this flow can publish to Facebook. Run only with a test account or when intentionally validating automation.
-
-- [ ] Read the warning in popup settings
-- [ ] Keep scheduled auto-post disabled by default
-- [ ] If testing manually, confirm you understand Facebook automation risk
-- [ ] Click `Chạy ngay`
-- [ ] Watch the log for fetch/generate/post result
+- [ ] Confirm the popup has no Labs or GitHub auto-post controls
+- [ ] Confirm context menus contain only summarize and translate actions
+- [ ] Confirm the selection toolbar has no affiliate-writing action
 
 Expected:
 
-- Failures include enough stage information to recover.
-- Scheduled alarm is not enabled unless the setting is explicitly on.
-
-## Labs Gate (Risky Automation)
-
-- [ ] Confirm Labs / automation gate is **off** by default
-- [ ] Attempt to enable scheduled GitHub auto-post without Labs acknowledgement — must be refused
-- [ ] Enable Labs only after typing confirm phrase `TOI HIEU RUI RO` (exact)
-- [ ] With Labs on, "Run now" / schedule can proceed per settings
-- [ ] Disable Labs and confirm auto-post alarm is cleared / cannot schedule
-
-Expected:
-
-- `autoGithubEnabled` cannot stick true without Labs acknowledgement.
-- Wrong or empty confirm phrase does not unlock automation.
+- FeedWriter prepares content but never publishes a post or source comment automatically.
+- No hidden confirmation phrase or scheduled auto-post path remains.
 
 ## Mac Shortcuts
 
 - [ ] On macOS Chrome, open About / shortcut hints in popup
-- [ ] Confirm summarize / affiliate shortcuts are usable (Chrome command defaults; labels may show Ctrl or ⌘ depending on build)
-- [ ] On Windows/Linux, shortcuts still work with Ctrl+Shift+S / Ctrl+Shift+A
-- [ ] Overlay Edit (Ctrl/Cmd+E) and Copy still work when panel is focused
+- [ ] Confirm summarize and translate shortcuts use `Cmd+Shift+S` and `Cmd+Shift+T`
+- [ ] On Windows/Linux, confirm shortcuts use `Ctrl+Shift+S` and `Ctrl+Shift+T`
+- [ ] Overlay Edit (`Ctrl/Cmd+E`) and Copy still work when the panel is focused
 
 Expected:
 
-- No broken key handlers on Mac (metaKey accepted where ctrlKey is used for in-panel actions).
+- No broken key handlers on Mac (`metaKey` is accepted where `ctrlKey` is used for in-panel actions).
 
-## Floating Toolbar Multi-Mode
+## Floating Toolbar
 
-- [ ] Select long text on Facebook
-- [ ] Toolbar shows Tóm tắt | Status | Affiliate | Batch
-- [ ] Each mode produces the correct overlay title / prompt type
-- [ ] On non-Facebook sites, Batch is hidden
+- [ ] Select text on a supported site
+- [ ] Toolbar shows `Tóm tắt`, `Dịch`, and a `···` menu
+- [ ] The menu offers `Slang`, `Cụm từ`, and `Shadow`
+- [ ] On Facebook, the menu also offers `Batch`
+- [ ] On non-Facebook sites, `Batch` is absent
+- [ ] Each translation mode produces the matching tooltip mode
 
 ## Composer Back Navigation
 
@@ -171,22 +146,16 @@ Expected:
 - [ ] Click **← Sửa lại**
 - [ ] Summary result still present; panel footer restored; can edit/copy again
 
-## Automated Tests (optional)
+## Automated Validation
 
 ```bash
-npm test
-npm run check
+npm run test:all
 ```
 
-- [ ] 28+ tests pass
-- [ ] Syntax check OK
-- User can trigger summarize and affiliate from documented shortcuts.
-
-## Unit tests (Node, optional)
-
-- [ ] With Node 18+ available: run `npm test` from repo root
-- [ ] Confirm all pure-logic tests pass (batch adapter, guardrails, URL clean, StatusFormatter)
-- [ ] Optionally run `npm run check` for `node --check` on main scripts
+- [ ] Generated DOM, composer, and service-worker runtimes are current
+- [ ] Every shipped JavaScript file passes `node --check`
+- [ ] All unit and contract tests pass
+- [ ] CI runs the same command on pushes and pull requests
 
 ## Final Checks
 

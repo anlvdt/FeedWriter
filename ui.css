@@ -143,6 +143,17 @@ button.fbs-allpost-btn {
   contain: layout !important;
 }
 
+/* Light feed: the translucent grey chip drowns in Facebook's white cards.
+   Give it solid paper, teal ink, and near-full opacity so it reads at rest. */
+.fbs-chip-host[data-fbs-theme="light"] .fbs-allpost-btn,
+.fbs-chip-host[data-fbs-theme="light"] button.fbs-allpost-btn {
+  background: #ffffff !important;
+  border-color: var(--fw-border-strong) !important;
+  color: var(--fw-accent) !important;
+  opacity: 0.95 !important;
+  box-shadow: 0 1px 4px rgba(15, 20, 28, 0.14) !important;
+}
+
 .fbs-chip-host:hover .fbs-allpost-btn,
 article:hover > .fbs-chip-host .fbs-allpost-btn,
 [data-pagelet^="FeedUnit"]:hover > .fbs-chip-host .fbs-allpost-btn,
@@ -267,6 +278,69 @@ article:hover > .fbs-chip-host .fbs-allpost-btn,
   text-decoration: none !important;
 }
 
+/* Full Facebook posts have no "Xem thêm" anchor. Keep their action in a
+   dedicated row immediately below the status body instead of gluing it to the
+   final sentence or floating over media. */
+.fbs-summary-row[data-fbs-ui="v3"],
+.fbs-wrap.fbs-summary-row {
+  position: relative !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  width: 100% !important;
+  min-height: 32px !important;
+  margin: 4px 0 0 !important;
+  padding: 0 12px !important;
+  inset: auto !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  contain: layout style !important;
+}
+
+.fbs-summary-row[data-fbs-theme="light"] {
+  --fw-accent: #0f766e;
+  --fw-accent-hover: #0d5f58;
+  --fw-accent-soft: rgba(15, 118, 110, 0.1);
+}
+
+.fbs-summary-row .fbs-btn-inline {
+  display: inline-flex !important;
+  align-items: center !important;
+  min-height: 28px !important;
+  border-radius: var(--fw-radius-pill) !important;
+}
+
+.fbs-summary-row .fbs-btn-inline > span {
+  display: inline-flex !important;
+  align-items: center !important;
+  min-height: 28px !important;
+  padding: 0 9px !important;
+  border: 1px solid color-mix(in srgb, var(--fw-accent) 28%, transparent) !important;
+  border-radius: var(--fw-radius-pill) !important;
+  background: color-mix(in srgb, var(--fw-accent) 7%, transparent) !important;
+  color: var(--fw-accent) !important;
+  font-size: 12px !important;
+  line-height: 1 !important;
+}
+
+.fbs-summary-row .fbs-btn-inline:hover > span,
+.fbs-summary-row .fbs-btn-inline:focus-visible > span {
+  border-color: color-mix(in srgb, var(--fw-accent) 52%, transparent) !important;
+  background: var(--fw-accent-soft) !important;
+  color: var(--fw-accent-hover) !important;
+}
+
+.fbs-btn-inline[data-fbs-ui="v3"]:focus-visible {
+  outline: 2px solid var(--fw-accent) !important;
+  outline-offset: 2px !important;
+}
+
+.fbs-btn-inline[data-fbs-ui="v3"][aria-busy="true"] {
+  cursor: progress !important;
+  opacity: 0.68 !important;
+}
+
 .fbs-wrap-inline .fbs-btn-inline > span img,
 .fbs-btn-inline[data-fbs-ui="v3"] > span img {
   display: none !important;
@@ -282,7 +356,7 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
 }
 
 /* Kill legacy absolute wraps that caused full-height bars */
-.fbs-wrap:not(.fbs-wrap-inline) {
+.fbs-wrap:not(.fbs-wrap-inline):not(.fbs-summary-row) {
   display: none !important;
 }
 

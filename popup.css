@@ -27,7 +27,7 @@
   --fw-border-strong: #5a6a78;
   --fw-text: #eef2f5;
   --fw-text-2: #a8b4c0;
-  --fw-text-3: #7a8794;
+  --fw-text-3: #8c99a6;
   --fw-accent: #2dd4bf;
   --fw-accent-hover: #5eead4;
   --fw-accent-soft: rgba(45, 212, 191, 0.18);
@@ -65,6 +65,7 @@
   --accent-hover: var(--fw-accent-hover);
   --accent-bg: var(--fw-accent-soft);
   --accent-ring: var(--fw-accent-glow);
+  --accent-contrast: #071815;
   --success: var(--fw-ok);
   --success-bg: rgba(61, 214, 140, 0.14);
   --danger: var(--fw-danger);
@@ -145,6 +146,7 @@ html.light {
   --success: var(--fw-ok);
   --success-bg: rgba(22, 101, 52, 0.12);
   --danger: var(--fw-danger);
+  --accent-contrast: #ffffff;
   --danger-bg: rgba(185, 28, 28, 0.1);
   --warn: var(--fw-warn);
   --warn-bg: rgba(146, 64, 14, 0.12);
@@ -163,15 +165,13 @@ html.light {
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 /*
- * Rounded popup window
- * Clip html + body + main shell so corners actually round (Chrome MV3).
+ * Rounded popup window: keep the root transparent so Chrome's popup canvas
+ * (theme-matched via color-scheme) shows only in the corner slivers, and clip
+ * the body to the popup radius.
  */
 html {
   width: 380px;
-  height: auto;
-  max-height: 600px;
-  /* Keep root transparent: a painted root background propagates to the whole
-     Chrome popup canvas and squares off the body's rounded corners. */
+  height: 600px;
   background: transparent !important;
   border-radius: 0;
   overflow: hidden;
@@ -183,9 +183,8 @@ html.light {
 }
 
 body {
-  width: 380px;
-  min-height: 120px;
-  max-height: 600px;
+  width: min(380px, 100vw);
+  height: min(600px, 100vh);
   margin: 0;
   padding: 0;
   font-family: var(--font);
@@ -193,12 +192,10 @@ body {
   color-scheme: var(--color-scheme);
   -webkit-font-smoothing: antialiased;
   line-height: 1.45;
-  /* The page root stays transparent so Chrome does not paint a square canvas.
-     body is the one, non-scrolling clipping surface for every popup view. */
-  background: transparent !important;
-  border-radius: var(--radius-popup, 20px);
+  background: var(--bg) !important;
+  border-radius: var(--radius-popup, 16px);
   overflow: hidden;
-  clip-path: inset(0 round var(--radius-popup, 20px));
+  clip-path: inset(0 round var(--radius-popup, 16px));
   isolation: isolate;
 }
 
@@ -207,8 +204,8 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 999px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-hover); }
 
-/* The application shell owns scrolling. Its own radius + paint containment
-   prevent any tab, sticky action bar, or gradient from leaking into a corner. */
+/* The main view is a fixed shell. Only .popup-scroll may scroll, keeping the
+   product header and tab strip in place while settings content moves. */
 #main-view,
 #wizard-view,
 .popup,
@@ -218,10 +215,10 @@ body {
     radial-gradient(120% 80% at 0% 0%, rgba(15, 118, 110, 0.06), transparent 55%),
     radial-gradient(90% 60% at 100% 0%, rgba(61, 74, 87, 0.05), transparent 50%),
     var(--bg) !important;
-  border-radius: var(--radius-popup, 20px) !important;
-  background-clip: padding-box;
+  border-radius: 14px !important;
+  background-clip: border-box;
   overflow-x: hidden;
-  overflow-y: auto;
+  overflow-y: hidden;
   overscroll-behavior: contain;
   contain: paint;
   isolation: isolate;
@@ -230,27 +227,62 @@ body {
 #main-view.popup,
 #main-view.popup-v2,
 .popup.popup-v2 {
-  width: 380px;
-  max-height: 600px;
-  padding: 14px 14px 18px;
-  min-height: 120px;
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 14px 0;
   box-sizing: border-box;
 }
+
+/* Views toggled from JS via [hidden]; keep it winning over the flex rule. */
+#main-view[hidden],
+#wizard-view[hidden] {
+  display: none !important;
+}
+
+.popup-scroll {
+  display: block;
+  height: 0;
+  min-height: 0;
+  flex: 1 1 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 0 0 18px;
+}
+
+/* Quiet scrollbar: reserve the gutter but keep the thumb invisible until the
+   pointer is over the scroll region; never paint a track. */
+.popup-scroll::-webkit-scrollbar { width: 4px; }
+.popup-scroll::-webkit-scrollbar-track { background: transparent; }
+.popup-scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+}
+.popup-scroll:hover::-webkit-scrollbar-thumb,
+.popup-scroll:focus-within::-webkit-scrollbar-thumb {
+  background: var(--scrollbar);
+}
+.popup-scroll::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-hover); }
 
 #wizard-view,
 .wizard-container {
-  width: 380px;
-  max-height: 600px;
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  overflow-y: auto;
   box-sizing: border-box;
 }
 
-/* Sticky bars hug the bottom curve — button itself must round too or the
-   solid primary fill paints square into the clipped corners. */
+/* Action bars sit in normal flow inside .popup-scroll — no clipping, or the
+   button's soft shadow gets sheared into a hard slab. */
 .settings-footer.sticky-save,
 .keys-actions {
-  border-bottom-left-radius: calc(var(--radius-popup, 20px) - 6px);
-  border-bottom-right-radius: calc(var(--radius-popup, 20px) - 6px);
-  overflow: hidden;
+  overflow: visible;
 }
 .settings-footer.sticky-save .btn-primary,
 .keys-actions .btn-primary {
@@ -405,9 +437,11 @@ h1 {
 .field-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 10px;
+  gap: 12px;
+  margin-bottom: 12px;
 }
-.field-grid .field { min-width: 0; }
+.field-grid:last-child { margin-bottom: 0; }
+.field-grid .field { min-width: 0; margin-bottom: 0; }
 .field-grid label {
   white-space: normal;
   line-height: 1.35;
@@ -755,7 +789,7 @@ textarea:focus,
 .btn-primary, #saveBtn {
   background: var(--accent) !important;
   border-color: var(--accent) !important;
-  color: #fff !important;
+  color: var(--accent-contrast) !important;
 }
 .btn-primary:hover, #saveBtn:hover {
   background: var(--accent-hover) !important;
@@ -1361,7 +1395,7 @@ a { color: var(--accent); }
   padding: 0;
   background: var(--accent) !important;
   border-color: var(--accent) !important;
-  color: #fff !important;
+  color: var(--accent-contrast) !important;
 }
 .keys-add-btn:hover {
   background: var(--accent-hover) !important;
@@ -1846,19 +1880,17 @@ label:not(.switch-label),
   }
 }
 
-/* Save bar lives at the end of Settings; keeping it in normal flow prevents
-   it from covering accordion rows in Chrome's short popup viewport. */
+/* Keep save in normal document flow: a fixed footer covers controls below it
+   inside Chrome's short action popup and prevents those controls from being
+   reached by scrolling. */
 .settings-footer.sticky-save {
   position: static;
   margin: 12px 0 0;
-  padding: 10px 0 4px;
+  padding: 10px 0 18px;
   background: transparent;
-  border-bottom-left-radius: calc(var(--radius-popup, 20px) - 6px);
-  border-bottom-right-radius: calc(var(--radius-popup, 20px) - 6px);
-  overflow: hidden;
 }
 .settings-footer.sticky-save .btn-primary {
-  box-shadow: 0 4px 16px rgba(15, 118, 110, 0.22);
+  box-shadow: none;
   border-radius: 10px;
 }
 .settings-footer.sticky-save .status {
@@ -1959,7 +1991,7 @@ label:not(.switch-label),
 }
 
 /* Scrollbar quieter */
-::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 99px; }
 
 /* Light theme save surface */
@@ -2128,6 +2160,11 @@ textarea.field-input {
   overflow: hidden;
   margin-bottom: 10px;
   padding: 0 !important;
+}
+.history-list[hidden],
+.history-detail[hidden],
+#historyActions[hidden] {
+  display: none !important;
 }
 .history-item {
   display: flex !important;

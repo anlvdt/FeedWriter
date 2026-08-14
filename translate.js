@@ -8,10 +8,9 @@
   window.__feedwriter_translate_loaded = true;
 
   let translateTooltip = null;
-  let lastClickTime = 0;
   let lastRect = null;
   let requestToken = 0;
-  const DEBOUNCE_DELAY = 280;
+  let translateReturnFocus = null;
 
   function isContextValid() {
     try {
@@ -32,12 +31,39 @@
     translateTooltip = document.createElement("div");
     translateTooltip.className = "fbs-translate-tooltip";
     translateTooltip.setAttribute("data-fbs-ui", "v3");
+    translateTooltip.setAttribute("role", "dialog");
+    translateTooltip.setAttribute("aria-label", "Kết quả dịch");
+    translateTooltip.setAttribute("aria-live", "polite");
+    translateTooltip.setAttribute("aria-hidden", "true");
+    translateTooltip.setAttribute("tabindex", "-1");
+    translateTooltip.innerHTML =
+      '<button type="button" class="fbs-translate-close" aria-label="Đóng kết quả dịch">&times;</button>' +
+      '<div class="fbs-translate-content"></div>';
+    translateTooltip.querySelector(".fbs-translate-close")
+      .addEventListener("click", hideTranslateTooltip);
     document.body.appendChild(translateTooltip);
   }
 
+  function setTooltipContent(html) {
+    const content = translateTooltip?.querySelector(".fbs-translate-content");
+    if (content) content.innerHTML = html;
+  }
+
   function hideTranslateTooltip() {
-    if (translateTooltip) translateTooltip.classList.remove("fbs-visible");
+    if (translateTooltip) {
+      translateTooltip.classList.remove("fbs-visible");
+      translateTooltip.setAttribute("aria-hidden", "true");
+    }
+    requestToken++;
     lastRect = null;
+    if (
+      translateReturnFocus?.isConnected &&
+      translateReturnFocus !== document.body &&
+      translateReturnFocus.getClientRects().length
+    ) {
+      translateReturnFocus.focus({ preventScroll: true });
+    }
+    translateReturnFocus = null;
   }
 
   function positionTooltip(rect) {
@@ -170,73 +196,79 @@
    * @param {DOMRect} rect
    * @param {string} mode auto|word|passage|slang|collocation|shadowing
    */
-  function showTranslateTooltip(text, rect, mode = "auto", context = "") {
+  function showTranslateTooltip(text, rect, mode = "auto") {
     createTranslateTooltip();
     lastRect = rect;
     const token = ++requestToken;
     const source = String(text || "").trim();
     if (!source) return;
 
-    translateTooltip.setAttribute("role", "status");
-    translateTooltip.setAttribute("aria-live", "polite");
-    translateTooltip.innerHTML =
-      '<div class="fbs-translate-loading"><div class="fbs-spinner"></div> Đang dịch…</div>';
+    translateReturnFocus = document.activeElement;
+    setTooltipContent(
+      '<div class="fbs-translate-loading" role="status"><div class="fbs-spinner"></div> Đang dịch…</div>',
+    );
+    translateTooltip.setAttribute("aria-hidden", "false");
     translateTooltip.classList.add("fbs-visible");
     positionTooltip(rect);
+    translateTooltip.focus({ preventScroll: true });
 
     try {
       chrome.runtime.sendMessage(
         {
           action: "translate-text",
           text: source,
-          mode: mode || "auto",
-          context: String(context || "").slice(0, 1200),
+          mode: mode || "auto"
         },
         (resp) => {
           if (token !== requestToken) return;
           if (chrome.runtime.lastError) {
             if (translateTooltip?.classList.contains("fbs-visible")) {
-              translateTooltip.innerHTML =
-                '<div class="fbs-translate-error">Không kết nối được</div>';
+              setTooltipContent(
+                '<div class="fbs-translate-error">Không kết nối được</div>',
+              );
             }
             return;
           }
           if (!translateTooltip?.classList.contains("fbs-visible")) return;
 
           if (!resp) {
-            translateTooltip.innerHTML =
-              '<div class="fbs-translate-error">Không nhận được phản hồi</div>';
+            setTooltipContent(
+              '<div class="fbs-translate-error">Không nhận được phản hồi</div>',
+            );
             return;
           }
           if (resp.error) {
-            translateTooltip.innerHTML =
-              '<div class="fbs-translate-error">' + esc(resp.error) + "</div>";
+            setTooltipContent(
+              '<div class="fbs-translate-error">' + esc(resp.error) + "</div>",
+            );
             return;
           }
 
           const rawTranslation = (resp.translation || "").trim();
           if (!rawTranslation) {
-            translateTooltip.innerHTML =
+            setTooltipContent(
               '<div class="fbs-translate-word">' + esc(resp.word || source) + "</div>" +
-              '<div class="fbs-translate-error">Không tìm thấy nghĩa</div>';
+              '<div class="fbs-translate-error">Không tìm thấy nghĩa</div>',
+            );
             if (lastRect) positionTooltip(lastRect);
             return;
           }
 
           const usedMode = resp.mode || mode || "auto";
-          translateTooltip.innerHTML = renderResult(
+          setTooltipContent(renderResult(
             resp.word || source,
             rawTranslation,
             usedMode
-          );
+          ));
           if (lastRect) positionTooltip(lastRect);
           wireCopyButtons(rawTranslation, source);
         }
       );
     } catch (_) {
       if (translateTooltip?.classList.contains("fbs-visible")) {
-        translateTooltip.innerHTML =
-          '<div class="fbs-translate-error">Lỗi hệ thống</div>';
+        setTooltipContent(
+          '<div class="fbs-translate-error">Lỗi hệ thống</div>',
+        );
       }
     }
   }
@@ -272,22 +304,6 @@
     return rect;
   }
 
-  function selectionContext(text) {
-    const selection = window.getSelection();
-    const node = selection?.anchorNode;
-    const element = node?.nodeType === Node.ELEMENT_NODE
-      ? node
-      : node?.parentElement;
-    if (!element) return "";
-    const container = element.closest(
-      '[data-testid="tweetText"], article[data-testid="tweet"], [data-ad-preview="message"], [data-ad-comet-preview="message"], [role="article"], p, li',
-    );
-    const surrounding = (container?.innerText || container?.textContent || "")
-      .replace(/\s+/g, " ")
-      .trim();
-    if (!surrounding || surrounding === String(text || "").trim()) return "";
-    return surrounding.slice(0, 1200);
-  }
 
   function runTranslate(text, mode, rect) {
     if (!isContextValid() || !isTranslatable(text)) return;
@@ -296,37 +312,11 @@
     try {
       chrome.runtime.sendMessage({ action: "ping" }, () => {
         if (chrome.runtime.lastError) return;
-        showTranslateTooltip(text, r, mode || "auto", selectionContext(text));
+        showTranslateTooltip(text, r, mode || "auto");
       });
     } catch (_) {}
   }
 
-  // Double-click → word / short phrase lookup (auto)
-  document.addEventListener("dblclick", (e) => {
-    const now = Date.now();
-    if (now - lastClickTime < DEBOUNCE_DELAY) return;
-    lastClickTime = now;
-
-    if (
-      e.target.closest(
-        ".fbs-panel, .fbs-floating-toolbar, .fbs-translate-tooltip, .fbs-chip-host"
-      )
-    )
-      return;
-    if (
-      e.target.closest(
-        'input, textarea, select, [contenteditable=""], [contenteditable="true"], [role="textbox"]'
-      )
-    )
-      return;
-
-    const text = window.getSelection().toString().trim();
-    if (!isTranslatable(text)) {
-      hideTranslateTooltip();
-      return;
-    }
-    runTranslate(text, guessMode(text), selectionRect());
-  });
 
   // Messages from background / content toolbar
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -358,18 +348,8 @@
     return false;
   });
 
-  // Expose for content.js floating toolbar (same page, may be separate isolated world!)
-  // Content scripts on same extension are separate worlds unless same file list.
-  // So floating toolbar must send chrome.runtime message or use window custom event.
-  window.addEventListener("message", (ev) => {
-    if (ev.source !== window) return;
-    const data = ev.data;
-    if (!data || data.source !== "feedwriter" || data.type !== "translate") return;
-    const text = (data.text || "").trim();
-    const mode = data.mode || "auto";
-    if (!text) return;
-    runTranslate(text, mode, selectionRect());
-  });
+  // Isolated-world bridge: content.js sends chrome.runtime relay-translate,
+  // which the service worker delivers back as translate-selection.
 
   document.addEventListener("mousedown", (e) => {
     if (translateTooltip && !translateTooltip.contains(e.target)) {
@@ -390,12 +370,8 @@
   });
 
   try {
-    const port = chrome.runtime.connect({ name: "translate-keepalive" });
-    port.onDisconnect.addListener(() => {
-      if (translateTooltip) {
-        translateTooltip.remove();
-        translateTooltip = null;
-      }
+    chrome.runtime.sendMessage({ action: "ping" }, () => {
+      void chrome.runtime.lastError;
     });
   } catch (_) {}
 })();

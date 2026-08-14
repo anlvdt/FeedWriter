@@ -24,12 +24,20 @@ const PosterReddit = {
     try {
       // Step 1: Navigate to submit page if not already there
       if (!location.pathname.includes("/submit")) {
-        const subreddit = this._detectSubreddit();
-        if (subreddit) {
-          location.href = `https://www.reddit.com/r/${subreddit}/submit?type=TEXT`;
-        } else {
-          location.href = "https://www.reddit.com/submit?type=TEXT";
+        const response = await chrome.runtime.sendMessage({
+          action: "store-pending-post",
+          kind: "reddit",
+          postData,
+        });
+        if (!response?.ok || !response.id) {
+          throw new Error(response?.error || "Không thể lưu bài chờ đăng Reddit");
         }
+        const id = response.id;
+        const subreddit = this._detectSubreddit();
+        const dest = subreddit
+          ? `https://www.reddit.com/r/${subreddit}/submit?type=TEXT&feedwriter_compose=${encodeURIComponent(id)}`
+          : `https://www.reddit.com/submit?type=TEXT&feedwriter_compose=${encodeURIComponent(id)}`;
+        location.href = dest;
         return { ok: true, platform: "reddit", reason: "navigating_to_submit" };
       }
 
