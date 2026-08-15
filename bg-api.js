@@ -445,7 +445,14 @@ async function getSystemPrompt(
 }
 
 // === STREAMING HELPERS ===
-async function processStream(response, port, signal, parseLine, onToken = null) {
+async function processStream(
+  response,
+  port,
+  signal,
+  parseLine,
+  onToken = null,
+  wasUserAborted = () => false,
+) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let fullText = "";
@@ -467,17 +474,28 @@ async function processStream(response, port, signal, parseLine, onToken = null) 
     } catch (_) {}
   };
 
-  while (true) {
-    if (signal.aborted) {
-      reader.cancel();
-      return { error: "Đã hủy." };
+  try {
+    while (true) {
+      if (signal.aborted) {
+        try { await reader.cancel(); } catch (_) {}
+        if (wasUserAborted()) return { error: "Đã hủy." };
+        if (fullText) return { summary: fullText, recoveredFromTimeout: true };
+        throw new DOMException("Provider stream timed out", "AbortError");
+      }
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+      for (const line of lines) consumeLine(line);
     }
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
-    for (const line of lines) consumeLine(line);
+  } catch (error) {
+    if (error?.name !== "AbortError") throw error;
+    if (wasUserAborted()) return { error: "Đã hủy." };
+    if (!fullText) throw error;
+    // Some providers leave an SSE connection open after sending a complete
+    // answer. Preserve the received text so the UI can leave streaming mode.
+    return { summary: fullText, recoveredFromTimeout: true };
   }
 
   buffer += decoder.decode();

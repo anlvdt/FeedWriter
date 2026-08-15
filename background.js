@@ -795,6 +795,7 @@ chrome.runtime.onConnect.addListener((port) => {
         msg.postSource,
         msg.tone || null,
         msg.preferredProvider || null,
+        msg.type || "summary",
       );
       if (result && result.error)
         port.postMessage({ action: "error", error: result.error });
@@ -1853,6 +1854,7 @@ async function handleStream(
   postSource = "",
   tone = null,
   preferredProvider = null,
+  type = "summary",
 ) {
   // === INPUT GUARDRAILS ===
   const inputCheck = validateInput(text);
@@ -1998,6 +2000,13 @@ async function handleStream(
       result.summary = postResult.text;
       result.quality = postResult.quality;
       result.issues = postResult.issues;
+      if (result.recoveredFromTimeout) {
+        result.quality = "warn";
+        result.issues = [
+          "Provider đã ngừng phản hồi; FeedWriter giữ lại phần nội dung đã nhận được.",
+          ...(result.issues || []),
+        ];
+      }
       incrementBadge();
       await saveHistory(
         text,
@@ -2071,13 +2080,14 @@ async function callStreamAPI(config) {
     signal,
     maxTokens = 512,
     provider = "unknown",
+    firstTokenTimeoutMs = 22000,
+    totalTimeoutMs = 60000,
+    streamIdleTimeoutMs = 20000,
   } = config;
 
   const timeoutController = new AbortController();
-  // Free-tier providers can be slow; 12s was too aggressive → false failures
-  const firstTokenTimeoutMs = 22000;
-  const totalTimeoutMs = 60000;
   let receivedToken = false;
+  let idleTimeoutId = null;
   const abortRequest = () => timeoutController.abort();
   const timeoutId = setTimeout(abortRequest, totalTimeoutMs);
   const firstTokenTimeoutId = setTimeout(() => {
@@ -2129,10 +2139,21 @@ async function callStreamAPI(config) {
         invalidKey,
       };
     }
-    return processStream(resp, port, timeoutController.signal, extractFn, () => {
-      receivedToken = true;
-      clearTimeout(firstTokenTimeoutId);
-    });
+    return await processStream(
+      resp,
+      port,
+      timeoutController.signal,
+      extractFn,
+      () => {
+        receivedToken = true;
+        clearTimeout(firstTokenTimeoutId);
+        clearTimeout(idleTimeoutId);
+        // A stream that stops producing tokens without closing must not keep
+        // the overlay in "Đang tạo" forever.
+        idleTimeoutId = setTimeout(abortRequest, streamIdleTimeoutMs);
+      },
+      () => signal.aborted,
+    );
   } catch (error) {
     if (error.name === "AbortError" && !signal.aborted) {
       const timeoutSeconds = receivedToken
@@ -2146,6 +2167,7 @@ async function callStreamAPI(config) {
   } finally {
     clearTimeout(timeoutId);
     clearTimeout(firstTokenTimeoutId);
+    clearTimeout(idleTimeoutId);
     signal.removeEventListener("abort", abortRequest);
   }
 }

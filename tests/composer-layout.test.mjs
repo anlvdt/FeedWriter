@@ -62,11 +62,20 @@ describe("Feed scanning cost controls", () => {
     assert.match(content, /_markFbScrollBusy/);
     assert.match(content, /FB_SCROLL_IDLE_MS/);
     assert.match(content, /FB_PENDING_POSTS_PER_FRAME = 2/);
+    assert.match(content, /FB_SUMMARY_POSTS_PER_FRAME = 1/);
+    assert.match(content, /function _flushVisibleSummaryPosts/);
+    assert.match(content, /allowDuringScroll: true/);
+    assert.match(content, /rootMargin: "360px 0px"/);
     assert.match(content, /FB_DISCOVERY_FALLBACK_MS = 8000/);
     assert.match(content, /feedRootObserver\.observe\(root, \{ childList: true \}\)/);
     assert.match(content, /pendingFeedRootAdditions/);
     assert.match(content, /Queue only — Facebook may append cards while kinetic scrolling/);
-    assert.match(content, /Queue only — never flush while scrolling/);
+    assert.match(content, /Summary controls have their own one-card-per-frame fast path/);
+    assert.match(content, /const limit = _isFbScrollBusy\(\) \? 1 : 8/);
+    assert.match(
+      content,
+      /getComputedStyle\/innerText can force layout[\s\S]{0,180}if \(_isFbScrollBusy\(\)\) return;/,
+    );
     assert.match(
       content,
       /Facebook: no subtree MutationObserver on the feed/,
@@ -160,48 +169,67 @@ describe("Feed false-positive safeguards", () => {
 
 describe("Feed summary control density", () => {
   it("keeps summary controls visually secondary to Facebook content", () => {
-    assert.match(css, /\.fbs-wrap-inline \.fbs-btn-inline > span[\s\S]*?background:\s*transparent\s*!important/);
-    assert.match(css, /\.fbs-wrap-inline \.fbs-btn-inline > span[\s\S]*?color:\s*var\(--fw-accent\)\s*!important/);
-    assert.match(css, /\.fbs-wrap-inline \.fbs-inline-sep[\s\S]*?color:\s*var\(--fw-text-3\)\s*!important/);
+    assert.match(css, /\.fbs-btn-inline\.fbs-summary-action\[data-fbs-ui="v3"\]\[data-fbs-summary-ui="text-v2"\][\s\S]*?display:\s*inline\s*!important/);
+    assert.match(css, /\.fbs-btn-inline\.fbs-summary-action\[data-fbs-ui="v3"\]\[data-fbs-summary-ui="text-v2"\][\s\S]*?height:\s*auto\s*!important/);
+    assert.match(css, /\.fbs-btn-inline\.fbs-summary-action\[data-fbs-ui="v3"\]\[data-fbs-summary-ui="text-v2"\][\s\S]*?background:\s*transparent\s*!important/);
+    assert.match(css, /\.fbs-wrap\[data-fbs-theme="light"\] \.fbs-btn-inline\.fbs-summary-action[\s\S]*?color:\s*#39726d\s*!important/);
     assert.match(css, /\.fbs-wrap-inline\[data-fbs-ui="v3"\][\s\S]*?margin:\s*0\s*!important/);
-    assert.match(css, /button\.fbs-allpost-btn[\s\S]*?height:\s*28px\s*!important/);
-    assert.match(css, /\.fbs-chip-host:hover \.fbs-allpost-btn[\s\S]*?opacity:\s*1\s*!important/);
+    assert.match(css, /button\.fbs-allpost-btn[\s\S]*?height:\s*auto\s*!important/);
+    assert.doesNotMatch(css, /\.fbs-summary-row \.fbs-btn-inline > span[\s\S]*?var\(--fw-accent\)/);
   });
 
-  it("uses text-only inline summary controls with dialog semantics", () => {
+  it("uses one compact text-action summary control with dialog semantics", () => {
     const inlineFactory = content.slice(
-      content.indexOf("function createInlineBtn()"),
+      content.indexOf("function summaryActionMarkup"),
       content.indexOf("// === POST METADATA EXTRACTION ==="),
     );
-    assert.match(inlineFactory, /class="fbs-inline-label"/);
+    assert.match(inlineFactory, /labelClass = "fbs-inline-label"/);
+    assert.match(inlineFactory, /fbs-summary-action/);
+    assert.match(inlineFactory, /data-fbs-summary-ui/);
+    assert.doesNotMatch(inlineFactory, /fbs-summary-action-icon/);
     assert.match(inlineFactory, /aria-label", "Tóm tắt bài viết"/);
     assert.match(inlineFactory, /aria-haspopup", "dialog"/);
     assert.doesNotMatch(inlineFactory, /ICON_BASE64/);
+  });
+
+  it("replaces stale feed controls after an extension reload", () => {
+    assert.match(content, /const SUMMARY_UI_VERSION = "text-v2"/);
+    assert.match(
+      content,
+      /\.fbs-summary-control:not\(\[data-fbs-summary-ui=/,
+    );
+    assert.match(content, /currentControl\) return/);
+    assert.match(
+      css,
+      /\[data-fbs-summary-ui="text-v2"\][\s\S]*?height:\s*auto\s*!important/,
+    );
   });
 
   it("places Facebook inline summaries immediately after See more", () => {
     assert.match(content, /function _matchInlineBtnTypography\(btn, refEl\)/);
     assert.match(content, /_matchInlineBtnTypography\(btnNode, afterEl\)/);
     assert.match(content, /afterEl\.parentElement\.insertBefore\(wrap, afterEl\.nextSibling\)/);
-    assert.match(content, /sep\.className = "fbs-inline-sep"/);
-    assert.match(content, /sep\.textContent = " · "/);
+    assert.doesNotMatch(content, /sep\.className = "fbs-inline-sep"/);
+    assert.match(css, /\.fbs-wrap-inline\[data-fbs-ui="v3"\]\[data-fbs-summary-ui="text-v2"\]::before[\s\S]*?content:\s*" · "\s*!important/);
   });
 
-  it("places full Facebook summaries below the status body", () => {
-    assert.match(content, /const isFacebookRow = SITE === "facebook"/);
-    assert.match(content, /"fbs-wrap fbs-summary-control fbs-summary-row"/);
+  it("restores the summary control after Facebook replaces See more", () => {
+    assert.match(content, /function _handleFacebookSeeMoreClick\(event\)/);
+    assert.match(content, /document\.addEventListener\("click", _handleFacebookSeeMoreClick, true\)/);
+    assert.match(content, /for \(const delay of \[0, 80, 240\]\)/);
+    assert.match(content, /_pendingSummaryPosts\.add\(post\)/);
     assert.match(
       content,
-      /textEl\.parentElement\.insertBefore\(wrap, textEl\.nextSibling\)/,
+      /\(SITE === "facebook" && _findFacebookStatusText\(post\)\)/,
     );
-    assert.match(
-      css,
-      /\.fbs-summary-row\[data-fbs-ui="v3"\][\s\S]*?justify-content:\s*flex-end\s*!important/,
-    );
-    assert.match(
-      css,
-      /\.fbs-wrap:not\(\.fbs-wrap-inline\):not\(\.fbs-summary-row\)/,
-    );
+  });
+
+  it("keeps full Facebook summaries inline without adding a blank row", () => {
+    assert.doesNotMatch(content, /const isFacebookRow = SITE === "facebook"/);
+    assert.doesNotMatch(content, /fbs-summary-row/);
+    assert.match(content, /textEl\.appendChild\(wrap\)/);
+    assert.doesNotMatch(css, /\.fbs-summary-row\[data-fbs-ui="v3"\]/);
+    assert.match(css, /\.fbs-wrap:not\(\.fbs-wrap-inline\)/);
   });
 
   it("exposes focus and busy states on summary controls", () => {
@@ -209,7 +237,7 @@ describe("Feed summary control density", () => {
     assert.match(content, /label\.textContent = "Đang tóm tắt…"/);
     assert.match(
       css,
-      /\.fbs-btn-inline\[data-fbs-ui="v3"\]:focus-visible[\s\S]*?outline:\s*2px solid var\(--fw-accent\)/,
+      /\.fbs-btn-inline\[data-fbs-ui="v3"\]:focus-visible[\s\S]*?outline:\s*2px solid #0866ff/,
     );
     assert.match(
       css,
@@ -218,6 +246,9 @@ describe("Feed summary control density", () => {
   });
 
   it("does not mount inline summaries on short Facebook status bodies", () => {
+    assert.match(content, /const SUMMARY_MIN_LEN = 30/);
+    assert.match(content, /text\.length < SUMMARY_MIN_LEN/);
+    assert.match(content, /best && bestLength >= SUMMARY_MIN_LEN/);
     assert.match(content, /function _statusBodyTextLength\(textEl\)/);
     assert.match(
       content,
@@ -228,6 +259,10 @@ describe("Feed summary control density", () => {
     assert.match(
       content,
       /inject\(article, findClickable\(seeMore\), textEl, seeMore\)/,
+    );
+    assert.match(
+      content,
+      /_mountInlineStatusChip\(article, textEl, SUMMARY_MIN_LEN\)/,
     );
     assert.doesNotMatch(
       content,
@@ -250,15 +285,15 @@ describe("UI system v3 contracts", () => {
 
   it("keeps Facebook chip host clear of top-right native controls", () => {
     assert.match(css, /\.fbs-chip-host[^\n]*\{[\s\S]*?right:\s*104px\s*!important/);
-    assert.match(css, /button\.fbs-allpost-btn[\s\S]*?opacity:\s*0\.72\s*!important/);
+    assert.match(css, /button\.fbs-allpost-btn[\s\S]*?opacity:\s*1\s*!important/);
   });
 
   it("keeps the light-theme summarize chip legible on white feed cards", () => {
     const block = css.match(/\.fbs-chip-host\[data-fbs-theme="light"\] \.fbs-allpost-btn[^{]*\{([^}]*)\}/);
     assert.ok(block, "expected light-theme chip override");
-    assert.match(block[1], /background:\s*#ffffff\s*!important/);
-    assert.match(block[1], /color:\s*var\(--fw-accent\)\s*!important/);
-    assert.match(block[1], /opacity:\s*0\.95\s*!important/);
+    assert.match(block[1], /background:\s*transparent\s*!important/);
+    assert.match(block[1], /color:\s*#39726d\s*!important/);
+    assert.match(block[1], /box-shadow:\s*none\s*!important/);
   });
 
   it("aliases popup and content tokens to canonical --fw-*", () => {

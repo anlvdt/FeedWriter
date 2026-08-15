@@ -13,6 +13,14 @@ try {
 } catch (_) {}
 
 let MIN_LEN = 400;
+// Summary availability must not inherit the feed-filter length setting. The
+// background validator accepts 30 characters, so any real status at that
+// threshold should expose the action immediately.
+const SUMMARY_MIN_LEN = 30;
+// Bump when the feed action markup/layout changes. Extension reloads do not
+// remove DOM inserted by the previous content-script instance, so an explicit
+// component revision is required to replace stale controls in live feeds.
+const SUMMARY_UI_VERSION = "text-v2";
 let isBlocked = false;
 const DEFAULT_SOURCE_TEMPLATE = "• Nguồn bài viết: {platform} {author} {source}\n  {link}";
 let globalSourceTemplate = DEFAULT_SOURCE_TEMPLATE;
@@ -147,6 +155,9 @@ function _findFacebookPostBodyFrom(element) {
 // shares the same line rhythm. CSS keeps a distinct accent color.
 function _matchInlineBtnTypography(btn, refEl) {
   if (!btn || !refEl) return;
+  // getComputedStyle/innerText can force layout. During kinetic scroll the CSS
+  // defaults are already correct; defer visual matching to a later reinject.
+  if (_isFbScrollBusy()) return;
   try {
     const label =
       [...refEl.querySelectorAll("span, div")].find((node) => {
@@ -178,7 +189,7 @@ function _statusBodyTextLength(textEl) {
   // The caller rejects elements that already contain our UI. textContent is
   // sufficient for the length gate and avoids cloning a large Facebook post
   // plus forcing layout through innerText on every newly visible card.
-  return (textEl.textContent || "").replace(/\s+/g, " ").trim().length;
+  return (textEl.textContent || "").trim().length;
 }
 
 function _findSeeMoreControl(textEl, maximum = 24) {
@@ -227,6 +238,14 @@ function cleanup() {
   if (typeof pendingFeedRootDiscoveryRaf !== "undefined" && pendingFeedRootDiscoveryRaf) {
     cancelAnimationFrame(pendingFeedRootDiscoveryRaf);
     pendingFeedRootDiscoveryRaf = 0;
+  }
+  if (typeof _pendingSummaryRaf !== "undefined" && _pendingSummaryRaf) {
+    cancelAnimationFrame(_pendingSummaryRaf);
+    _pendingSummaryRaf = 0;
+  }
+  if (typeof _summaryRefreshTimers !== "undefined") {
+    for (const timer of _summaryRefreshTimers) clearTimeout(timer);
+    _summaryRefreshTimers.clear();
   }
   if (typeof sponsoredCatchupTimer !== "undefined" && sponsoredCatchupTimer) {
     clearInterval(sponsoredCatchupTimer);
@@ -899,13 +918,13 @@ function scanSponsoredFast(postsOrRoot, opts) {
 }
 
 /** Inject Tóm tắt for a small set of posts — no whole-feed walks. */
-function injectSummaryOnPosts(posts) {
+function injectSummaryOnPosts(posts, { allowDuringScroll = false, limit = 10 } = {}) {
   if (!posts) return;
-  if (_isFbScrollBusy()) return;
+  if (_isFbScrollBusy() && !allowDuringScroll) return;
   let n = 0;
   for (const article of posts) {
     if (!article || !article.isConnected) continue;
-    if (++n > 10) break;
+    if (++n > limit) break;
     if (_isGroupSuggestionCheap(article)) continue;
     if (article.dataset.fbsSponsoredHidden === "1" || _isAlreadyFiltered(article)) {
       continue;
@@ -923,14 +942,16 @@ function injectSummaryOnPosts(posts) {
     if (seeMore) {
       inject(article, findClickable(seeMore), textEl, seeMore);
     } else {
-      _mountInlineStatusChip(article, textEl, MIN_LEN);
+      _mountInlineStatusChip(article, textEl, SUMMARY_MIN_LEN);
     }
   }
 }
 
 const _pendingFeedPosts = new Set();
+const _pendingSummaryPosts = new Set();
 let _pendingFlushRaf = 0;
 let _pendingFlushIdle = 0;
+let _pendingSummaryRaf = 0;
 
 // While the user is scrolling, Facebook already saturates the main thread.
 // Queue work only — never probe DOM / inject UI until scroll is idle.
@@ -941,6 +962,7 @@ let _fbScrollIdleTimer = 0;
 // getting the button on screen noticeably sooner after a scroll pause.
 const FB_SCROLL_IDLE_MS = 120;
 const FB_PENDING_POSTS_PER_FRAME = 2;
+const FB_SUMMARY_POSTS_PER_FRAME = 1;
 
 function _isFbScrollBusy() {
   return SITE === "facebook" && !_fbScrollIdle;
@@ -962,10 +984,6 @@ function _markFbScrollBusy() {
     } catch (_) {}
     _pendingFlushIdle = 0;
   }
-  if (typeof pendingFeedRootDiscoveryRaf !== "undefined" && pendingFeedRootDiscoveryRaf) {
-    cancelAnimationFrame(pendingFeedRootDiscoveryRaf);
-    pendingFeedRootDiscoveryRaf = 0;
-  }
   _fbScrollIdleTimer = setTimeout(() => {
     _fbScrollIdle = true;
     _fbScrollIdleTimer = 0;
@@ -978,6 +996,37 @@ function _queueFeedPost(node) {
   if (!node || node.nodeType !== 1) return;
   if (_isNestedFeedUnit(node)) return;
   _pendingFeedPosts.add(node);
+  _pendingSummaryPosts.add(node);
+  _scheduleVisibleSummaryFlush();
+}
+
+// Mount only the user-facing control while scrolling. This path intentionally
+// avoids sponsored detection, filter evaluation and whole-feed walks. One card
+// per animation frame keeps the work below a frame budget while rootMargin
+// lets it finish before the card reaches the viewport.
+function _flushVisibleSummaryPosts() {
+  _pendingSummaryRaf = 0;
+  if (document.hidden || !_pendingSummaryPosts.size) return;
+  const batch = [];
+  for (const node of _pendingSummaryPosts) {
+    _pendingSummaryPosts.delete(node);
+    if (node?.isConnected) batch.push(node);
+    if (batch.length >= FB_SUMMARY_POSTS_PER_FRAME) break;
+  }
+  if (batch.length) {
+    try {
+      injectSummaryOnPosts(batch, {
+        allowDuringScroll: true,
+        limit: FB_SUMMARY_POSTS_PER_FRAME,
+      });
+    } catch (_) {}
+  }
+  if (_pendingSummaryPosts.size) _scheduleVisibleSummaryFlush();
+}
+
+function _scheduleVisibleSummaryFlush() {
+  if (document.hidden || _pendingSummaryRaf || !_pendingSummaryPosts.size) return;
+  _pendingSummaryRaf = requestAnimationFrame(_flushVisibleSummaryPosts);
 }
 
 function _flushPendingFeedPosts() {
@@ -2484,18 +2533,21 @@ function createBtn() {
   return d;
 }
 
+function summaryActionMarkup(labelClass = "fbs-inline-label") {
+  return '<span class="' + labelClass + '" title="Tóm tắt nội dung">Tóm tắt</span>';
+}
+
 function createInlineBtn() {
   const d = document.createElement("span");
-  d.className = "fbs-btn-inline";
+  d.className = "fbs-btn-inline fbs-summary-action";
   d.setAttribute("role", "button");
   d.setAttribute("tabindex", "0");
   d.setAttribute("data-fbs-ui", "v3");
+  d.setAttribute("data-fbs-summary-ui", SUMMARY_UI_VERSION);
   d.setAttribute("data-fbs-action", "summarize");
   d.setAttribute("aria-label", "Tóm tắt bài viết");
   d.setAttribute("aria-haspopup", "dialog");
-  d.style.cssText =
-    "cursor:pointer;font-size:inherit;font-family:inherit;background:none;border:none;padding:0;margin:0;display:inline;line-height:inherit;vertical-align:baseline;height:auto;width:auto;max-height:none;writing-mode:horizontal-tb;";
-  d.innerHTML = '<span class="fbs-inline-label" title="Tóm tắt nội dung">Tóm tắt</span>';
+  d.innerHTML = summaryActionMarkup();
   return d;
 }
 
@@ -2769,9 +2821,9 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
     return;
   }
 
-  if (!text || text.length < 50) {
+  if (!text || text.length < SUMMARY_MIN_LEN) {
     openOverlay(
-      '<div class="fbs-error">Text quá ngắn để tóm tắt.</div>',
+      '<div class="fbs-error">Text quá ngắn để tóm tắt (cần ít nhất 30 ký tự).</div>',
       false,
     );
     return;
@@ -2928,22 +2980,39 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
   const summaryTimeoutId = setTimeout(() => {
     if (!isSummarizing) return;
     isSummarizing = false;
-    openOverlay(
-      displayError({
-        message: "Tóm tắt mất quá nhiều thời gian",
-        detail: "Provider AI không hoàn tất phản hồi trong 90 giây.",
-        action: "Thử lại hoặc chọn provider khác.",
-        severity: "warning",
-        retryable: true,
-      }),
-      false,
-      type,
-    );
+    const partial = streamBuffer.trim();
+    if (partial) {
+      // Do not strand a usable response behind the streaming-only footer.
+      // Finalizing the partial result restores Đăng / Sửa / Lại immediately.
+      summaryCache.set(cacheKey, partial);
+      openOverlay(
+        '<div class="fbs-result">' + fmt(partial) + "</div>" +
+          '<div class="fbs-quality-warn">Provider đã ngừng phản hồi. Đây là phần nội dung đã nhận được; bạn có thể sửa hoặc thử tạo lại.</div>',
+        false,
+        type,
+      );
+    } else {
+      openOverlay(
+        displayError({
+          message: "Tóm tắt mất quá nhiều thời gian",
+          detail: "Provider AI không hoàn tất phản hồi trong 90 giây.",
+          action: "Thử lại hoặc chọn provider khác.",
+          severity: "warning",
+          retryable: true,
+        }),
+        false,
+        type,
+      );
+    }
     try {
       currentPort?.disconnect();
     } catch (_) {}
     currentPort = null;
-    finishSummarize({ ok: false, error: "timeout" });
+    finishSummarize(
+      partial
+        ? { ok: true, summary: partial, partial: true }
+        : { ok: false, error: "timeout" },
+    );
   }, 90000);
 
   function renderStream() {
@@ -3133,6 +3202,18 @@ chrome.runtime.onMessage.addListener((msg) => {
 function inject(target, seeMoreClickable, textContainer, seeMoreOriginal) {
   if (isFacebookPersonalProfileHome()) return;
 
+  // A Chrome extension reload leaves previously injected DOM behind. Remove
+  // old Summary revisions before checking the per-instance WeakSet so every
+  // post converges on the same component without requiring a Facebook reload.
+  target
+    .querySelectorAll(
+      `.fbs-summary-control:not([data-fbs-summary-ui="${SUMMARY_UI_VERSION}"]), ` +
+        `.fbs-chip-host:not([data-fbs-summary-ui="${SUMMARY_UI_VERSION}"])`,
+    )
+    .forEach((el) => {
+      try { el.remove(); } catch (_) {}
+    });
+
   if (injected.has(target)) {
     // Keep if a healthy (non-stretched) button already exists
     const existing = target.querySelector(".fbs-wrap[data-fbs-ui='v3'] .fbs-btn, .fbs-btn-inline[data-fbs-ui='v3']");
@@ -3153,6 +3234,8 @@ function inject(target, seeMoreClickable, textContainer, seeMoreOriginal) {
   if (canInline) {
     const wrap = document.createElement("span");
     wrap.setAttribute("data-fbs-ui", "v3");
+    wrap.setAttribute("data-fbs-theme", currentTheme);
+    wrap.setAttribute("data-fbs-summary-ui", SUMMARY_UI_VERSION);
     wrap.className = "fbs-wrap fbs-wrap-inline fbs-summary-control";
     const btnNode = createInlineBtn();
     if (btnNode.setAttribute) btnNode.setAttribute("data-fbs-ui", "v3");
@@ -3163,12 +3246,6 @@ function inject(target, seeMoreClickable, textContainer, seeMoreOriginal) {
     }
     wrap.appendChild(btnNode);
     if (SITE === "facebook") {
-      // Separator + action stay in one unbreakable unit after "Xem thêm".
-      const sep = document.createElement("span");
-      sep.className = "fbs-inline-sep";
-      sep.setAttribute("aria-hidden", "true");
-      sep.textContent = " · ";
-      wrap.insertBefore(sep, btnNode);
       try {
         const afterEl =
           (seeMoreClickable && seeMoreClickable.parentElement && seeMoreClickable) ||
@@ -3530,7 +3607,11 @@ listeners.push({ element: document, event: "mousedown", handler: mousedownHandle
 // on the feed (FB mutates constantly while scrolling and freezes the tab).
 const viewportScanSig = new WeakMap();
 function _viewportFingerprint(el) {
-  return ((el && el.textContent) || "").replace(/\s+/g, " ").trim().slice(0, 120);
+  if (!el) return "";
+  const semantic = el.querySelector?.(FB_POST_BODY_SELECTOR);
+  const raw = (semantic?.textContent || el.textContent || "").trim();
+  // Avoid normalizing the entire post/comment tree on every IO callback.
+  return raw.length + ":" + raw.slice(0, 120).replace(/\s+/g, " ");
 }
 function _isViewportScanCurrent(el) {
   if (!el || el.dataset.fbsViewportScanned !== "1") return false;
@@ -3566,10 +3647,12 @@ if (typeof IntersectionObserver !== "undefined") {
           visiblePosts.delete(el);
         }
       }
-      // Process after scroll settles (or immediately if already idle).
+      // Summary controls have their own one-card-per-frame fast path. Heavier
+      // sponsored/filter work still waits until scrolling settles.
+      _scheduleVisibleSummaryFlush();
       if (!_isFbScrollBusy()) _schedulePendingFlush();
     },
-    { rootMargin: "100px 0px", threshold: 0 },
+    { rootMargin: "360px 0px", threshold: 0 },
   );
 }
 
@@ -3583,6 +3666,58 @@ if (SITE === "facebook") {
     event: "scroll",
     handler: _markFbScrollBusy,
     options: { capture: true, passive: true },
+  });
+}
+
+// Facebook replaces the status subtree after "See more". Because FeedWriter's
+// inline control intentionally lives beside that label, the replacement can
+// remove it. A capture listener schedules three bounded, summary-only retries;
+// no persistent subtree MutationObserver is needed.
+const _summaryRefreshTimers = new Set();
+
+function _queueSummaryRefresh(post, delay) {
+  const timer = setTimeout(() => {
+    _summaryRefreshTimers.delete(timer);
+    if (!post?.isConnected) return;
+    post.dataset.fbsViewportScanned = "0";
+    viewportScanSig.delete(post);
+    _pendingSummaryPosts.add(post);
+    _scheduleVisibleSummaryFlush();
+  }, delay);
+  _summaryRefreshTimers.add(timer);
+}
+
+function _handleFacebookSeeMoreClick(event) {
+  if (SITE !== "facebook" || document.hidden) return;
+  const target = event.target?.closest?.('[role="button"]');
+  if (!target || target.closest("[data-fbs-ui]")) return;
+  const label = (target.textContent || "")
+    .replace(/\u00a0/g, " ")
+    .replace(/\.+/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  if (!label || label.length > 32) return;
+  if (!SEE_MORE.some((keyword) => label === keyword || label.startsWith(keyword))) {
+    return;
+  }
+  const body = _findFacebookPostBodyFrom(target);
+  const post =
+    (body && Array.from(visiblePosts).find((candidate) => candidate.contains(body))) ||
+    body?.closest?.(
+      'article[role="article"], [data-virtualized], div[data-pagelet^="FeedUnit"]',
+    );
+  if (!post) return;
+  for (const delay of [0, 80, 240]) _queueSummaryRefresh(post, delay);
+}
+
+if (SITE === "facebook") {
+  document.addEventListener("click", _handleFacebookSeeMoreClick, true);
+  listeners.push({
+    element: document,
+    event: "click",
+    handler: _handleFacebookSeeMoreClick,
+    options: true,
   });
 }
 
@@ -3619,7 +3754,9 @@ function _observeFeedUnitsFromAddedNode(node) {
   ) {
     candidates.push(node);
   }
-  if (node.querySelectorAll) {
+  // Direct feed children are already the unit we need. Descendant probing is
+  // reserved for wrapper insertions so ordinary scroll append stays O(1).
+  if (!candidates.length && node.querySelectorAll) {
     for (const candidate of node.querySelectorAll(selector)) {
       candidates.push(candidate);
       if (candidates.length >= 12) break;
@@ -3632,18 +3769,19 @@ function _observeFeedUnitsFromAddedNode(node) {
 
 function _flushPendingFeedRootDiscovery() {
   pendingFeedRootDiscoveryRaf = 0;
-  if (document.hidden || _isFbScrollBusy()) return;
+  if (document.hidden) return;
   let inspected = 0;
+  const limit = _isFbScrollBusy() ? 1 : 8;
   for (const node of pendingFeedRootAdditions) {
     pendingFeedRootAdditions.delete(node);
     _observeFeedUnitsFromAddedNode(node);
-    if (++inspected >= 8) break;
+    if (++inspected >= limit) break;
   }
   if (pendingFeedRootAdditions.size) _schedulePendingFeedRootDiscovery();
 }
 
 function _schedulePendingFeedRootDiscovery() {
-  if (document.hidden || _isFbScrollBusy()) return;
+  if (document.hidden) return;
   if (pendingFeedRootDiscoveryRaf || !pendingFeedRootAdditions.size) return;
   pendingFeedRootDiscoveryRaf = requestAnimationFrame(
     _flushPendingFeedRootDiscovery,
@@ -3809,7 +3947,7 @@ function _mountPostChip(article) {
   }
   if (SITE === "facebook") {
     const textEl = _findFacebookStatusText(article);
-    if (textEl) _mountInlineStatusChip(article, textEl, MIN_LEN);
+    if (textEl) _mountInlineStatusChip(article, textEl, SUMMARY_MIN_LEN);
     return;
   }
   // Already has a healthy host?
@@ -3833,16 +3971,17 @@ function _mountPostChip(article) {
   const host = document.createElement("div");
   host.className = "fbs-chip-host";
   host.setAttribute("data-fbs-ui", "v3");
+  host.setAttribute("data-fbs-theme", currentTheme);
+  host.setAttribute("data-fbs-summary-ui", SUMMARY_UI_VERSION);
 
   const btn = document.createElement("button");
   btn.type = "button";
-  btn.className = "fbs-allpost-btn";
+  btn.className = "fbs-allpost-btn fbs-summary-action";
   btn.setAttribute("data-fbs-action", "summarize");
   btn.setAttribute("data-fbs-ui", "v3");
+  btn.setAttribute("data-fbs-summary-ui", SUMMARY_UI_VERSION);
   btn.title = "Tóm tắt bài này";
-  btn.innerHTML =
-    '<img class="fbs-btn-icon" src="' + ICON_BASE64 + '" width="12" height="12" alt="" aria-hidden="true">' +
-    '<span class="fbs-btn-label">Tóm tắt</span>';
+  btn.innerHTML = summaryActionMarkup("fbs-btn-label");
 
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -3875,13 +4014,15 @@ function _findFacebookStatusText(article) {
   let bestLength = 0;
   for (const node of article.querySelectorAll(FB_POST_BODY_SELECTOR)) {
     if (node.closest("form") || node.closest("[role=dialog]")) continue;
-    const length = (node.textContent || "").replace(/\s+/g, " ").trim().length;
+    const length = (node.textContent || "").trim().length;
     if (length > bestLength) {
       best = node;
       bestLength = length;
     }
   }
-  if (best) return best;
+  // Tiny semantic nodes such as story/composer labels can live inside the same
+  // virtualized shell. Do not let them suppress the real status fallback.
+  if (best && bestLength >= SUMMARY_MIN_LEN) return best;
 
   // Fallback when Facebook drops semantic message attrs: prefer the longest
   // dir=auto text block that isn't comment/composer chrome.
@@ -3890,8 +4031,8 @@ function _findFacebookStatusText(article) {
     if (node.closest('[aria-label*="bình luận" i], [aria-label*="comment" i], [aria-label*="Viết" i]')) {
       continue;
     }
-    const length = (node.textContent || "").replace(/\s+/g, " ").trim().length;
-    if (length < 40 || length <= bestLength) continue;
+    const length = (node.textContent || "").trim().length;
+    if (length < SUMMARY_MIN_LEN || length <= bestLength) continue;
     let articleDepth = 0;
     let parent = node.parentElement;
     while (parent && parent !== article) {
@@ -3906,13 +4047,19 @@ function _findFacebookStatusText(article) {
 }
 
 function _mountInlineStatusChip(post, textEl, minimumLength = 50) {
-  if (
-    !post ||
-    !textEl ||
-    post.querySelector('.fbs-summary-control[data-fbs-ui="v3"]')
-  ) {
-    return;
-  }
+  if (!post || !textEl) return;
+  const currentControl = post.querySelector(
+    `.fbs-summary-control[data-fbs-ui="v3"]` +
+      `[data-fbs-summary-ui="${SUMMARY_UI_VERSION}"]`,
+  );
+  post
+    .querySelectorAll(
+      `.fbs-summary-control:not([data-fbs-summary-ui="${SUMMARY_UI_VERSION}"])`,
+    )
+    .forEach((el) => {
+      try { el.remove(); } catch (_) {}
+    });
+  if (currentControl) return;
   // Gate on the real status body — feed-unit chrome (author/comments/UI) can
   // make the outer article look long even when the status is one sentence.
   if (_statusBodyTextLength(textEl) < minimumLength) return;
@@ -3922,23 +4069,21 @@ function _mountInlineStatusChip(post, textEl, minimumLength = 50) {
     try { el.remove(); } catch (_) {}
   });
 
-  const isFacebookRow = SITE === "facebook";
-  const wrap = document.createElement(isFacebookRow ? "div" : "span");
-  wrap.className = isFacebookRow
-    ? "fbs-wrap fbs-summary-control fbs-summary-row"
-    : "fbs-wrap fbs-wrap-inline fbs-x-status-inline fbs-summary-control";
+  const wrap = document.createElement("span");
+  wrap.className =
+    "fbs-wrap fbs-wrap-inline fbs-status-inline fbs-summary-control";
   wrap.setAttribute("data-fbs-ui", "v3");
+  wrap.setAttribute("data-fbs-theme", currentTheme);
+  wrap.setAttribute("data-fbs-summary-ui", SUMMARY_UI_VERSION);
   const btn = createInlineBtn();
   if (btn.firstChild?.nodeType === Node.TEXT_NODE) btn.firstChild.textContent = "";
   wrap.appendChild(btn);
 
-  if (isFacebookRow && textEl.parentElement) {
-    textEl.parentElement.insertBefore(wrap, textEl.nextSibling);
-  } else {
-    _matchInlineBtnTypography(btn, textEl);
-    textEl.appendChild(document.createTextNode(" "));
-    textEl.appendChild(wrap);
-  }
+  // Keep the action inside the status text's own inline formatting context.
+  // Adding a sibling row to Facebook's internal flex/grid wrapper can make
+  // space-between/min-height rules push the action to the bottom of the card.
+  _matchInlineBtnTypography(btn, textEl);
+  textEl.appendChild(wrap);
 
   const summarizePost = async (event) => {
     event.preventDefault();
@@ -3948,7 +4093,10 @@ function _mountInlineStatusChip(post, textEl, minimumLength = 50) {
     const label = btn.querySelector(".fbs-inline-label");
     if (label) label.textContent = "Đang tóm tắt…";
     try {
-      const currentTextEl = post.querySelector('[data-testid="tweetText"]') || textEl;
+      const currentTextEl =
+        (SITE === "facebook" && _findFacebookStatusText(post)) ||
+        post.querySelector('[data-testid="tweetText"]') ||
+        textEl;
       const clone = currentTextEl.cloneNode(true);
       clone.querySelectorAll("[data-fbs-ui]").forEach((el) => el.remove());
       const text = (clone.textContent || "").replace(/\s+/g, " ").trim();
@@ -4069,7 +4217,7 @@ function scanFBAllPosts() {
     if (seeMore) {
       inject(article, findClickable(seeMore), textEl, seeMore);
     } else {
-      _mountInlineStatusChip(article, textEl, MIN_LEN);
+      _mountInlineStatusChip(article, textEl, SUMMARY_MIN_LEN);
     }
     fbAllPostInjected.add(article);
   }

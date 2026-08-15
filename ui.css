@@ -106,24 +106,21 @@ button.fbs-allpost-btn[data-fbs-ui="v3"],
 button.fbs-allpost-btn {
   all: unset !important;
   pointer-events: auto !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  gap: 4px !important;
-  height: 28px !important;
-  min-height: 28px !important;
-  max-height: 28px !important;
+  display: inline !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
   width: auto !important;
   max-width: 148px !important;
-  padding: 0 9px !important;
+  padding: 0 !important;
   margin: 0 !important;
-  border: 1px solid var(--fw-border) !important;
-  border-radius: var(--fw-radius-pill) !important;
-  background: color-mix(in srgb, var(--fw-surface) 84%, transparent) !important;
-  color: var(--fw-text-2) !important;
-  font-size: 11px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: #7fc8bd !important;
+  font-size: 12px !important;
   font-weight: 600 !important;
-  line-height: 1 !important;
+  line-height: 18px !important;
   white-space: nowrap !important;
   writing-mode: horizontal-tb !important;
   cursor: pointer !important;
@@ -135,53 +132,30 @@ button.fbs-allpost-btn {
   bottom: auto !important;
   left: auto !important;
   transform: none !important;
-  opacity: 0.72 !important;
-  transition: opacity 0.14s ease, background 0.14s ease !important;
+  opacity: 1 !important;
+  transition: color 0.14s ease !important;
   appearance: none !important;
   flex: 0 0 auto !important;
   align-self: flex-start !important;
   contain: layout !important;
 }
 
-/* Light feed: the translucent grey chip drowns in Facebook's white cards.
-   Give it solid paper, teal ink, and near-full opacity so it reads at rest. */
+/* Match Facebook's neutral secondary action in light mode. */
 .fbs-chip-host[data-fbs-theme="light"] .fbs-allpost-btn,
 .fbs-chip-host[data-fbs-theme="light"] button.fbs-allpost-btn {
-  background: #ffffff !important;
-  border-color: var(--fw-border-strong) !important;
-  color: var(--fw-accent) !important;
-  opacity: 0.95 !important;
-  box-shadow: 0 1px 4px rgba(15, 20, 28, 0.14) !important;
-}
-
-.fbs-chip-host:hover .fbs-allpost-btn,
-article:hover > .fbs-chip-host .fbs-allpost-btn,
-[data-pagelet^="FeedUnit"]:hover > .fbs-chip-host .fbs-allpost-btn,
-[data-virtualized]:hover > .fbs-chip-host .fbs-allpost-btn {
-  opacity: 1 !important;
-}
-
-.fbs-allpost-btn:focus,
-.fbs-allpost-btn:focus-visible {
-  opacity: 1 !important;
+  background: transparent !important;
+  color: #39726d !important;
+  box-shadow: none !important;
 }
 
 .fbs-allpost-btn:hover {
-  background: var(--fw-surface-2) !important;
-  border-color: var(--fw-accent) !important;
-  color: var(--fw-accent) !important;
+  background: transparent !important;
+  color: #a5ddd5 !important;
 }
 
-.fbs-allpost-btn img,
-.fbs-allpost-btn .fbs-btn-icon {
-  width: 12px !important;
-  height: 12px !important;
-  max-width: 12px !important;
-  max-height: 12px !important;
-  display: block !important;
-  flex-shrink: 0 !important;
-  border-radius: 2px !important;
-  object-fit: contain !important;
+.fbs-chip-host[data-fbs-theme="light"] .fbs-allpost-btn:hover {
+  background: transparent !important;
+  color: #285f5a !important;
 }
 
 .fbs-allpost-btn .fbs-btn-label {
@@ -191,10 +165,9 @@ article:hover > .fbs-chip-host .fbs-allpost-btn,
   white-space: nowrap !important;
 }
 
-/* Inline after "Xem thêm" — true inline so the action shares the exact
-   baseline/line box of "Xem thêm" (inline-block would create its own line
-   box and drift a few px when Facebook's line-height differs). */
-.fbs-wrap-inline[data-fbs-ui="v3"],
+/* Inline after "Xem thêm". It must remain inside Facebook's native line box:
+   any inline-flex/fixed height here changes line metrics and breaks the feed. */
+.fbs-wrap-inline[data-fbs-ui="v3"][data-fbs-summary-ui="text-v2"],
 .fbs-wrap.fbs-wrap-inline {
   position: relative !important;
   display: inline !important;
@@ -214,125 +187,72 @@ article:hover > .fbs-chip-host .fbs-allpost-btn,
   box-shadow: none !important;
 }
 
-.fbs-wrap-inline .fbs-btn-inline,
-.fbs-btn-inline[data-fbs-ui="v3"] {
-  display: inline !important;
-  position: relative !important;
-  width: auto !important;
-  height: auto !important;
-  max-height: none !important;
-  background: none !important;
-  border: none !important;
-  box-shadow: none !important;
-  padding: 0 !important;
-  margin: 0 !important;
-  vertical-align: baseline !important;
-  white-space: nowrap !important;
-}
-
-.fbs-wrap-inline .fbs-inline-sep {
-  display: inline !important;
-  color: var(--fw-text-3) !important;
-  font-size: inherit !important;
-  font-weight: 400 !important;
+.fbs-wrap-inline[data-fbs-ui="v3"][data-fbs-summary-ui="text-v2"]::before,
+.fbs-wrap.fbs-wrap-inline::before {
+  content: " · " !important;
+  color: #b0b3b8 !important;
+  font: inherit !important;
   line-height: inherit !important;
   white-space: pre !important;
-  vertical-align: baseline !important;
   pointer-events: none !important;
-  user-select: none !important;
 }
 
-.fbs-wrap-inline .fbs-btn-inline > span,
-.fbs-btn-inline[data-fbs-ui="v3"] > span {
+.fbs-wrap-inline[data-fbs-theme="light"]::before {
+  color: #65676b !important;
+}
+
+/* One visual contract for every feed-level Summary action. */
+.fbs-btn-inline.fbs-summary-action[data-fbs-ui="v3"][data-fbs-summary-ui="text-v2"] {
+  all: unset !important;
+  box-sizing: border-box !important;
   display: inline !important;
-  align-items: baseline !important;
-  gap: 0 !important;
+  width: auto !important;
+  height: auto !important;
   min-height: 0 !important;
+  max-height: none !important;
   padding: 0 !important;
+  border: 0 !important;
   border-radius: 0 !important;
   background: transparent !important;
-  border: 0 !important;
-  color: var(--fw-accent) !important;
-  /* Match status/"Xem thêm" size via wrapper inline styles; 15px guards chrome. */
+  color: #7fc8bd !important;
+  font-family: inherit !important;
   font-size: inherit !important;
   font-weight: 600 !important;
-  font-family: inherit !important;
   line-height: inherit !important;
-  letter-spacing: inherit !important;
   white-space: nowrap !important;
   vertical-align: baseline !important;
+  cursor: pointer !important;
   box-shadow: none !important;
-  transition: color 0.16s ease !important;
+  contain: none !important;
+  transition: color 0.14s ease !important;
 }
 
-.fbs-wrap-inline:hover .fbs-btn-inline > span,
-.fbs-btn-inline[data-fbs-ui="v3"]:hover > span,
-.fbs-btn-inline[data-fbs-ui="v3"]:focus-visible > span {
-  filter: none !important;
+.fbs-wrap[data-fbs-theme="light"] .fbs-btn-inline.fbs-summary-action {
   background: transparent !important;
-  border-color: transparent !important;
-  color: var(--fw-accent-hover) !important;
-  opacity: 1 !important;
-  box-shadow: none !important;
-  transform: none !important;
-  text-decoration: none !important;
+  color: #39726d !important;
 }
 
-/* Full Facebook posts have no "Xem thêm" anchor. Keep their action in a
-   dedicated row immediately below the status body instead of gluing it to the
-   final sentence or floating over media. */
-.fbs-summary-row[data-fbs-ui="v3"],
-.fbs-wrap.fbs-summary-row {
-  position: relative !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: flex-end !important;
-  width: 100% !important;
-  min-height: 32px !important;
-  margin: 4px 0 0 !important;
-  padding: 0 12px !important;
-  inset: auto !important;
+.fbs-btn-inline.fbs-summary-action[data-fbs-ui="v3"][data-fbs-summary-ui="text-v2"]:hover {
   background: transparent !important;
-  border: 0 !important;
-  box-shadow: none !important;
-  contain: layout style !important;
+  color: #a5ddd5 !important;
 }
 
-.fbs-summary-row[data-fbs-theme="light"] {
-  --fw-accent: #0f766e;
-  --fw-accent-hover: #0d5f58;
-  --fw-accent-soft: rgba(15, 118, 110, 0.1);
+.fbs-wrap[data-fbs-theme="light"] .fbs-btn-inline.fbs-summary-action:hover {
+  background: transparent !important;
+  color: #285f5a !important;
 }
 
-.fbs-summary-row .fbs-btn-inline {
-  display: inline-flex !important;
-  align-items: center !important;
-  min-height: 28px !important;
-  border-radius: var(--fw-radius-pill) !important;
-}
-
-.fbs-summary-row .fbs-btn-inline > span {
-  display: inline-flex !important;
-  align-items: center !important;
-  min-height: 28px !important;
-  padding: 0 9px !important;
-  border: 1px solid color-mix(in srgb, var(--fw-accent) 28%, transparent) !important;
-  border-radius: var(--fw-radius-pill) !important;
-  background: color-mix(in srgb, var(--fw-accent) 7%, transparent) !important;
-  color: var(--fw-accent) !important;
-  font-size: 12px !important;
-  line-height: 1 !important;
-}
-
-.fbs-summary-row .fbs-btn-inline:hover > span,
-.fbs-summary-row .fbs-btn-inline:focus-visible > span {
-  border-color: color-mix(in srgb, var(--fw-accent) 52%, transparent) !important;
-  background: var(--fw-accent-soft) !important;
-  color: var(--fw-accent-hover) !important;
+.fbs-summary-action .fbs-inline-label,
+.fbs-summary-action .fbs-btn-label {
+  display: inline !important;
+  color: inherit !important;
+  font: inherit !important;
+  line-height: inherit !important;
+  white-space: nowrap !important;
 }
 
 .fbs-btn-inline[data-fbs-ui="v3"]:focus-visible {
-  outline: 2px solid var(--fw-accent) !important;
+  outline: 2px solid #0866ff !important;
   outline-offset: 2px !important;
 }
 
@@ -355,8 +275,8 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
   vertical-align: baseline !important;
 }
 
-/* Kill legacy absolute wraps that caused full-height bars */
-.fbs-wrap:not(.fbs-wrap-inline):not(.fbs-summary-row) {
+/* Kill legacy absolute/row wraps that caused full-height bars or blank rows. */
+.fbs-wrap:not(.fbs-wrap-inline) {
   display: none !important;
 }
 
