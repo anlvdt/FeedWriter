@@ -322,7 +322,7 @@ function classifyProviderError(errMsg = "", status = 0) {
 }
 
 const MAX_INPUT_CHARS = 8000;
-const MAX_OUTPUT_TOKENS = 1024;
+const MAX_OUTPUT_TOKENS = 4096;
 
 async function getSystemPrompt(
   site,
@@ -393,28 +393,25 @@ async function getSystemPrompt(
     "\n\nTRƯỚC KHI VIẾT, hãy tự xác định loại nội dung (tin tức/ý kiến cá nhân/review sản phẩm/hướng dẫn/câu chuyện) và điều chỉnh giọng văn phù hợp.";
 
   prompt +=
-    "\n- Tiêu đề (dòng đầu tiên) viết bình thường, hệ thống sẽ tự động viết hoa.";
+    "\n- Tiêu đề (dòng đầu tiên) viết bình thường, hệ thống sẽ tự động viết hoa." +
+    "\n- Chỉ viết MỘT bài, bám đúng nguồn. Hết ý thì dừng. Không viết tiêu đề hay tin thứ hai.";
 
   // Tone override (from overlay tone buttons)
   // All tones inherit the narrative voice rule from the base prompt
   if (tone) {
     const toneMap = {
-      short: "\n\nGHI ĐÈ — RÚT NGẮN TỐI ĐA:\n" +
-        "- Tiêu đề + 2-3 bullets, KHÔNG cần đoạn mở đầu.\n" +
-        "- Mỗi bullet tối đa 10 từ. Tổng tối đa 60 từ.\n" +
-        "- KHÔNG chia section headers. Giọng tường thuật ngôi thứ ba.",
+      short: "\n\nGHI ĐÈ — VIẾT NGẮN GỌN:\n" +
+        "- Tiêu đề + 2-4 câu đúng dữ liệu gốc, tách đoạn nếu có 2 ý.\n" +
+        "- KHÔNG khung mở/thân/kết. Giọng tường thuật ngôi thứ ba. CẤM câu hỏi mở.",
       academic: "\n\nGHI ĐÈ — PHONG CÁCH HỌC THUẬT:\n" +
-        "- Giọng phân tích khách quan ngôi thứ ba, dùng thuật ngữ chuyên ngành chính xác.\n" +
-        "- Bullets nêu dữ liệu, trích dẫn, kết luận — không dùng ngôn ngữ casual.\n" +
-        "- Vẫn giữ format: tiêu đề → 1-2 câu → · bullets",
+        "- Giọng phân tích khách quan ngôi thứ ba, thuật ngữ chính xác.\n" +
+        "- Mỗi luận điểm một đoạn, cách 1 dòng trống. Chỉ dùng dữ liệu có trong nguồn. CẤM câu sáo.",
       viral: "\n\nGHI ĐÈ — PHONG CÁCH VIRAL:\n" +
-        "- Tiêu đề gây sốc hoặc tò mò mạnh.\n" +
-        "- Bullets nhấn điểm WOW, bỏ chi tiết nhàm chán.\n" +
-        "- Kết thúc bằng 1 câu hỏi mở. Vẫn giữ giọng tường thuật, CẤM ngôi thứ nhất/hai.",
+        "- Tiêu đề gây tò mò nhưng cụ thể, không clickbait rỗng.\n" +
+        "- Mỗi ý một đoạn. CẤM khung mở/thân/kết. CẤM câu hỏi mở. CẤM ngôi thứ nhất/hai.",
       bullet: "\n\nGHI ĐÈ — BULLET POINTS THUẦN:\n" +
-        "- Chỉ tiêu đề + bullets (·), KHÔNG viết đoạn văn.\n" +
-        "- 5-7 bullets, mỗi bullet format: · Keyword: giải thích ngắn\n" +
-        "- Tối đa 15 từ/bullet. KHÔNG chia section headers. Giọng tường thuật.",
+        "- Tiêu đề + bullets (·) đúng dữ liệu gốc. Mỗi bullet: · Keyword: giải thích\n" +
+        "- KHÔNG khung mở/thân/kết. Giọng tường thuật. CẤM câu hỏi mở.",
     };
     if (toneMap[tone]) prompt += toneMap[tone];
   }
@@ -517,7 +514,7 @@ async function callGroqStream(
     url: "https://api.groq.com/openai/v1/chat/completions",
     headers: { Authorization: "Bearer " + apiKey },
     body: {
-      model: "llama-3.3-70b-versatile",
+      model: "openai/gpt-oss-120b",
       stream: true,
       messages: [
         { role: "system", content: systemPrompt },
@@ -669,7 +666,7 @@ async function callOpenrouterStream(
       "X-Title": "FeedWriter",
     },
     body: {
-      model: "meta-llama/llama-3.3-70b-instruct",
+      model: "openai/gpt-oss-120b",
       stream: true,
       messages: [
         { role: "system", content: systemPrompt },
@@ -695,7 +692,7 @@ async function callOpenrouterNonStream(apiKey, userMessage, systemPrompt) {
       "X-Title": "FeedWriter",
     },
     {
-      model: "meta-llama/llama-3.3-70b-instruct",
+      model: "openai/gpt-oss-120b",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userMessage },

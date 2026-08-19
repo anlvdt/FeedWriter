@@ -28,5 +28,9 @@ describe("getSystemPrompt", () => {
 
     assert.match(prompt, /Tiêu đề \(dòng đầu tiên\) viết bình thường/);
     assert.match(prompt, /Bài viết từ Facebook/);
+    assert.match(prompt, /CẤM khung mở bài \/ thân bài \/ kết bài/);
+    assert.match(prompt, /CẤM một khối văn liền mạch/);
+    assert.match(prompt, /Giải thích thuật ngữ/);
+    assert.match(prompt, /BẮT BUỘC có 2-5 mục/);
   });
 });

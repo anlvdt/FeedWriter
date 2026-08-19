@@ -113,7 +113,171 @@ describe("StatusFormatter.format", () => {
       "Thuật ngữ AI cần biết\n\nNội dung chính.\n\n" +
       "Giải thích thuật ngữ:\n· RAG: Truy xuất dữ liệu trước khi sinh câu trả lời";
     const out = StatusFormatter.format(raw, "facebook", { hasRepo: false });
-    assert.match(out, /GIẢI THÍCH THUẬT NGỮ/i);
+    assert.match(out, /GIẢI THÍCH THUẬT NGỮ/);
+    assert.equal((out.match(/Giải thích thuật ngữ/g) || []).length, 0, out);
     assert.match(out, /Truy xuất dữ liệu trước khi sinh câu trả lời/);
+    const html = StatusFormatter.toDisplayHTML(raw, { hasRepo: false });
+    assert.match(html, /GIẢI THÍCH THUẬT NGỮ/);
+  });
+
+  it("keeps glossary items after a blank line under the heading", () => {
+    const raw =
+      "Context window của model mới\n\n" +
+      "Model nới giới hạn ngữ cảnh lên 1 triệu token.\n\n" +
+      "Giải thích thuật ngữ:\n\n" +
+      "· RAG: Truy xuất dữ liệu trước khi sinh câu trả lời\n" +
+      "· Fine-tuning: Huấn luyện thêm model trên dữ liệu riêng";
+    const out = StatusFormatter.format(raw, "facebook", { hasRepo: false });
+    assert.match(out, /GIẢI THÍCH THUẬT NGỮ/);
+    assert.match(out, /· RAG: Truy xuất dữ liệu trước khi sinh câu trả lời/);
+    assert.match(out, /· Fine-tuning: Huấn luyện thêm model trên dữ liệu riêng/);
+    const beforeGlossary = out.split(/GIẢI THÍCH THUẬT NGỮ/)[0];
+    assert.ok(!/· RAG/.test(beforeGlossary), beforeGlossary);
+  });
+
+  it("does not turn a heading-only leftover term into body bullets", () => {
+    const raw =
+      "Công cụ review code tự động\n\n" +
+      "Dùng Codex để rà pull request.\n\n" +
+      "GIẢI THÍCH THUẬT NGỮ:\n\n" +
+      "· **codex‑auto‑review**";
+    const out = StatusFormatter.format(raw, "facebook", { hasRepo: false });
+    assert.ok(!/GIẢI THÍCH THUẬT NGỮ/.test(out), out);
+    assert.ok(!/codex‑auto‑review/.test(out), out);
+  });
+
+  it("drops a second all-caps article the model appended after the close", () => {
+    const raw =
+      "Codex cắt token rác trong hội thoại\n\n" +
+      "Codex 5.6 khuyên xóa log hết hạn khỏi context.\n\n" +
+      "Cách này giảm token vô ích trước mỗi lần gọi model.\n\n" +
+      "OPENAI NGỪNG FRONTIER RL, KHÔNG CÒN CUNG CẤP RESET VÀ KHUYẾN NGHỊ DÙNG LUNA\n\n" +
+      "OpenAI đã dừng dịch vụ Frontier RL và ngừng cung cấp tính năng reset cho người dùng.\n\n" +
+      "Công ty cũng đề nghị người dùng chuyển sang sử dụng Luna thay vì Frontier RL.";
+    const out = StatusFormatter.format(raw, "facebook", { hasRepo: false });
+    assert.match(out, /Codex 5\.6/);
+    assert.ok(!/FRONTIER RL/i.test(out), out);
+    assert.ok(!/\bLuna\b/i.test(out), out);
+  });
+
+  it("drops a filler close paragraph and keeps the glossary", () => {
+    const raw =
+      "OpenAI ra ChatGPT cho teen\n\n" +
+      "OpenAI mở gói ChatGPT dành cho người dùng vị thành niên, kèm chế độ giám sát của phụ huynh.\n\n" +
+      "Việc ra mắt này cung cấp cho người dùng teen công cụ học tập chuyên biệt và các biện pháp bảo vệ mạnh mẽ, đồng thời cho phép phụ huynh giám sát, đánh dấu bước tiến quan trọng trong chiến lược AI có trách nhiệm của OpenAI đối với trẻ vị thành niên.\n\n" +
+      "Giải thích thuật ngữ:\n" +
+      "· Parental control: Công cụ để phụ huynh xem và giới hạn hoạt động của con.";
+    const out = StatusFormatter.format(raw, "facebook", { hasRepo: false });
+    assert.ok(!/bước tiến/i.test(out), out);
+    assert.ok(!/chiến lược AI có trách nhiệm/i.test(out), out);
+    assert.match(out, /GIẢI THÍCH THUẬT NGỮ/);
+    assert.match(out, /Parental control/);
+    const html = StatusFormatter.toDisplayHTML(raw, { hasRepo: false });
+    assert.match(html, /GIẢI THÍCH THUẬT NGỮ/);
+    assert.ok(!/bước tiến/i.test(html), html);
+  });
+
+  it("does not treat a body feature list as a glossary", () => {
+    const raw =
+      "Ba điểm nổi bật của bản cập nhật\n\n" +
+      "Bản vá tập trung vào hiệu năng.\n\n" +
+      "· Tốc độ: nhanh hơn 20%\n" +
+      "· Pin: dùng được 12 giờ";
+    const out = StatusFormatter.format(raw, "facebook", { hasRepo: false });
+    assert.ok(!/GIẢI THÍCH THUẬT NGỮ/.test(out), out);
+    assert.match(out, /· Tốc độ: nhanh hơn 20%/);
+    assert.match(out, /· Pin: dùng được 12 giờ/);
+  });
+
+  it("splits a wall of text into title plus separate paragraphs", () => {
+    const raw =
+      "Huawei hạ giá Mate 70 Pro Max ngang Xiaomi Ultra\n\n" +
+      "Huawei đổi chiến lược giá: bản Pro Max lần đầu về sát phân khúc Ultra của Xiaomi. " +
+      "Mức giá mới cắt khoảng 15% so với lần ra mắt, kèm gói bảo hành 2 năm. " +
+      "Hệ sinh thái HarmonyOS vẫn là rào cản với người dùng Android. " +
+      "Động thái này cho thấy Huawei chấp nhận giảm biên lợi nhuận để lấy lại thị phần nội địa.";
+    const out = StatusFormatter.format(raw, "facebook", { hasRepo: false });
+    const body = out.replace(/\n\n━━━━━━━━━━\n👉 .+$/s, "");
+    const parts = body.split(/\n\n+/);
+    assert.ok(parts.length >= 3, `expected title + paragraphs, got ${parts.length}:\n${body}`);
+    assert.equal(parts[0], parts[0].toLocaleUpperCase("vi"));
+    assert.match(parts[1], /Huawei đổi chiến lược giá/);
+    assert.match(body, /thị phần nội địa/);
+    assert.ok(!/Mở bài|Thân bài|Kết bài/i.test(body), body);
+  });
+
+  it("strips printed structure labels from output", () => {
+    const raw =
+      "iPhone báo đầy bộ nhớ sau bản cập nhật\n\n" +
+      "Mở bài: iOS dọn cache kém khiến máy báo đầy dù ảnh không tăng.\n\n" +
+      "Thân bài: Người dùng phải xóa dữ liệu hệ thống thủ công để lấy lại vài GB.\n\n" +
+      "Kết bài: Cần sao lưu trước khi cập nhật bản tiếp theo.";
+    const out = StatusFormatter.format(raw, "facebook", { hasRepo: false });
+    assert.ok(!/Mở bài|Thân bài|Kết bài/i.test(out), out);
+    assert.match(out, /iOS dọn cache kém/);
+    assert.match(out, /sao lưu trước khi cập nhật/);
+  });
+
+  it("does not break version numbers when splitting sentences", () => {
+    const raw =
+      "iOS 18.2 sửa lỗi hao pin\n\n" +
+      "Bản iOS 18.2 giảm hao pin trên iPhone 15. Apple ghi nhận lỗi từ 18.1. Người dùng nên cập nhật ngay.";
+    const out = StatusFormatter.format(raw, "facebook", { hasRepo: false });
+    assert.match(out, /iOS 18\.2/);
+    assert.ok(!/iOS 18\n/.test(out), out);
+  });
+
+  it("keeps short tutorial steps instead of merging them into an essay", () => {
+    const raw =
+      "Ba bước dọn cache Chrome\n\n" +
+      "Làm lần lượt các bước sau.\n\n" +
+      "1. Mở chrome://settings/clearBrowserData\n" +
+      "2. Chọn Cached images and files\n" +
+      "3. Bấm Clear data";
+    const out = StatusFormatter.format(raw, "facebook", { hasRepo: false });
+    assert.match(out, /1\. Mở chrome/);
+    assert.match(out, /2\. Chọn Cached/);
+    assert.match(out, /3\. Bấm Clear data/);
+  });
+
+  it("strips markdown asterisks and stacked bullets on Facebook", () => {
+    const raw =
+      "Công cụ review code tự động\n\n" +
+      "Dùng **Codex** để rà PR.\n\n" +
+      "· · **codex‑auto‑review**\n" +
+      "· **RAG**: truy xuất dữ liệu trước khi sinh câu trả lời";
+    const out = StatusFormatter.format(raw, "facebook", { hasRepo: false });
+    assert.ok(!out.includes("*"), `Facebook text must not contain *: \n${out}`);
+    assert.ok(!/·\s*·/.test(out), `stacked bullets must collapse:\n${out}`);
+    assert.match(out, /CODEX/i);
+    assert.match(out, /codex‑auto‑review/);
+    assert.match(out, /RAG/);
+    const bulletLines = out.split("\n").filter((l) => l.startsWith("· "));
+    assert.ok(
+      bulletLines.some((l) => /^· codex‑auto‑review$/.test(l.trim())),
+      `expected a single-marker bullet, got:\n${bulletLines.join("\n")}`,
+    );
+  });
+
+  it("renders markdown bullets as HTML without leftover asterisks", () => {
+    const html = StatusFormatter.toDisplayHTML(
+      "Công cụ review\n\n· · **codex-auto-review**",
+      { hasRepo: false },
+    );
+    assert.ok(!html.includes("*"), html);
+    assert.match(html, /<strong>codex-auto-review<\/strong>/);
+  });
+
+  it("renders lead and close classes in the summary popup HTML", () => {
+    const raw =
+      "Codex cắt 85% token rác trong hội thoại\n\n" +
+      "Codex 5.6 khuyên xóa kế hoạch hủy và log hết hạn khỏi context. " +
+      "Prompt dọn ngữ cảnh giữ lại setup và code thành công. " +
+      "Cách này giảm token vô ích trước mỗi lần gọi model.";
+    const html = StatusFormatter.toDisplayHTML(raw, { hasRepo: false });
+    assert.match(html, /class="fbs-title-line"/);
+    assert.match(html, /class="fbs-para"/);
+    assert.equal((html.match(/fbs-para-lead|fbs-para-close/g) || []).length, 0);
+    assert.ok(!/Mở bài|Thân bài|Kết bài/i.test(html), html);
   });
 });

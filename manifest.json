@@ -51,6 +51,7 @@
         "content.js"
       ],
       "css": [
+        "fonts/be-vietnam-pro.css",
         "content.css",
         "ui.css"
       ],
@@ -59,25 +60,25 @@
     {
       "matches": ["https://*.threads.net/*"],
       "js": ["errors.js", "utils.js", "dom-helpers.js", "post-data.js", "status-formatter.js", "content-dom-runtime.js", "poster-threads.js", "cross-poster.js", "content-composer-runtime.js", "content.js"],
-      "css": ["content.css", "ui.css"],
+      "css": ["fonts/be-vietnam-pro.css", "content.css", "ui.css"],
       "run_at": "document_end"
     },
     {
       "matches": ["https://x.com/*", "https://twitter.com/*"],
       "js": ["errors.js", "utils.js", "dom-helpers.js", "post-data.js", "status-formatter.js", "content-dom-runtime.js", "poster-x.js", "cross-poster.js", "content-composer-runtime.js", "content.js"],
-      "css": ["content.css", "ui.css"],
+      "css": ["fonts/be-vietnam-pro.css", "content.css", "ui.css"],
       "run_at": "document_end"
     },
     {
       "matches": ["https://www.linkedin.com/*"],
       "js": ["errors.js", "utils.js", "dom-helpers.js", "post-data.js", "status-formatter.js", "content-dom-runtime.js", "poster-linkedin.js", "cross-poster.js", "content-composer-runtime.js", "content.js"],
-      "css": ["content.css", "ui.css"],
+      "css": ["fonts/be-vietnam-pro.css", "content.css", "ui.css"],
       "run_at": "document_end"
     },
     {
       "matches": ["https://www.reddit.com/*"],
       "js": ["errors.js", "utils.js", "dom-helpers.js", "post-data.js", "status-formatter.js", "content-dom-runtime.js", "poster-reddit.js", "cross-poster.js", "content-composer-runtime.js", "content.js"],
-      "css": ["content.css", "ui.css"],
+      "css": ["fonts/be-vietnam-pro.css", "content.css", "ui.css"],
       "run_at": "document_end"
     },
     {
@@ -86,6 +87,7 @@
         "translate.js"
       ],
       "css": [
+        "fonts/be-vietnam-pro.css",
         "translate.css"
       ],
       "run_at": "document_end"
@@ -108,6 +110,22 @@
     "128": "icons/icon128.png",
     "256": "icons/icon256.png"
   },
+  "web_accessible_resources": [
+    {
+      "resources": ["fonts/*"],
+      "matches": [
+        "https://www.facebook.com/*",
+        "https://web.facebook.com/*",
+        "https://m.facebook.com/*",
+        "https://*.threads.net/*",
+        "https://x.com/*",
+        "https://twitter.com/*",
+        "https://www.linkedin.com/*",
+        "https://www.reddit.com/*",
+        "https://*/*"
+      ]
+    }
+  ],
   "commands": {
     "summarize-shortcut": {
       "suggested_key": {

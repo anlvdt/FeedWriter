@@ -20,8 +20,15 @@ const SUMMARY_MIN_LEN = 30;
 // Bump when the feed action markup/layout changes. Extension reloads do not
 // remove DOM inserted by the previous content-script instance, so an explicit
 // component revision is required to replace stale controls in live feeds.
-const SUMMARY_UI_VERSION = "text-v2";
+const SUMMARY_UI_VERSION = "text-v3";
 let isBlocked = false;
+// Raw (unformatted) text of the summary currently shown in the panel.
+// Kept as the canonical source for Copy/Post so we never re-derive text from the
+// rendered DOM — resultEl.textContent collapses the block-level <div> layout into
+// a single line, which makes StatusFormatter treat the whole post as the title and
+// UPPERCASE everything. Unlike panelBody.dataset.editedText (deleted after each
+// render), this survives and is re-formatted per target platform at post time.
+let lastPanelRawText = "";
 const DEFAULT_SOURCE_TEMPLATE = "• Nguồn bài viết: {platform} {author} {source}\n  {link}";
 let globalSourceTemplate = DEFAULT_SOURCE_TEMPLATE;
 let globalCustomSourceLink = "";
@@ -190,6 +197,29 @@ function _statusBodyTextLength(textEl) {
   // sufficient for the length gate and avoids cloning a large Facebook post
   // plus forcing layout through innerText on every newly visible card.
   return (textEl.textContent || "").trim().length;
+}
+
+// Facebook's semantic story_message node is often only an outer wrapper. Its
+// real text lives several levels deeper in a div/span[dir=auto]. Appending our
+// inline action to the semantic wrapper puts it after a block child, which
+// creates an artificial line even when there is ample horizontal room.
+function _findFacebookInlineTextLeaf(textEl) {
+  if (SITE !== "facebook" || !textEl?.querySelectorAll) return textEl;
+  const candidates = textEl.querySelectorAll(
+    'div[dir="auto"], span[dir="auto"]',
+  );
+  // The final eligible dir=auto node is normally the last paragraph/text leaf.
+  // Walk backwards so multi-paragraph statuses get the action after the actual
+  // final paragraph, not inside an outer semantic wrapper.
+  for (let i = candidates.length - 1; i >= 0; i--) {
+    const candidate = candidates[i];
+    if (candidate.closest?.("[data-fbs-ui], form, [role='dialog']")) continue;
+    if (candidate.closest?.("a, [role='button']")) continue;
+    const value = (candidate.textContent || "").trim();
+    if (!value) continue;
+    return candidate;
+  }
+  return textEl;
 }
 
 function _findSeeMoreControl(textEl, maximum = 24) {
@@ -1777,10 +1807,15 @@ function copyResult() {
 
   if (textarea) {
     text = textarea.value;
+  } else if (lastPanelRawText) {
+    // Preferred: canonical raw summary text (keeps multi-line structure so the
+    // formatter uppercases only the title, not the whole post).
+    text = lastPanelRawText;
   } else if (panelBody?.dataset?.editedText) {
     text = panelBody.dataset.editedText;
   } else {
-    // Get text from fbs-result only (exclude product list HTML)
+    // Last-resort DOM fallback. innerText (not textContent) preserves the
+    // line breaks between block-level <div>s.
     const resultEl = panelBody?.querySelector(".fbs-result");
     if (resultEl) {
       text = resultEl.innerText || resultEl.textContent || "";
@@ -1825,22 +1860,56 @@ async function handlePostStatus() {
     const textarea = panelBody.querySelector(".fbs-edit-textarea");
     const resultEl = panelBody.querySelector(".fbs-result");
     let text = "";
+    let needsFormatting = true; // Track if text needs StatusFormatter processing
+    
     if (textarea) {
       text = textarea.value;
+      needsFormatting = true; // User-edited text needs formatting
+    } else if (lastPanelRawText) {
+      // Preferred: canonical raw summary text. Preserves the multi-line
+      // structure (title / paragraphs / bullets) so StatusFormatter can detect
+      // the title correctly and only uppercase THAT line — not the whole post.
+      text = lastPanelRawText;
+      needsFormatting = true;
     } else if (panelBody.dataset.editedText) {
       text = panelBody.dataset.editedText;
+      needsFormatting = false; // Already formatted by StatusFormatter in fmt()
     } else if (resultEl) {
+      // Last-resort DOM fallback. innerText (not textContent) so block-level
+      // <div>s keep their line breaks; textContent would collapse the summary
+      // into one line and make the title logic uppercase everything.
       text = resultEl.innerText || resultEl.textContent || "";
+      console.log("[Post Debug] Raw text from resultEl:", text.substring(0, 500));
+      needsFormatting = true; // Raw HTML text needs formatting
     }
     text = text.trim();
     if (!text) return;
 
-    // Auto-uppercase the first line (title)
-    const lines = text.split("\n");
-    if (lines.length > 0) {
-      lines[0] = lines[0].toUpperCase();
+    console.log("[Post Debug] Original text length:", text.length);
+    console.log("[Post Debug] Original text preview:", text.substring(0, 200) + "...");
+    console.log("[Post Debug] needsFormatting:", needsFormatting);
+
+    // Format for current platform using StatusFormatter (same as Copy button)
+    // Only format if text hasn't been formatted yet
+    if (needsFormatting && typeof StatusFormatter !== "undefined") {
+      // ALWAYS format for Facebook when posting - don't use SITE variable
+      // because we might be on X/Twitter but posting to Facebook
+      const platform = "facebook";
+      const hasRepo = !!(typeof globalCustomSourceLink !== 'undefined' && globalCustomSourceLink);
+      text = StatusFormatter.format(text, platform, { hasRepo });
+      console.log("[Post Debug] After StatusFormatter.format for", platform, ", length:", text.length);
+    } else if (needsFormatting) {
+      // Fallback: apply unicode formatting + uppercase first line
+      text = applyUnicodeFormatting(text);
+      const lines = text.split("\n");
+      if (lines.length > 0) {
+        lines[0] = lines[0].toUpperCase();
+      }
+      text = lines.join("\n");
+      console.log("[Post Debug] After applyUnicodeFormatting, length:", text.length);
+    } else {
+      console.log("[Post Debug] Using pre-formatted text from dataset.editedText");
     }
-    text = lines.join("\n");
 
     // Lấy metadata từ DOM element (nếu có) — multi-strategy link + author
     const _element = lastSummarizeParams?._element || null;
@@ -2407,6 +2476,10 @@ function displayError(errorData) {
 function fmt(t) {
   let text = t;
 
+  // Remember the raw text of the summary currently rendered so Copy/Post can
+  // re-format it cleanly per platform instead of scraping the collapsed DOM.
+  lastPanelRawText = typeof t === "string" ? t : "";
+
   // Use StatusFormatter if available (new unified engine)
   if (typeof StatusFormatter !== "undefined") {
     const hasRepo = !!(typeof globalCustomSourceLink !== 'undefined' && globalCustomSourceLink);
@@ -2511,7 +2584,7 @@ function renderGlossaryCard(items) {
     .join("");
   return (
     '<div class="fbs-glossary">' +
-    '<div class="fbs-glossary-heading">Giải thích thuật ngữ</div>' +
+    '<div class="fbs-glossary-heading">GIẢI THÍCH THUẬT NGỮ</div>' +
     itemsHtml +
     "</div>"
   );
@@ -3236,6 +3309,7 @@ function inject(target, seeMoreClickable, textContainer, seeMoreOriginal) {
     wrap.setAttribute("data-fbs-ui", "v3");
     wrap.setAttribute("data-fbs-theme", currentTheme);
     wrap.setAttribute("data-fbs-summary-ui", SUMMARY_UI_VERSION);
+    wrap.setAttribute("data-fbs-anchor", "see-more");
     wrap.className = "fbs-wrap fbs-wrap-inline fbs-summary-control";
     const btnNode = createInlineBtn();
     if (btnNode.setAttribute) btnNode.setAttribute("data-fbs-ui", "v3");
@@ -4075,6 +4149,7 @@ function _mountInlineStatusChip(post, textEl, minimumLength = 50) {
   wrap.setAttribute("data-fbs-ui", "v3");
   wrap.setAttribute("data-fbs-theme", currentTheme);
   wrap.setAttribute("data-fbs-summary-ui", SUMMARY_UI_VERSION);
+  wrap.setAttribute("data-fbs-anchor", "status-end");
   const btn = createInlineBtn();
   if (btn.firstChild?.nodeType === Node.TEXT_NODE) btn.firstChild.textContent = "";
   wrap.appendChild(btn);
@@ -4082,8 +4157,9 @@ function _mountInlineStatusChip(post, textEl, minimumLength = 50) {
   // Keep the action inside the status text's own inline formatting context.
   // Adding a sibling row to Facebook's internal flex/grid wrapper can make
   // space-between/min-height rules push the action to the bottom of the card.
-  _matchInlineBtnTypography(btn, textEl);
-  textEl.appendChild(wrap);
+  const inlineHost = _findFacebookInlineTextLeaf(textEl);
+  _matchInlineBtnTypography(btn, inlineHost);
+  inlineHost.appendChild(wrap);
 
   const summarizePost = async (event) => {
     event.preventDefault();

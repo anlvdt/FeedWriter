@@ -40,8 +40,8 @@
   --fw-radius-md: 8px;
   --fw-radius-pill: 9999px;
   --fw-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
-  --fw-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --fw-font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+  --fw-font: "Be Vietnam Pro", ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --fw-font-display: "Be Vietnam Pro", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
   --fw-font-mono: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, Consolas, monospace;
 
   /* Popup aliases → canonical */

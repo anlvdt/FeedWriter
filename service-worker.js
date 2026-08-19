@@ -736,42 +736,45 @@ if (typeof globalThis !== "undefined") {
 // References: VietAI ViT5, Underthesea, Vietnamese summarization best practices
 
 // TÓM TẮT TIẾNG VIỆT CHUẨN - Hybrid extractive + abstractive approach
-const SUMMARY_PROMPT = `Bạn là chuyên gia phân tích và tóm tắt tiếng Việt, giỏi viết tiêu đề hấp dẫn.
-
-NHIỆM VỤ: Đọc kỹ nội dung, xác định thông tin quan trọng, viết TIÊU ĐỀ có hook mạnh + tóm tắt ngắn gọn.
+const SUMMARY_PROMPT = `Bạn là chuyên gia tóm tắt tiếng Việt. Tóm tắt ĐÚNG dữ liệu bài gốc — không bịa, không khung mở-thân-kết.
 
 QUY TRÌNH:
-1. XÁC ĐỊNH: Chủ đề chính là gì? Kết luận/điểm then chốt nhất?
-2. VIẾT TIÊU ĐỀ (HOOK): Dòng đầu tiên là tiêu đề hấp dẫn, tạo tò mò. Dùng 1 trong các kỹ thuật:
-   - CURIOSITY GAP: Thông tin chưa đầy đủ khiến người đọc muốn biết thêm
-   - CONTRARIAN: Phản bác niềm tin phổ biến
-   - DATA HOOK: Con số/chi tiết cụ thể gây ấn tượng
-   - BENEFIT HOOK: Nêu ngay giá trị người đọc nhận được
-   - QUESTION HOOK: Câu hỏi cụ thể đánh vào pain point
-   Tiêu đề tối đa 15-20 từ, PHẢI chứa thông tin cụ thể từ bài gốc.
-3. TRÍCH XUẤT: Các ý quan trọng nhất (2-5 điểm)
-4. VIẾT LẠI: Tường thuật lại nội dung — đi thẳng vào thông tin, không nhắc tên tác giả
+1. Xác định các sự thật / ý chính CÓ TRONG bài gốc (tên, số, việc xảy ra, điều kiện).
+2. Viết tiêu đề: 1 dòng, cụ thể, tối đa 15-20 từ, lấy fact từ bài gốc. Viết bình thường (hệ thống tự viết hoa).
+3. Viết lại các ý đó thành đoạn văn ngắn, theo thứ tự thông tin trong nguồn.
 
 FORMAT OUTPUT:
-[Tiêu đề hook mạnh — viết bình thường, hệ thống sẽ tự viết hoa]
+[Tiêu đề — 1 dòng]
 
 [dòng trống]
 
-[Nội dung tóm tắt]
+[Đoạn 1: sự việc / ý chính đầu tiên — 1-3 câu]
 
-**Giải thích thuật ngữ:**
-· Thuật ngữ: Giải thích ngắn 1 câu.
+[dòng trống]
+
+[Đoạn 2: ý tiếp theo có trong nguồn]
+...
+
+Giải thích thuật ngữ:
+· Thuật ngữ: Một câu tiếng Việt dễ hiểu.
 
 YÊU CẦU:
-- Tiêu đề PHẢI ở dòng đầu, KHÔNG bọc trong ** hay ký tự đặc biệt. Viết bình thường (hệ thống tự viết hoa).
-- SAU TIÊU ĐỀ: LUÔN 1 dòng trống.
-- MẶC ĐỊNH viết đoạn văn liền mạch 3-5 câu. ĐÂY LÀ FORMAT CHÍNH.
-- CHỈ dùng bullet points khi bài gốc là DANH SÁCH rõ ràng (so sánh nhiều sản phẩm, liệt kê tính năng, các bước hướng dẫn). Nếu bài gốc là ý kiến, phân tích, tin tức, câu chuyện → BẮT BUỘC viết đoạn văn, KHÔNG bullet.
-- NẾU bài gốc là HƯỚNG DẪN/TUTORIAL: giữ nguyên các bước (Bước 1, Bước 2...) dạng list ngắn gọn. Mỗi bước tối đa 1-2 câu.
-- Tối đa 5 câu hoặc 5 bullet. KHÔNG viết dài hơn.
+- Tiêu đề ở dòng đầu, KHÔNG bọc **. SAU TIÊU ĐỀ: luôn 1 dòng trống.
+- Mỗi đoạn 1 ý, 1-3 câu, cách nhau 1 dòng trống. CẤM một khối văn liền mạch.
+- CẤM khung mở bài / thân bài / kết bài. CẤM in các nhãn đó.
+- Chỉ viết điều CÓ TRONG bài gốc. Hết ý trong nguồn thì DỪNG. CẤM viết thêm tin, tiêu đề thứ hai, câu sáo (bước tiến, đánh dấu, chiến lược, có trách nhiệm, đồng thời cho phép).
+- CHỈ dùng bullet khi bài gốc là danh sách / các bước. Ý kiến, tin, phân tích → đoạn văn.
+- Hướng dẫn/tutorial: giữ Bước 1, Bước 2... list ngắn.
+- CẤM bịa sự kiện, tên dịch vụ, sản phẩm, hay nhân vật không xuất hiện trong bài gốc.
 - CẤM LẶP Ý: Mỗi câu phải mang thông tin MỚI. Không diễn đạt lại ý cũ bằng từ khác. Kiểm tra lại trước khi output.
-- Nếu muốn tách đoạn cho dễ đọc, cách bằng 1 dòng trống. Nhưng mỗi đoạn phải là ý KHÁC NHAU.
-- GIẢI THÍCH THUẬT NGỮ: CHỈ thêm mục "**Giải thích thuật ngữ:**" khi có thuật ngữ THẬT SỰ chuyên ngành mà người đọc phổ thông chưa biết. TUYỆT ĐỐI KHÔNG giải thích: app, addon, update, plugin, extension, post, link, share, like, comment, feed, API, Chrome, Firefox, Google, Facebook, YouTube, TikTok, iPhone, Android, AI, ChatGPT, Wi-Fi, internet, website, server, cloud, crypto, NFT, CEO, startup — đây là từ người Việt dùng hàng ngày. Nếu không có thuật ngữ thực sự khó → BỎ QUA hoàn toàn mục này.
+- GIẢI THÍCH THUẬT NGỮ: phụ lục CUỐI BÀI, sau nội dung. Bài tin công nghệ / AI / sản phẩm / tính năng → BẮT BUỘC có 2-5 mục.
+  + Chỉ giải thích thuật ngữ / viết tắt / tên tính năng CÓ TRONG bài gốc, người đọc phổ thông có thể chưa rõ.
+  + CẤM dùng glossary để viết lại bài hay thay kết bài.
+  + CẤM giải thích từ thông dụng: app, addon, update, plugin, extension, post, link, share, like, comment, feed, Chrome, Firefox, Google, Facebook, YouTube, TikTok, iPhone, Android, Wi-Fi, internet, website.
+  + Mỗi mục đúng 1 dòng:
+Giải thích thuật ngữ:
+· Thuật ngữ: Một câu tiếng Việt dễ hiểu.
+  + Không có thuật ngữ nào ngoài danh sách cấm → mới được bỏ mục này.
 - KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống sẽ tự thêm footer chuẩn.
 - GIỌNG VĂN: Viết như TƯỜNG THUẬT / ĐƯA TIN dựa trên nguồn tham khảo. Bài gốc là nguồn tin, bạn là người đưa tin.
   + CẤM ngôi thứ nhất copy từ bài gốc: "mình", "tôi", "tui", "chúng mình".
@@ -780,8 +783,8 @@ YÊU CẦU:
   + VD ĐÚNG: "Hệ thống Affiliate AI có cấu trúc logic giúp tự động hóa quy trình từ nội dung đến chuyển đổi."
   + Đi thẳng vào NỘI DUNG, không qua trung gian người nói. "Hệ thống này giải quyết..." thay vì "Tác giả chỉ ra rằng hệ thống này giải quyết..."
 - Giọng tự nhiên, dễ hiểu, đi thẳng vào thông tin
-- Giữ thông tin có giá trị thực, dữ liệu, kết luận
-- Bỏ ví dụ dài, chi tiết lan man, rào đón
+- Giữ TOÀN BỘ thông tin có giá trị thực, dữ liệu, kết luận
+- Bỏ ví dụ dài không cần thiết, nhưng GIỮ các thông tin quan trọng
 - CHỈ dùng thông tin CÓ TRONG bài gốc, KHÔNG bịa thêm số liệu/thông số/phiên bản
 - CẤM tiêu đề nhạt không có thông tin: "Tin mới", "Có một điều thú vị..."
 - CẤM câu dẫn dắt rỗng: "Mình vừa đọc...", "Gần đây..."
@@ -792,14 +795,14 @@ YÊU CẦU:
 const SUMMARY_SHORT_PROMPT = `Tóm tắt cực ngắn nội dung sau:
 
 Yêu cầu:
-- Dòng đầu tiên: tiêu đề có hook mạnh (con số, phản bác, tò mò), tối đa 15 từ. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
-- Sau tiêu đề: 1 dòng trống, rồi 1-2 câu tóm tắt
-- Nắm bắt thông điệp cốt lõi nhất
+- Dòng đầu tiên: tiêu đề cụ thể tối đa 15 từ. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
+- Sau tiêu đề: 1 dòng trống, rồi 2-4 câu tóm đúng dữ liệu gốc, tách đoạn nếu có 2 ý.
+- CẤM khung mở/thân/kết. CẤM câu hỏi mở. CẤM câu sáo.
 - Viết như tường thuật/đưa tin. CẤM ngôi thứ nhất từ bài gốc ("mình", "tôi"). CẤM nhắc tên tác giả. Đi thẳng vào nội dung.
 - Giọng tự nhiên
-- GIẢI THÍCH THUẬT NGỮ: CHỈ thêm mục này khi có thuật ngữ THẬT SỰ chuyên ngành khó (không giải thích: AI, API, app, plugin, extension, link, website, server, v.v.). Thêm trước dòng nguồn theo cấu trúc sau:
-**Giải thích thuật ngữ:**
-· Thuật ngữ: Giải thích ngắn 1 câu.
+- GIẢI THÍCH THUẬT NGỮ: bài công nghệ/AI/sản phẩm phải có 2-5 mục thuật ngữ CÓ TRONG bài. CẤM câu sáo kết bài. CẤM giải thích app, plugin, website, Facebook, YouTube.
+Giải thích thuật ngữ:
+· Thuật ngữ: Một câu dễ hiểu.
 - KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống tự thêm`;
 
 // TÓM TẮT CHI TIẾT - Detailed với cấu trúc (dùng cho status_share type)
@@ -808,34 +811,30 @@ const SUMMARY_DETAILED_PROMPT = `Bạn là chuyên gia phân tích và tóm tắ
 NHIỆM VỤ: Viết tiêu đề hook mạnh + tóm tắt chi tiết, giữ cấu trúc logic.
 
 YÊU CẦU:
-- Dòng đầu tiên: tiêu đề có hook mạnh (con số, phản bác, tò mò), tối đa 20 từ. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
+- Dòng đầu tiên: tiêu đề cụ thể tối đa 20 từ. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
 - Sau tiêu đề: 1 dòng trống
-- Xác định thesis/luận điểm chính
-- Các luận điểm hỗ trợ quan trọng nhất
-- Kết luận và hàm ý
-- Cấu trúc rõ ràng: Tiêu đề → Điểm chính → Kết luận
-- Mỗi đoạn cách nhau 1 dòng trống
-- Tối đa 150 từ
+- Tóm đúng dữ liệu gốc, mỗi ý một đoạn, cách 1 dòng trống. CẤM khung mở/thân/kết. CẤM câu sáo. CẤM câu hỏi mở.
 - Viết như tường thuật/đưa tin. CẤM ngôi thứ nhất từ bài gốc ("mình", "tôi"). CẤM nhắc tên tác giả. Đi thẳng vào nội dung.
-- GIẢI THÍCH THUẬT NGỮ: CHỈ thêm mục này khi có thuật ngữ THẬT SỰ chuyên ngành khó (không giải thích: AI, API, app, plugin, extension, link, website, server, v.v.). Thêm trước dòng nguồn theo cấu trúc sau:
-**Giải thích thuật ngữ:**
-· Thuật ngữ: Giải thích ngắn 1 câu.
+- GIẢI THÍCH THUẬT NGỮ: bài công nghệ/AI/sản phẩm phải có 2-5 mục thuật ngữ CÓ TRONG bài. CẤM câu sáo kết bài. CẤM giải thích app, plugin, website, Facebook, YouTube.
+Giải thích thuật ngữ:
+· Thuật ngữ: Một câu dễ hiểu.
 - KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống tự thêm`;
 
 // TÓM TẮT DẠNG BULLET - Easy to scan
 const SUMMARY_BULLET_PROMPT = `Tóm tắt thành các bullet points ngắn gọn.
 
 Quy tắc:
-- Dòng đầu tiên: tiêu đề có hook mạnh (con số, phản bác, tò mò), tối đa 15 từ. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
+- Dòng đầu tiên: tiêu đề cụ thể tối đa 15 từ. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
 - Sau tiêu đề: 1 dòng trống
-- Mỗi bullet bắt đầu bằng · tối đa 15 từ
+- Mỗi bullet bắt đầu bằng · tối đa 15 từ, lấy đúng dữ liệu gốc
+- CẤM khung mở/thân/kết. CẤM câu hỏi mở. CẤM câu sáo.
 - Ưu tiên thông tin có giá trị, dữ liệu, kết luận
 - Bỏ ví dụ, chỉ giữ kết quả
 - Viết như tường thuật/đưa tin. CẤM ngôi thứ nhất từ bài gốc ("mình", "tôi"). CẤM nhắc tên tác giả
 - 5-7 bullet max
-- GIẢI THÍCH THUẬT NGỮ: CHỈ thêm mục này khi có thuật ngữ THẬT SỰ chuyên ngành khó (không giải thích: AI, API, app, plugin, extension, link, website, server, v.v.). Thêm trước dòng nguồn theo cấu trúc sau:
-**Giải thích thuật ngữ:**
-· Thuật ngữ: Giải thích ngắn 1 câu.
+- GIẢI THÍCH THUẬT NGỮ: bài công nghệ/AI/sản phẩm phải có 2-5 mục thuật ngữ CÓ TRONG bài. CẤM câu sáo kết bài. CẤM giải thích app, plugin, website, Facebook, YouTube.
+Giải thích thuật ngữ:
+· Thuật ngữ: Một câu dễ hiểu.
 - KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống tự thêm`;
 
 // === QUY TẮC CHÍNH TẢ VNREVIEW (áp dụng cho mọi output tiếng Việt) ===
@@ -897,9 +896,9 @@ YÊU CẦU:
 - Mỗi section: rút còn 1-3 ý quan trọng nhất
 - Giảm 50-70% nội dung
 - Viết như tường thuật/đưa tin. CẤM ngôi thứ nhất từ bài gốc ("mình", "tôi"). CẤM nhắc tên tác giả
-- GIẢI THÍCH THUẬT NGỮ: CHỈ thêm mục này khi có thuật ngữ THẬT SỰ chuyên ngành khó (không giải thích: AI, API, app, plugin, extension, link, website, server, v.v.). Thêm trước dòng nguồn theo cấu trúc sau:
-**Giải thích thuật ngữ:**
-· Thuật ngữ: Giải thích ngắn 1 câu.
+- GIẢI THÍCH THUẬT NGỮ: bài công nghệ/AI/sản phẩm phải có 2-5 mục thuật ngữ CÓ TRONG bài. CẤM câu sáo kết bài. CẤM giải thích app, plugin, website, Facebook, YouTube.
+Giải thích thuật ngữ:
+· Thuật ngữ: Một câu dễ hiểu.
 - KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống tự thêm`;
 
 // TÓM TẮT BÌNH LUẬN - Summarize community comment discussions
@@ -1274,7 +1273,7 @@ function classifyProviderError(errMsg = "", status = 0) {
 }
 
 const MAX_INPUT_CHARS = 8000;
-const MAX_OUTPUT_TOKENS = 1024;
+const MAX_OUTPUT_TOKENS = 4096;
 
 async function getSystemPrompt(
   site,
@@ -1345,28 +1344,25 @@ async function getSystemPrompt(
     "\n\nTRƯỚC KHI VIẾT, hãy tự xác định loại nội dung (tin tức/ý kiến cá nhân/review sản phẩm/hướng dẫn/câu chuyện) và điều chỉnh giọng văn phù hợp.";
 
   prompt +=
-    "\n- Tiêu đề (dòng đầu tiên) viết bình thường, hệ thống sẽ tự động viết hoa.";
+    "\n- Tiêu đề (dòng đầu tiên) viết bình thường, hệ thống sẽ tự động viết hoa." +
+    "\n- Chỉ viết MỘT bài, bám đúng nguồn. Hết ý thì dừng. Không viết tiêu đề hay tin thứ hai.";
 
   // Tone override (from overlay tone buttons)
   // All tones inherit the narrative voice rule from the base prompt
   if (tone) {
     const toneMap = {
-      short: "\n\nGHI ĐÈ — RÚT NGẮN TỐI ĐA:\n" +
-        "- Tiêu đề + 2-3 bullets, KHÔNG cần đoạn mở đầu.\n" +
-        "- Mỗi bullet tối đa 10 từ. Tổng tối đa 60 từ.\n" +
-        "- KHÔNG chia section headers. Giọng tường thuật ngôi thứ ba.",
+      short: "\n\nGHI ĐÈ — VIẾT NGẮN GỌN:\n" +
+        "- Tiêu đề + 2-4 câu đúng dữ liệu gốc, tách đoạn nếu có 2 ý.\n" +
+        "- KHÔNG khung mở/thân/kết. Giọng tường thuật ngôi thứ ba. CẤM câu hỏi mở.",
       academic: "\n\nGHI ĐÈ — PHONG CÁCH HỌC THUẬT:\n" +
-        "- Giọng phân tích khách quan ngôi thứ ba, dùng thuật ngữ chuyên ngành chính xác.\n" +
-        "- Bullets nêu dữ liệu, trích dẫn, kết luận — không dùng ngôn ngữ casual.\n" +
-        "- Vẫn giữ format: tiêu đề → 1-2 câu → · bullets",
+        "- Giọng phân tích khách quan ngôi thứ ba, thuật ngữ chính xác.\n" +
+        "- Mỗi luận điểm một đoạn, cách 1 dòng trống. Chỉ dùng dữ liệu có trong nguồn. CẤM câu sáo.",
       viral: "\n\nGHI ĐÈ — PHONG CÁCH VIRAL:\n" +
-        "- Tiêu đề gây sốc hoặc tò mò mạnh.\n" +
-        "- Bullets nhấn điểm WOW, bỏ chi tiết nhàm chán.\n" +
-        "- Kết thúc bằng 1 câu hỏi mở. Vẫn giữ giọng tường thuật, CẤM ngôi thứ nhất/hai.",
+        "- Tiêu đề gây tò mò nhưng cụ thể, không clickbait rỗng.\n" +
+        "- Mỗi ý một đoạn. CẤM khung mở/thân/kết. CẤM câu hỏi mở. CẤM ngôi thứ nhất/hai.",
       bullet: "\n\nGHI ĐÈ — BULLET POINTS THUẦN:\n" +
-        "- Chỉ tiêu đề + bullets (·), KHÔNG viết đoạn văn.\n" +
-        "- 5-7 bullets, mỗi bullet format: · Keyword: giải thích ngắn\n" +
-        "- Tối đa 15 từ/bullet. KHÔNG chia section headers. Giọng tường thuật.",
+        "- Tiêu đề + bullets (·) đúng dữ liệu gốc. Mỗi bullet: · Keyword: giải thích\n" +
+        "- KHÔNG khung mở/thân/kết. Giọng tường thuật. CẤM câu hỏi mở.",
     };
     if (toneMap[tone]) prompt += toneMap[tone];
   }
@@ -1469,7 +1465,7 @@ async function callGroqStream(
     url: "https://api.groq.com/openai/v1/chat/completions",
     headers: { Authorization: "Bearer " + apiKey },
     body: {
-      model: "llama-3.3-70b-versatile",
+      model: "openai/gpt-oss-120b",
       stream: true,
       messages: [
         { role: "system", content: systemPrompt },
@@ -1621,7 +1617,7 @@ async function callOpenrouterStream(
       "X-Title": "FeedWriter",
     },
     body: {
-      model: "meta-llama/llama-3.3-70b-instruct",
+      model: "openai/gpt-oss-120b",
       stream: true,
       messages: [
         { role: "system", content: systemPrompt },
@@ -1647,7 +1643,7 @@ async function callOpenrouterNonStream(apiKey, userMessage, systemPrompt) {
       "X-Title": "FeedWriter",
     },
     {
-      model: "meta-llama/llama-3.3-70b-instruct",
+      model: "openai/gpt-oss-120b",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userMessage },
@@ -3555,8 +3551,8 @@ async function handleStream(
     openrouter: callOpenrouterStream,
   };
 
-  const maxTokensMap = { short: 256, medium: 512, long: 1024 };
-  const maxTokens = maxTokensMap[summaryLength] || 512;
+  const maxTokensMap = { short: 1024, medium: 2048, long: 4096 };
+  const maxTokens = maxTokensMap[summaryLength] || 2048;
 
   // Try enough times to rotate through keys (was hard-capped at 4 → stuck early)
   const maxAttempts = 8;
@@ -3855,7 +3851,7 @@ async function callGroqNonStream(apiKey, userMessage, systemPrompt) {
     "https://api.groq.com/openai/v1/chat/completions",
     { Authorization: "Bearer " + apiKey },
     {
-      model: "llama-3.3-70b-versatile",
+      model: "openai/gpt-oss-120b",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userMessage },

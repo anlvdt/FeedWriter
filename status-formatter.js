@@ -9,9 +9,9 @@ const StatusFormatter = {
 
   profiles: {
     facebook: {
-      unicodeBold: true,
-      unicodeItalic: true,
-      titleUppercase: true,
+      unicodeBold: false,  // Disable Unicode bold - use plain text
+      unicodeItalic: false,  // Disable Unicode italic
+      titleUppercase: true,  // Keep title uppercase for emphasis
       titleEmoji: false,
       bulletChar: "·",
       numberStyle: "plain",
@@ -84,18 +84,81 @@ const StatusFormatter = {
   // ── Parser: raw text → structured blocks ───────────────────────────
 
   _parse(rawText) {
+    console.log("[StatusFormatter._parse] ===== START =====");
+    console.log("[StatusFormatter._parse] Raw input length:", rawText.length);
+    console.log("[StatusFormatter._parse] Raw input preview:", rawText.substring(0, 300));
+    
     let text = rawText.trim();
 
-    // Strip existing footers/separators (prevent duplication)
+    // Strip existing footers/separators FIRST (prevent duplication)
     // Must be aggressive — AI sometimes copies footer from examples or prior output
     text = text.replace(/\s*(?:[—-]\s*\n\s*)?Nguồn\s+dưới\s+(?:cmt|bình\s+luận|binh\s+luan)\s+đầu(?:\s+tiên)?\s*$/gi, "");
     text = text.replace(/━━━━━━━━━━\s*/g, "");
     text = text.replace(/\s*(?:👉\s*)?(?:Link gốc|Chi tiết)[\s&]*(?:nguồn|mã nguồn)?.*dưới\s+(?:bình\s+luận|cmt)\s+đầu(?:\s+tiên)?\s*$/gim, "");
     text = text.replace(/\s*(?:Chi tiết|Link gốc|Nguồn)\s*&?\s*$/gim, ""); // truncated footer like "Chi tiết &"
     text = text.replace(/(?:_{5,}|━━━━━━━━━━)\s*(?:|•)?\s*(?:Chi\s+tiết|Link\s+gốc|Nguồn)?.*$/gi, "");
+    text = text.replace(/👉\s*/g, ""); // Remove any stray 👉 emoji
+    
+    console.log("[StatusFormatter._parse] After footer strip, length:", text.length);
+    console.log("[StatusFormatter._parse] After footer strip, preview:", text.substring(0, 300));
+
+    // Fix AI sometimes ignoring "write normally, system will uppercase" instruction
+    // Check if the ENTIRE content (not just body) is mostly uppercase
+    const testText = text.replace(/\s/g, ""); // Remove whitespace for testing
+    
+    // Count uppercase letters (Vietnamese + English) - comprehensive Unicode ranges
+    const upperPattern = /[A-ZÀÁẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬÈÉẺẼẸÊẾỀỂỄỆÌÍỈĨỊÒÓỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÙÚỦŨỤƯỨỪỬỮỰỲÝỶỸỴĐ]/g;
+    const actualUppercaseCount = (testText.match(upperPattern) || []).length;
+    
+    // Count total letters (both cases) - same Unicode ranges
+    const allLetterPattern = /[A-Za-zÀÁẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬÈÉẺẼẸÊẾỀỂỄỆÌÍỈĨỊÒÓỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÙÚỦŨỤƯỨỪỬỮỰỲÝỶỸỴĐàáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđ]/g;
+    const totalLetters = (testText.match(allLetterPattern) || []).length;
+    
+    const uppercaseRatio = totalLetters > 0 ? actualUppercaseCount / totalLetters : 0;
+    
+    console.log("[StatusFormatter._parse] Uppercase check:", {
+      uppercaseCount: actualUppercaseCount,
+      totalLetters,
+      uppercaseRatio: uppercaseRatio.toFixed(3),
+      threshold: 0.6,
+      willNormalize: uppercaseRatio > 0.6,
+      sampleText: testText.substring(0, 80)
+    });
+    
+    if (uppercaseRatio > 0.6) {
+      // AI wrote everything in uppercase - normalize to proper case
+      console.warn("[StatusFormatter._parse] ⚠️ AI returned uppercase content (ratio:", uppercaseRatio.toFixed(2), ") - normalizing");
+      
+      const lines = text.split("\n");
+      console.log("[StatusFormatter._parse] Lines before normalize:", lines.length);
+      
+      text = lines.map((line, idx) => {
+        const trimmed = line.trim();
+        if (!trimmed) return line; // Keep empty lines
+        
+        // Convert to lowercase first
+        let normalized = line.toLowerCase();
+        
+        // Capitalize first letter of each sentence
+        normalized = normalized.replace(/(^|[.!?]\s+)([a-zàáảãạăắằẳẵặâấầẩẫậđèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵ])/g, 
+          (match, prefix, char) => prefix + char.toUpperCase()
+        );
+        
+        if (idx === 0) {
+          console.log("[StatusFormatter._parse] Line 0 (title):", line.substring(0, 80), "→", normalized.substring(0, 80));
+        }
+        
+        return normalized;
+      }).join("\n");
+      
+      console.log("[StatusFormatter._parse] After normalize, preview:", text.substring(0, 300));
+    }
 
     // Normalize markdown artifacts
     text = text.replace(/^\*{3}\s*/gm, "**");
+
+    console.log("[StatusFormatter._parse] Final text before parsing blocks, preview:", text.substring(0, 300));
+    console.log("[StatusFormatter._parse] ===== END PREPROCESSING =====");
 
     const lines = text.trim().split("\n");
     const blocks = [];
@@ -107,35 +170,40 @@ const StatusFormatter = {
       const raw = lines[i];
       const trimmed = raw.trim();
 
-      // Glossary section
-      if (trimmed.match(/^\*{0,2}Giải thích thuật ngữ:?\*{0,2}$/i)) {
+      // Glossary section — heading, then term: definition items.
+      // Blank lines after the heading are common and must NOT close the section.
+      if (this._isGlossaryHeading(trimmed)) {
+        if (glossaryItems.length > 0) {
+          blocks.push({ type: "glossary", items: [...glossaryItems] });
+          glossaryItems = [];
+        }
         inGlossary = true;
-        glossaryItems = [];
         continue;
       }
       if (inGlossary) {
-        // End glossary on: empty line, footer-like content, or separator
         const isFooterLike = /^(?:👉\s*)?(?:━━|_{5,}|Chi\s+tiết.*dưới|Link\s+gốc|Nguồn\s+dưới)/i.test(trimmed);
-        if (!trimmed || isFooterLike) {
+        if (!trimmed) continue;
+        if (isFooterLike) {
           if (glossaryItems.length > 0) {
             blocks.push({ type: "glossary", items: [...glossaryItems] });
             glossaryItems = [];
           }
           inGlossary = false;
-          if (!trimmed) {
-            blocks.push({ type: "blank" }); // preserve spacing after glossary
-          }
-          // Don't continue — let footer-like lines fall through to be stripped/skipped
-          if (isFooterLike) { /* fall through to normal line processing below */ }
-          else continue;
+          // fall through so the footer line is stripped below
         } else {
-          const m = trimmed.match(/^[·•]\s*(.+?):\s*(.+)$/);
-          if (m) {
-            glossaryItems.push({ term: m[1], def: m[2] });
-          } else {
-            glossaryItems.push({ term: trimmed, def: "" });
+          const item = this._parseGlossaryItem(trimmed);
+          if (item) {
+            glossaryItems.push(item);
+            continue;
           }
-          continue;
+          if (glossaryItems.length > 0) {
+            blocks.push({ type: "glossary", items: [...glossaryItems] });
+            glossaryItems = [];
+          }
+          inGlossary = false;
+          // Heading with leftover term-only junk (no definition) — drop it
+          if (this._isOrphanGlossaryTerm(trimmed)) continue;
+          // fall through and parse this line as normal content
         }
       }
 
@@ -151,6 +219,9 @@ const StatusFormatter = {
       if (/^\s*(?:👉\s*)?(?:Chi tiết|Link gốc|Nguồn)/i.test(trimmed)) continue;
       if (/^━━━/.test(trimmed)) continue;
 
+      // Skip leftover structure labels the model sometimes prints
+      if (this._isStructureLabel(trimmed)) continue;
+
       // Title (first non-empty line)
       if (!titleFound) {
         titleFound = true;
@@ -158,6 +229,7 @@ const StatusFormatter = {
         let titleText = trimmed
           .replace(/^\*{1,2}\s*/, "").replace(/\s*\*{1,2}$/, "")
           .replace(/^[\p{Emoji_Presentation}\p{Extended_Pictographic}\s]+/u, "");
+        titleText = this._stripStructurePrefix(titleText);
         blocks.push({ type: "title", text: titleText });
         continue;
       }
@@ -197,33 +269,30 @@ const StatusFormatter = {
         continue;
       }
 
-      // Bullet: · • - * · ▸ ▪ →
+      // Bullet: · • - * · ▸ ▪ →  (collapse repeated markers like "· · **term**")
       if (trimmed.match(/^[·•\-*✓▸▪→]\s+/)) {
-        const bulletText = trimmed.replace(/^[·•\-*✓▸▪→]\s+/, "").trim();
-        // Skip empty bullets (marker + whitespace only)
+        const bulletText = this._collapseBulletPrefix(trimmed);
         if (bulletText) {
           blocks.push({ type: "bullet", text: bulletText });
           continue;
         }
-        // Fall through to standalone marker handling below
       }
 
-      // Standalone bullet marker (· or · etc. on its own line) — merge with next line
-      if (trimmed.match(/^[·•✓▸▪→]$/) || trimmed.match(/^[·•✓▸▪→]\s*$/)) {
-        // Look ahead for the next non-empty line
+      // Standalone bullet marker — merge with next line
+      if (/^[·•\-*✓▸▪→]$/.test(trimmed)) {
         let j = i + 1;
         while (j < lines.length && !lines[j].trim()) j++;
         if (j < lines.length && lines[j].trim()) {
-          blocks.push({ type: "bullet", text: lines[j].trim() });
-          i = j; // skip to the merged line
+          blocks.push({ type: "bullet", text: this._collapseBulletPrefix(lines[j].trim()) });
+          i = j;
           continue;
         }
-        // No next line — just skip the lonely marker
         continue;
       }
 
       // Inline bold: lines containing **text**
-      blocks.push({ type: "paragraph", text: trimmed });
+      const paraText = this._stripStructurePrefix(trimmed);
+      if (paraText) blocks.push({ type: "paragraph", text: paraText });
     }
 
     // Flush remaining glossary
@@ -234,11 +303,12 @@ const StatusFormatter = {
     return blocks;
   },
 
-  // ── Post-processor: fix structure when AI outputs flat paragraphs ──
+  // ── Post-processor: drop extras, break walls of text ───────────────
 
   _postProcess(blocks) {
+    let next = this._dropFillerClose(this._dropRunOnArticle(blocks));
     const types = {};
-    for (const b of blocks) {
+    for (const b of next) {
       types[b.type] = (types[b.type] || 0) + 1;
     }
 
@@ -252,20 +322,191 @@ const StatusFormatter = {
     // and bullets are long sentences, merge them into paragraphs.
     // True lists have short items (< 80 chars avg). Narrative "bullets" are longer.
     if (hasBullets && !hasHeaders && !hasNumbers && paraCount === 0 && bulletCount >= 3) {
-      const bullets = blocks.filter(b => b.type === "bullet");
+      const bullets = next.filter(b => b.type === "bullet");
       const avgLen = bullets.reduce((s, b) => s + b.text.length, 0) / bullets.length;
       if (avgLen > 60) {
-        return blocks.map(b => b.type === "bullet" ? { type: "paragraph", text: b.text } : b);
+        next = next.map(b => b.type === "bullet" ? { type: "paragraph", text: b.text } : b);
       }
     }
 
-    if (hasHeaders || hasBullets || hasNumbers) return blocks;
+    const stillListed = next.some(b =>
+      b.type === "header" || b.type === "bullet" || b.type === "number"
+    );
+    if (stillListed) return next;
+    return this._breakWallOfText(next);
+  },
 
-    // Multiple short paragraphs = intentional narrative format, keep as-is
-    if (paraCount >= 2) return blocks;
+  _looksLikeSecondTitle(text) {
+    const t = String(text || "").replace(/\s+/g, " ").trim();
+    if (t.length < 16 || t.length > 140) return false;
+    if (/[.!?…]$/.test(t)) return false;
+    const letters = t.replace(
+      /[^A-Za-zÀÁẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬÈÉẺẼẸÊẾỀỂỄỆÌÍỈĨỊÒÓỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÙÚỦŨỤƯỨỪỬỮỰỲÝỶỸỴĐàáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđ]/g,
+      "",
+    );
+    if (letters.length < 8) return false;
+    const upper = (letters.match(
+      /[A-ZÀÁẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬÈÉẺẼẸÊẾỀỂỄỆÌÍỈĨỊÒÓỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÙÚỦŨỤƯỨỪỬỮỰỲÝỶỸỴĐ]/g,
+    ) || []).length;
+    return upper / letters.length >= 0.62;
+  },
 
-    // Single long paragraph (wall of text) — break into bullets (Deactivated to respect AI's original formatting)
-    return blocks;
+  _dropRunOnArticle(blocks) {
+    let contentParas = 0;
+    let cut = -1;
+    for (let i = 0; i < blocks.length; i++) {
+      const b = blocks[i];
+      if (b.type === "glossary") break;
+      if (b.type !== "paragraph") continue;
+      if (this._isGlossaryHeading(b.text)) break;
+      if (contentParas >= 1 && this._looksLikeSecondTitle(b.text)) {
+        cut = i;
+        break;
+      }
+      contentParas++;
+    }
+    if (cut < 0) return blocks;
+    const kept = blocks.slice(0, cut);
+    while (kept.length && kept[kept.length - 1].type === "blank") kept.pop();
+    const glossary = blocks.slice(cut).filter((b) => b.type === "glossary");
+    return kept.concat(glossary);
+  },
+
+  _GLOSSARY_HEADING_RE:
+    /giải\s*thích\s*thuật\s*ngữ/iu,
+
+  _isGlossaryHeading(text) {
+    const t = String(text || "").trim().replace(/\*+/g, "").replace(/\s+/g, " ");
+    if (!this._GLOSSARY_HEADING_RE.test(t)) return false;
+    return t.length <= 48;
+  },
+
+  _isFillerClose(text) {
+    return /bước tiến|đánh dấu|có trách nhiệm|đồng thời cho phép|quan trọng trong/i.test(
+      String(text || ""),
+    );
+  },
+
+  _dropFillerClose(blocks) {
+    const out = blocks.slice();
+    for (let i = out.length - 1; i >= 0; i--) {
+      const b = out[i];
+      if (b.type === "blank" || b.type === "glossary") continue;
+      if (b.type === "paragraph" && this._isFillerClose(b.text)) {
+        out.splice(i, 1);
+        while (i < out.length && out[i] && out[i].type === "blank") out.splice(i, 1);
+        while (i > 0 && out[i - 1] && out[i - 1].type === "blank") {
+          out.splice(i - 1, 1);
+          i--;
+        }
+      }
+      break;
+    }
+    return out;
+  },
+
+  _parseGlossaryItem(line) {
+    const cleaned = this._collapseBulletPrefix(String(line || "").trim());
+    if (!cleaned || this._isGlossaryHeading(cleaned)) return null;
+    const m = cleaned.match(/^(.{1,50}?)\s*[:：]\s*(.+)$/);
+    if (!m) return null;
+    const term = this._unwrapMarkdown(m[1]).trim();
+    const def = this._unwrapMarkdown(m[2]).trim();
+    if (!term || !def) return null;
+    if (/[.!?]$/.test(term)) return null;
+    if (def.length > 280) return null;
+    return { term, def };
+  },
+
+  _isOrphanGlossaryTerm(line) {
+    const cleaned = this._collapseBulletPrefix(String(line || "").trim());
+    if (!cleaned) return true;
+    if (cleaned.length > 50 || /[.!?]/.test(cleaned)) return false;
+    if (cleaned.split(/\s+/).length > 6) return false;
+    const parts = cleaned.split(/\s*[:：]\s*/);
+    return parts.length < 2 || !parts[1];
+  },
+
+  _STRUCTURE_LABEL_RE:
+    /^(?:\*{0,2}\s*)?(?:mở bài|thân bài|kết bài|kết luận|mở đầu|điểm chính|lead|opening|body|conclusion)\s*\*{0,2}\s*[:：.]?\s*$/i,
+
+  _STRUCTURE_PREFIX_RE:
+    /^(?:\*{0,2}\s*)?(?:mở bài|thân bài|kết bài|kết luận|mở đầu|điểm chính|lead|opening|body|conclusion)\s*\*{0,2}\s*[:：.\-–—]\s*/i,
+
+  _isStructureLabel(text) {
+    return this._STRUCTURE_LABEL_RE.test(String(text || "").trim());
+  },
+
+  _stripStructurePrefix(text) {
+    return String(text || "").replace(this._STRUCTURE_PREFIX_RE, "").trim();
+  },
+
+  _splitSentences(text) {
+    const src = String(text || "").replace(/\s+/g, " ").trim();
+    if (!src) return [];
+
+    const isUpper = (ch) =>
+      /[A-ZÀÁẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬĐÈÉẺẼẸÊẾỀỂỄỆÌÍỈĨỊÒÓỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÙÚỦŨỤƯỨỪỬỮỰỲÝỶỸỴ]/.test(ch);
+    const isDigit = (ch) => ch >= "0" && ch <= "9";
+    const abbrevTail = /(?:^|\s)(?:TS|ThS|PGS|GS|TP|Tp|Mr|Mrs|Ms|Dr|vs|v\.v|Inc|Ltd)\.$/i;
+
+    const sentences = [];
+    let buf = "";
+    for (let i = 0; i < src.length; i++) {
+      const ch = src[i];
+      buf += ch;
+      if (ch !== "." && ch !== "!" && ch !== "?" && ch !== "…") continue;
+      if (ch === "." && isDigit(src[i - 1]) && isDigit(src[i + 1])) continue;
+      if (ch === "." && abbrevTail.test(buf)) continue;
+
+      let j = i + 1;
+      while (j < src.length && src[j] === " ") j++;
+      if (j < src.length && !isUpper(src[j])) continue;
+
+      const sentence = buf.trim();
+      if (sentence) sentences.push(sentence);
+      buf = "";
+      i = j - 1;
+    }
+    if (buf.trim()) sentences.push(buf.trim());
+    return sentences;
+  },
+
+  _groupSentencesIntoParagraphs(sentences) {
+    const paras = [];
+    for (let i = 0; i < sentences.length; i += 2) {
+      paras.push(sentences.slice(i, i + 2).join(" "));
+    }
+    return paras;
+  },
+
+  _breakWallOfText(blocks) {
+    const paraIdx = [];
+    for (let i = 0; i < blocks.length; i++) {
+      if (blocks[i].type === "paragraph") paraIdx.push(i);
+    }
+    if (paraIdx.length === 0) return blocks;
+
+    const sentences = [];
+    for (const i of paraIdx) {
+      const parts = this._splitSentences(blocks[i].text);
+      if (parts.length) sentences.push(...parts);
+      else if (blocks[i].text) sentences.push(blocks[i].text);
+    }
+
+    // Already broken into paragraphs — keep the author's breaks.
+    if (paraIdx.length >= 2) return blocks;
+    if (sentences.length < 2) return blocks;
+
+    const grouped = this._groupSentencesIntoParagraphs(sentences);
+    const first = paraIdx[0];
+    const last = paraIdx[paraIdx.length - 1];
+    const mid = [];
+    grouped.forEach((text, i) => {
+      if (i > 0) mid.push({ type: "blank" });
+      mid.push({ type: "paragraph", text });
+    });
+    return blocks.slice(0, first).concat(mid, blocks.slice(last + 1));
   },
 
   // ── Renderer: blocks → platform-specific text ──────────────────────
@@ -278,7 +519,7 @@ const StatusFormatter = {
 
       switch (block.type) {
         case "title": {
-          let t = block.text;
+          let t = this._unwrapMarkdown(block.text);
           if (profile.titleUppercase) {
             t = t.toUpperCase();
           }
@@ -297,7 +538,7 @@ const StatusFormatter = {
           for (let j = trailingBlanks; j < blanksNeeded && lines.length > 0; j++) {
             lines.push("");
           }
-          let h = block.text;
+          let h = this._unwrapMarkdown(block.text);
           if (profile.unicodeBold) {
             const bolded = this._toUnicodeBold(h);
             // If bold produced no change (all Vietnamese), fall back to UPPERCASE
@@ -313,7 +554,7 @@ const StatusFormatter = {
           const prefix = profile.numberStyle === "circled"
             ? this._circledNumber(block.num)
             : block.num + ".";
-          let t = block.text;
+          let t = this._applyInlineMarkup(block.text, profile);
           // Bold the first phrase before a colon/dash if present
           if (profile.unicodeBold) {
             t = t.replace(/^([^:–—]+)([::–—])/, (_, p, s) => this._toUnicodeBold(p) + s);
@@ -323,27 +564,16 @@ const StatusFormatter = {
         }
 
         case "bullet": {
-          let t = block.text;
+          let t = this._applyInlineMarkup(this._collapseBulletPrefix(block.text), profile);
           if (profile.unicodeBold) {
-            // Bold text before first colon: "Term: explanation"
             t = t.replace(/^([^:]+):/, (_, p) => this._toUnicodeBold(p) + ":");
           }
-          lines.push(profile.bulletChar + " " + t);
+          if (t) lines.push(profile.bulletChar + " " + t);
           break;
         }
 
         case "paragraph": {
-          let t = block.text;
-          if (profile.unicodeBold) {
-            t = t.replace(/\*\*(.+?)\*\*/g, (_, p) => this._toUnicodeBold(p));
-          } else {
-            t = t.replace(/\*\*(.+?)\*\*/g, "$1");
-          }
-          if (profile.unicodeItalic) {
-            t = t.replace(/\*(.+?)\*/g, (_, p) => this._toUnicodeItalic(p));
-          } else {
-            t = t.replace(/\*(.+?)\*/g, "$1");
-          }
+          let t = this._applyInlineMarkup(block.text, profile);
           // Separate consecutive paragraphs with a blank line
           if (i > 0 && blocks[i - 1].type === "paragraph") {
             lines.push("");
@@ -358,20 +588,21 @@ const StatusFormatter = {
           for (let j = trailingBlanksG; j < 1 && lines.length > 0; j++) {
             lines.push("");
           }
-          const glossaryLabel = "Giải thích thuật ngữ:";
+          const glossaryLabel = "Giải thích thuật ngữ:".toLocaleUpperCase("vi");
           if (profile.unicodeBold) {
             const bolded = this._toUnicodeBold(glossaryLabel);
-            lines.push(bolded === glossaryLabel ? glossaryLabel.toUpperCase() : bolded);
+            lines.push(bolded === glossaryLabel ? glossaryLabel : bolded);
           } else {
             lines.push(glossaryLabel);
           }
           for (const item of block.items) {
-            if (item.def) {
-              const termStr = profile.unicodeBold
-                ? this._toUnicodeBold(item.term) : item.term;
-              lines.push(profile.bulletChar + " " + termStr + ": " + item.def);
-            } else {
-              lines.push(profile.bulletChar + " " + item.term);
+            const term = this._applyInlineMarkup(item.term, profile);
+            const def = this._applyInlineMarkup(item.def || "", profile);
+            if (def) {
+              const termStr = profile.unicodeBold ? this._toUnicodeBold(term) : term;
+              lines.push(profile.bulletChar + " " + termStr + ": " + def);
+            } else if (term) {
+              lines.push(profile.bulletChar + " " + term);
             }
           }
           break;
@@ -389,7 +620,7 @@ const StatusFormatter = {
     // Clean trailing blanks
     while (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
 
-    let result = lines.join("\n");
+    let result = this._stripLeftoverMarkdown(lines.join("\n"));
 
     // Footer — extra blank line for visual separation from content
     if (profile.footer) {
@@ -413,6 +644,44 @@ const StatusFormatter = {
       ? "Link gốc & mã nguồn dưới bình luận đầu tiên"
       : "Chi tiết & nguồn dưới bình luận đầu tiên";
     return separator + "\n👉 " + cta;
+  },
+
+  _collapseBulletPrefix(text) {
+    let t = String(text || "").trim();
+    // *, - are list markers only when followed by space. Do not eat markdown **bold**.
+    const marker = /^(?:[·•✓▸▪→]\s*|[-*]\s+)/;
+    while (marker.test(t)) {
+      const next = t.replace(marker, "").trim();
+      if (next === t) break;
+      t = next;
+    }
+    return t;
+  },
+
+  _unwrapMarkdown(text) {
+    return this._applyInlineMarkup(text, { unicodeBold: false, unicodeItalic: false });
+  },
+
+  _applyInlineMarkup(text, profile) {
+    let t = String(text || "");
+    const bold = !!(profile && profile.unicodeBold);
+    const italic = !!(profile && profile.unicodeItalic);
+    t = t.replace(/\*\*\*(.+?)\*\*\*/g, (_, p) => (bold ? this._toUnicodeBold(p) : p));
+    t = t.replace(/\*\*(.+?)\*\*/g, (_, p) => (bold ? this._toUnicodeBold(p) : p));
+    t = t.replace(/__(.+?)__/g, (_, p) => (bold ? this._toUnicodeBold(p) : p));
+    t = t.replace(/`([^`]+)`/g, "$1");
+    t = t.replace(
+      /(^|[\s([（])\*(?!\s)(.+?)(?<!\s)\*(?=[\s)\]）。,!?:;]|$)/g,
+      (_, pre, p) => pre + (italic ? this._toUnicodeItalic(p) : p),
+    );
+    return this._stripLeftoverMarkdown(t);
+  },
+
+  _stripLeftoverMarkdown(text) {
+    return String(text || "")
+      .replace(/\*{1,3}/g, "")
+      .replace(/_{3,}/g, "")
+      .replace(/[ \t]{2,}/g, " ");
   },
 
   // ── Unicode transforms ─────────────────────────────────────────────
@@ -476,14 +745,14 @@ const StatusFormatter = {
         case "title":
           htmlParts.push(
             '<div class="fbs-title-line">' +
-            this._escHtml(block.text).toUpperCase() + '</div>'
+            this._escHtml(this._unwrapMarkdown(block.text)) + '</div>'
           );
           break;
 
         case "header":
           htmlParts.push(
             '<div class="fbs-section-header">' +
-            this._escHtml(block.text) + '</div>'
+            this._escHtml(this._unwrapMarkdown(block.text)) + '</div>'
           );
           break;
 
@@ -502,7 +771,7 @@ const StatusFormatter = {
         }
 
         case "bullet": {
-          let rendered = this._renderInlineMarkdown(block.text);
+          let rendered = this._renderInlineMarkdown(this._collapseBulletPrefix(block.text));
           if (!rendered.includes('<strong>') && rendered.includes(':')) {
             rendered = rendered.replace(/^([^:]+):/, '<strong>$1</strong>:');
           }
@@ -530,6 +799,7 @@ const StatusFormatter = {
           const listTypes = ["bullet", "number"];
           if (listTypes.includes(prev) && listTypes.includes(next)) break;
           if (prev === "title") break;
+          if (prev === "paragraph" && next === "paragraph") break;
           htmlParts.push('<div class="fbs-para-break" aria-hidden="true"></div>');
           break;
         }
@@ -551,19 +821,39 @@ const StatusFormatter = {
 
   _renderInlineMarkdown(text) {
     let html = this._escHtml(text);
+    html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong>$1</strong>');
     html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
+    html = html.replace(/`([^`]+)`/g, "$1");
     html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+    html = html.replace(/\*{1,3}/g, "");
     return html;
   },
 
   _renderGlossaryHTML(items) {
     if (!items || items.length === 0) return "";
     let html = '<div class="fbs-glossary">';
-    html += '<div class="fbs-glossary-heading">Giải thích thuật ngữ</div>';
+    html += '<div class="fbs-glossary-heading">';
+    html += '<svg class="fbs-glossary-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">';
+    html += '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>';
+    html += '</svg>';
+    html += 'GIẢI THÍCH THUẬT NGỮ';
+    html += '</div>';
     for (const item of items) {
       html += '<div class="fbs-glossary-item">';
-      html += '<strong>' + this._escHtml(item.term) + '</strong>';
-      if (item.def) html += ': ' + this._escHtml(item.def);
+      html += '<span class="fbs-glossary-bullet">·</span>';
+      html += '<div class="fbs-glossary-content">';
+      // Term: Capitalize first letter only
+      const termText = this._escHtml(this._unwrapMarkdown(item.term));
+      const termCapitalized = termText.charAt(0).toUpperCase() + termText.slice(1);
+      html += '<strong class="fbs-glossary-term">' + termCapitalized + '</strong>';
+      // Definition: capitalize first letter
+      if (item.def) {
+        const defText = this._escHtml(this._unwrapMarkdown(item.def));
+        const capitalized = defText.charAt(0).toUpperCase() + defText.slice(1);
+        html += '<span class="fbs-glossary-def">: ' + capitalized + '</span>';
+      }
+      html += '</div>';
       html += '</div>';
     }
     html += '</div>';

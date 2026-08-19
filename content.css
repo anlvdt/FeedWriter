@@ -485,12 +485,24 @@ button.fbs-btn:focus-visible,
 
 /* Regular paragraph */
 .fbs-result .fbs-para {
-  margin-bottom: 8px;
-  line-height: 1.65;
+  margin-bottom: 14px;
+  line-height: 1.68;
 }
 
 .fbs-result .fbs-para:last-child {
   margin-bottom: 0;
+}
+
+.fbs-result .fbs-para-lead {
+  font-weight: 560;
+  margin-bottom: 16px;
+}
+
+.fbs-result .fbs-para-close {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  font-weight: 520;
 }
 
 /* Bullet items — compact with clear hierarchy */
@@ -1185,6 +1197,10 @@ button.fbs-btn:focus-visible,
 .fbs-panel[data-fbs-theme="light"] .fbs-result .fbs-title-line {
   color: #1c1e21;
   border-left-color: #1C2B23;
+}
+
+.fbs-panel[data-fbs-theme="light"] .fbs-result .fbs-para-close {
+  border-top-color: rgba(0, 0, 0, 0.12);
 }
 
 /* Light theme: bullet */

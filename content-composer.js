@@ -977,15 +977,43 @@ function pasteToLexical(element, text, file = null) {
   element.focus();
   // Paste text trước (không kèm file — Facebook sẽ bỏ text nếu có file)
   if (text) {
-    const dtText = new DataTransfer();
-    dtText.setData("text/plain", text);
-    element.dispatchEvent(
-      new ClipboardEvent("paste", {
-        clipboardData: dtText,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
+    // Facebook Lexical editor has clipboard paste limits (~5000 chars observed)
+    // Split long text into chunks and paste sequentially
+    const CHUNK_SIZE = 4000;
+    if (text.length > CHUNK_SIZE) {
+      let offset = 0;
+      const pasteChunk = () => {
+        if (offset >= text.length) return;
+        const chunk = text.substring(offset, offset + CHUNK_SIZE);
+        offset += CHUNK_SIZE;
+        
+        const dtText = new DataTransfer();
+        dtText.setData("text/plain", chunk);
+        element.dispatchEvent(
+          new ClipboardEvent("paste", {
+            clipboardData: dtText,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+        
+        if (offset < text.length) {
+          setTimeout(pasteChunk, 150);
+        }
+      };
+      pasteChunk();
+    } else {
+      // Short text - paste normally
+      const dtText = new DataTransfer();
+      dtText.setData("text/plain", text);
+      element.dispatchEvent(
+        new ClipboardEvent("paste", {
+          clipboardData: dtText,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    }
   }
   // Paste file riêng sau (nếu có). Hỗ trợ cả single file và array of files.
   if (file) {
@@ -1005,6 +1033,6 @@ function pasteToLexical(element, text, file = null) {
           cancelable: true,
         }),
       );
-    }, 500);
+    }, 800); // Increase delay to wait for text chunks to finish
   }
 }

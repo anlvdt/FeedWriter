@@ -1892,8 +1892,8 @@ async function handleStream(
     openrouter: callOpenrouterStream,
   };
 
-  const maxTokensMap = { short: 256, medium: 512, long: 1024 };
-  const maxTokens = maxTokensMap[summaryLength] || 512;
+  const maxTokensMap = { short: 1024, medium: 2048, long: 4096 };
+  const maxTokens = maxTokensMap[summaryLength] || 2048;
 
   // Try enough times to rotate through keys (was hard-capped at 4 → stuck early)
   const maxAttempts = 8;
@@ -2192,7 +2192,7 @@ async function callGroqNonStream(apiKey, userMessage, systemPrompt) {
     "https://api.groq.com/openai/v1/chat/completions",
     { Authorization: "Bearer " + apiKey },
     {
-      model: "llama-3.3-70b-versatile",
+      model: "openai/gpt-oss-120b",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userMessage },

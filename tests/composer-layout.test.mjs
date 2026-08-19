@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import vm from "node:vm";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const css = fs.readFileSync(path.join(root, "ui.css"), "utf8");
@@ -169,9 +170,9 @@ describe("Feed false-positive safeguards", () => {
 
 describe("Feed summary control density", () => {
   it("keeps summary controls visually secondary to Facebook content", () => {
-    assert.match(css, /\.fbs-btn-inline\.fbs-summary-action\[data-fbs-ui="v3"\]\[data-fbs-summary-ui="text-v2"\][\s\S]*?display:\s*inline\s*!important/);
-    assert.match(css, /\.fbs-btn-inline\.fbs-summary-action\[data-fbs-ui="v3"\]\[data-fbs-summary-ui="text-v2"\][\s\S]*?height:\s*auto\s*!important/);
-    assert.match(css, /\.fbs-btn-inline\.fbs-summary-action\[data-fbs-ui="v3"\]\[data-fbs-summary-ui="text-v2"\][\s\S]*?background:\s*transparent\s*!important/);
+    assert.match(css, /\.fbs-btn-inline\.fbs-summary-action\[data-fbs-ui="v3"\]\[data-fbs-summary-ui="text-v3"\][\s\S]*?display:\s*inline\s*!important/);
+    assert.match(css, /\.fbs-btn-inline\.fbs-summary-action\[data-fbs-ui="v3"\]\[data-fbs-summary-ui="text-v3"\][\s\S]*?height:\s*auto\s*!important/);
+    assert.match(css, /\.fbs-btn-inline\.fbs-summary-action\[data-fbs-ui="v3"\]\[data-fbs-summary-ui="text-v3"\][\s\S]*?background:\s*transparent\s*!important/);
     assert.match(css, /\.fbs-wrap\[data-fbs-theme="light"\] \.fbs-btn-inline\.fbs-summary-action[\s\S]*?color:\s*#39726d\s*!important/);
     assert.match(css, /\.fbs-wrap-inline\[data-fbs-ui="v3"\][\s\S]*?margin:\s*0\s*!important/);
     assert.match(css, /button\.fbs-allpost-btn[\s\S]*?height:\s*auto\s*!important/);
@@ -193,7 +194,7 @@ describe("Feed summary control density", () => {
   });
 
   it("replaces stale feed controls after an extension reload", () => {
-    assert.match(content, /const SUMMARY_UI_VERSION = "text-v2"/);
+    assert.match(content, /const SUMMARY_UI_VERSION = "text-v3"/);
     assert.match(
       content,
       /\.fbs-summary-control:not\(\[data-fbs-summary-ui=/,
@@ -201,7 +202,7 @@ describe("Feed summary control density", () => {
     assert.match(content, /currentControl\) return/);
     assert.match(
       css,
-      /\[data-fbs-summary-ui="text-v2"\][\s\S]*?height:\s*auto\s*!important/,
+      /\[data-fbs-summary-ui="text-v3"\][\s\S]*?height:\s*auto\s*!important/,
     );
   });
 
@@ -210,7 +211,8 @@ describe("Feed summary control density", () => {
     assert.match(content, /_matchInlineBtnTypography\(btnNode, afterEl\)/);
     assert.match(content, /afterEl\.parentElement\.insertBefore\(wrap, afterEl\.nextSibling\)/);
     assert.doesNotMatch(content, /sep\.className = "fbs-inline-sep"/);
-    assert.match(css, /\.fbs-wrap-inline\[data-fbs-ui="v3"\]\[data-fbs-summary-ui="text-v2"\]::before[\s\S]*?content:\s*" · "\s*!important/);
+    assert.match(content, /data-fbs-anchor", "see-more"/);
+    assert.match(css, /\[data-fbs-summary-ui="text-v3"\]\[data-fbs-anchor="see-more"\]::before[\s\S]*?content:\s*" · "\s*!important/);
   });
 
   it("restores the summary control after Facebook replaces See more", () => {
@@ -227,9 +229,45 @@ describe("Feed summary control density", () => {
   it("keeps full Facebook summaries inline without adding a blank row", () => {
     assert.doesNotMatch(content, /const isFacebookRow = SITE === "facebook"/);
     assert.doesNotMatch(content, /fbs-summary-row/);
-    assert.match(content, /textEl\.appendChild\(wrap\)/);
+    assert.match(content, /function _findFacebookInlineTextLeaf\(textEl\)/);
+    assert.match(content, /const inlineHost = _findFacebookInlineTextLeaf\(textEl\)/);
+    assert.match(content, /inlineHost\.appendChild\(wrap\)/);
+    assert.match(content, /data-fbs-anchor", "status-end"/);
+    assert.match(
+      css,
+      /\[data-fbs-anchor="status-end"\]::before[\s\S]*?content:\s*"\\00a0"\s*!important/,
+    );
     assert.doesNotMatch(css, /\.fbs-summary-row\[data-fbs-ui="v3"\]/);
     assert.match(css, /\.fbs-wrap:not\(\.fbs-wrap-inline\)/);
+  });
+
+  it("anchors full-post actions to the final real Facebook text leaf", () => {
+    const helperSource = content.slice(
+      content.indexOf("function _findFacebookInlineTextLeaf"),
+      content.indexOf("function _findSeeMoreControl"),
+    );
+    const context = vm.createContext({ SITE: "facebook" });
+    vm.runInContext(helperSource, context);
+
+    const candidate = (text, blocked = false) => ({
+      textContent: text,
+      closest(selector) {
+        return blocked && selector.includes("a,") ? {} : null;
+      },
+    });
+    const outer = candidate("Toàn bộ status");
+    const finalLeaf = candidate("Đoạn cuối status");
+    const linkedChrome = candidate("Liên kết chrome", true);
+    const semanticHost = {
+      querySelectorAll() {
+        return [outer, finalLeaf, linkedChrome];
+      },
+    };
+
+    assert.equal(
+      context._findFacebookInlineTextLeaf(semanticHost),
+      finalLeaf,
+    );
   });
 
   it("exposes focus and busy states on summary controls", () => {
@@ -254,7 +292,7 @@ describe("Feed summary control density", () => {
       content,
       /if \(_statusBodyTextLength\(textEl\) < minimumLength\) return;/,
     );
-    assert.match(content, /_matchInlineBtnTypography\(btn, textEl\)/);
+    assert.match(content, /_matchInlineBtnTypography\(btn, inlineHost\)/);
     // Truncated posts with "Xem thêm" must still get Tóm tắt even when short.
     assert.match(
       content,
@@ -294,6 +332,20 @@ describe("UI system v3 contracts", () => {
     assert.match(block[1], /background:\s*transparent\s*!important/);
     assert.match(block[1], /color:\s*#39726d\s*!important/);
     assert.match(block[1], /box-shadow:\s*none\s*!important/);
+  });
+
+  it("separates summary title, lead, body and close in the overlay", () => {
+    assert.match(css, /\.fbs-result \.fbs-title-line/);
+    assert.match(css, /\.fbs-result \.fbs-para/);
+  });
+
+  it("uses Be Vietnam Pro for UI and titles", () => {
+    assert.match(css, /--fw-font:\s*"Be Vietnam Pro"/);
+    assert.match(css, /--fw-font-display:\s*"Be Vietnam Pro"/);
+    assert.match(popupCss, /--fw-font:\s*"Be Vietnam Pro"/);
+    assert.match(popup, /fonts\/be-vietnam-pro\.css/);
+    assert.ok(fs.existsSync(path.join(root, "fonts/BeVietnamPro-400-vietnamese.woff2")));
+    assert.ok(fs.existsSync(path.join(root, "fonts/BeVietnamPro-700-vietnamese.woff2")));
   });
 
   it("aliases popup and content tokens to canonical --fw-*", () => {
