@@ -84,10 +84,6 @@ const StatusFormatter = {
   // ── Parser: raw text → structured blocks ───────────────────────────
 
   _parse(rawText) {
-    console.log("[StatusFormatter._parse] ===== START =====");
-    console.log("[StatusFormatter._parse] Raw input length:", rawText.length);
-    console.log("[StatusFormatter._parse] Raw input preview:", rawText.substring(0, 300));
-    
     let text = rawText.trim();
 
     // Strip existing footers/separators FIRST (prevent duplication)
@@ -99,9 +95,6 @@ const StatusFormatter = {
     text = text.replace(/(?:_{5,}|━━━━━━━━━━)\s*(?:|•)?\s*(?:Chi\s+tiết|Link\s+gốc|Nguồn)?.*$/gi, "");
     text = text.replace(/👉\s*/g, ""); // Remove any stray 👉 emoji
     
-    console.log("[StatusFormatter._parse] After footer strip, length:", text.length);
-    console.log("[StatusFormatter._parse] After footer strip, preview:", text.substring(0, 300));
-
     // Fix AI sometimes ignoring "write normally, system will uppercase" instruction
     // Check if the ENTIRE content (not just body) is mostly uppercase
     const testText = text.replace(/\s/g, ""); // Remove whitespace for testing
@@ -116,23 +109,11 @@ const StatusFormatter = {
     
     const uppercaseRatio = totalLetters > 0 ? actualUppercaseCount / totalLetters : 0;
     
-    console.log("[StatusFormatter._parse] Uppercase check:", {
-      uppercaseCount: actualUppercaseCount,
-      totalLetters,
-      uppercaseRatio: uppercaseRatio.toFixed(3),
-      threshold: 0.6,
-      willNormalize: uppercaseRatio > 0.6,
-      sampleText: testText.substring(0, 80)
-    });
-    
     if (uppercaseRatio > 0.6) {
       // AI wrote everything in uppercase - normalize to proper case
-      console.warn("[StatusFormatter._parse] ⚠️ AI returned uppercase content (ratio:", uppercaseRatio.toFixed(2), ") - normalizing");
-      
       const lines = text.split("\n");
-      console.log("[StatusFormatter._parse] Lines before normalize:", lines.length);
       
-      text = lines.map((line, idx) => {
+      text = lines.map((line) => {
         const trimmed = line.trim();
         if (!trimmed) return line; // Keep empty lines
         
@@ -144,21 +125,12 @@ const StatusFormatter = {
           (match, prefix, char) => prefix + char.toUpperCase()
         );
         
-        if (idx === 0) {
-          console.log("[StatusFormatter._parse] Line 0 (title):", line.substring(0, 80), "→", normalized.substring(0, 80));
-        }
-        
         return normalized;
       }).join("\n");
-      
-      console.log("[StatusFormatter._parse] After normalize, preview:", text.substring(0, 300));
     }
 
     // Normalize markdown artifacts
     text = text.replace(/^\*{3}\s*/gm, "**");
-
-    console.log("[StatusFormatter._parse] Final text before parsing blocks, preview:", text.substring(0, 300));
-    console.log("[StatusFormatter._parse] ===== END PREPROCESSING =====");
 
     const lines = text.trim().split("\n");
     const blocks = [];

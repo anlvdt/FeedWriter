@@ -50,6 +50,22 @@ let profileHomeCacheValue = false;
 let profileHomeCacheAt = 0;
 const PROFILE_HOME_CACHE_MS = 8000;
 
+function getSummaryPolicyDecision(text, type = "summary") {
+  if (typeof FeedWriterSummaryPolicy !== "undefined") {
+    return FeedWriterSummaryPolicy.decideSummary({
+      site: SITE,
+      text,
+      type,
+      minimumChars: MIN_LEN,
+    });
+  }
+  const length = String(text || "").trim().length;
+  return {
+    shouldSummarize: length >= MIN_LEN,
+    reason: length >= MIN_LEN ? "length_fallback" : "too_short",
+  };
+}
+
 /**
  * Keep FeedWriter out of Facebook's personal-profile home pages. A bare
  * /username URL may also be a Page, so require the profile-only Friends tab
@@ -1401,6 +1417,7 @@ function ensureOverlay() {
       '<span class="fbs-tone-label">Viết lại với tone</span>' +
       '<div class="fbs-tone-chips" role="group" aria-label="Tone">' +
         '<button type="button" class="fbs-tone-btn" data-tone="short">Ngắn hơn</button>' +
+        '<button type="button" class="fbs-tone-btn" data-tone="reporter">Phóng viên</button>' +
         '<button type="button" class="fbs-tone-btn" data-tone="academic">Học thuật</button>' +
         '<button type="button" class="fbs-tone-btn" data-tone="viral">Viral</button>' +
         '<button type="button" class="fbs-tone-btn" data-tone="bullet">Bullet</button>' +
@@ -1879,15 +1896,10 @@ async function handlePostStatus() {
       // <div>s keep their line breaks; textContent would collapse the summary
       // into one line and make the title logic uppercase everything.
       text = resultEl.innerText || resultEl.textContent || "";
-      console.log("[Post Debug] Raw text from resultEl:", text.substring(0, 500));
       needsFormatting = true; // Raw HTML text needs formatting
     }
     text = text.trim();
     if (!text) return;
-
-    console.log("[Post Debug] Original text length:", text.length);
-    console.log("[Post Debug] Original text preview:", text.substring(0, 200) + "...");
-    console.log("[Post Debug] needsFormatting:", needsFormatting);
 
     // Format for current platform using StatusFormatter (same as Copy button)
     // Only format if text hasn't been formatted yet
@@ -1897,7 +1909,6 @@ async function handlePostStatus() {
       const platform = "facebook";
       const hasRepo = !!(typeof globalCustomSourceLink !== 'undefined' && globalCustomSourceLink);
       text = StatusFormatter.format(text, platform, { hasRepo });
-      console.log("[Post Debug] After StatusFormatter.format for", platform, ", length:", text.length);
     } else if (needsFormatting) {
       // Fallback: apply unicode formatting + uppercase first line
       text = applyUnicodeFormatting(text);
@@ -1906,9 +1917,6 @@ async function handlePostStatus() {
         lines[0] = lines[0].toUpperCase();
       }
       text = lines.join("\n");
-      console.log("[Post Debug] After applyUnicodeFormatting, length:", text.length);
-    } else {
-      console.log("[Post Debug] Using pre-formatted text from dataset.editedText");
     }
 
     // Lấy metadata từ DOM element (nếu có) — multi-strategy link + author
@@ -2902,6 +2910,21 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
     return;
   }
 
+  // On X the button is an explicit user action. Keep the semantic policy for
+  // deciding which Facebook posts should be offered automatically, but do not
+  // reject a tweet after the user has deliberately asked FeedWriter to rewrite
+  // it as a concise news item.
+  if (type === "summary" && SITE !== "x") {
+    const decision = getSummaryPolicyDecision(text, type);
+    if (!decision.shouldSummarize) {
+      const message = SITE === "x"
+        ? "Tweet này đã đủ ngắn, chưa cần tóm tắt. FeedWriter chỉ tóm tắt bài X dài hoặc có nhiều ý."
+        : "Nội dung này đã đủ ngắn hoặc chưa có đủ ý để tóm tắt.";
+      openOverlay('<div class="fbs-error fbs-error-info">' + message + "</div>", false, type);
+      return;
+    }
+  }
+
   if (!isContextValid()) {
     openOverlay(
       '<div class="fbs-error">Extension đã cập nhật. Vui lòng F5.</div>',
@@ -3050,6 +3073,10 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
   let first = true;
   let streamBuffer = "";
   let streamRafId = null;
+  const summaryTimeoutMs = Math.min(
+    300000,
+    90000 + Math.ceil(text.length / 10000) * 30000,
+  );
   const summaryTimeoutId = setTimeout(() => {
     if (!isSummarizing) return;
     isSummarizing = false;
@@ -3068,7 +3095,10 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
       openOverlay(
         displayError({
           message: "Tóm tắt mất quá nhiều thời gian",
-          detail: "Provider AI không hoàn tất phản hồi trong 90 giây.",
+          detail:
+            "Provider AI không hoàn tất phản hồi trong " +
+            Math.round(summaryTimeoutMs / 1000) +
+            " giây.",
           action: "Thử lại hoặc chọn provider khác.",
           severity: "warning",
           retryable: true,
@@ -3086,7 +3116,7 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
         ? { ok: true, summary: partial, partial: true }
         : { ok: false, error: "timeout" },
     );
-  }, 90000);
+  }, summaryTimeoutMs);
 
   function renderStream() {
     streamRafId = null;
@@ -3608,10 +3638,11 @@ function handleSelection() {
       floatingToolbar.classList.remove("fbs-visible");
       return;
     }
-    // Translate: short EN phrases OK. Summary still needs MIN_LEN.
+    // Translate accepts short EN phrases; summary follows the shared semantic
+    // policy and the user's configured minimum length.
     const canTranslate =
       text.length >= 2 && text.length <= 2000 && /[A-Za-z]/.test(text);
-    const canSummary = text.length >= MIN_LEN;
+    const canSummary = getSummaryPolicyDecision(text, "summary").shouldSummarize;
     if (!canTranslate && !canSummary) {
       floatingToolbar.classList.remove("fbs-visible");
       return;
@@ -4136,7 +4167,12 @@ function _mountInlineStatusChip(post, textEl, minimumLength = 50) {
   if (currentControl) return;
   // Gate on the real status body — feed-unit chrome (author/comments/UI) can
   // make the outer article look long even when the status is one sentence.
-  if (_statusBodyTextLength(textEl) < minimumLength) return;
+  const initialText = (textEl.textContent || "").replace(/\s+/g, " ").trim();
+  if (
+    initialText.length < minimumLength ||
+    (SITE !== "x" &&
+      !getSummaryPolicyDecision(initialText, "summary").shouldSummarize)
+  ) return;
 
   // Remove a chip left by an older content-script instance in this live DOM.
   post.querySelectorAll(':scope > .fbs-chip-host').forEach((el) => {
@@ -4176,7 +4212,11 @@ function _mountInlineStatusChip(post, textEl, minimumLength = 50) {
       const clone = currentTextEl.cloneNode(true);
       clone.querySelectorAll("[data-fbs-ui]").forEach((el) => el.remove());
       const text = (clone.textContent || "").replace(/\s+/g, " ").trim();
-      if (text.length < minimumLength) {
+      if (
+        text.length < minimumLength ||
+        (SITE !== "x" &&
+          !getSummaryPolicyDecision(text, "summary").shouldSummarize)
+      ) {
         wrap.remove();
         return;
       }
@@ -4204,8 +4244,9 @@ function scanXPosts() {
     if (post.querySelector('.fbs-wrap-inline[data-fbs-ui="v3"]')) continue;
     const textEl = post.querySelector('[data-testid="tweetText"]');
     const text = (textEl?.innerText || textEl?.textContent || "").trim();
-    // Tweets are intentionally short; the global Facebook-oriented default is
-    // 400 characters, while summarizeText itself supports content from 50.
+    // X's summary control is user-initiated, so ordinary tweets remain
+    // actionable. The semantic policy is intentionally not an eligibility
+    // gate here; it is only used for automatic offering on longer feed posts.
     if (text.length < 50) continue;
     post.querySelectorAll(':scope > .fbs-chip-host').forEach((el) => {
       try { el.remove(); } catch (_) {}
@@ -4407,7 +4448,12 @@ function enterBatchMode() {
           article.innerText ||
           ""
         ).trim();
-        if (text.length >= MIN_LEN) batchQueue.push({ text, el: article, cb });
+        if (getSummaryPolicyDecision(text, "summary").shouldSummarize) {
+          batchQueue.push({ text, el: article, cb });
+        } else {
+          cb.checked = false;
+          cb.classList.remove("fbs-checked");
+        }
       } else {
         cb.classList.remove("fbs-checked");
         batchQueue = batchQueue.filter(item => item.cb !== cb);

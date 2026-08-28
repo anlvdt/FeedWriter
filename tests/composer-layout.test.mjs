@@ -13,6 +13,7 @@ const composerRuntime = fs.readFileSync(path.join(root, "content-composer-runtim
 const contentDom = fs.readFileSync(path.join(root, "content-dom.js"), "utf8");
 const contentDomRuntime = fs.readFileSync(path.join(root, "content-dom-runtime.js"), "utf8");
 const popup = fs.readFileSync(path.join(root, "popup.html"), "utf8");
+const background = fs.readFileSync(path.join(root, "background.js"), "utf8");
 
 describe("Facebook composer panel layout", () => {
   it("uses a readable width and constrained height on desktop", () => {
@@ -290,7 +291,7 @@ describe("Feed summary control density", () => {
     assert.match(content, /function _statusBodyTextLength\(textEl\)/);
     assert.match(
       content,
-      /if \(_statusBodyTextLength\(textEl\) < minimumLength\) return;/,
+      /!getSummaryPolicyDecision\(initialText, "summary"\)\.shouldSummarize/,
     );
     assert.match(content, /_matchInlineBtnTypography\(btn, inlineHost\)/);
     // Truncated posts with "Xem thêm" must still get Tóm tắt even when short.
@@ -305,6 +306,27 @@ describe("Feed summary control density", () => {
     assert.doesNotMatch(
       content,
       /if \(_statusBodyTextLength\(textEl\) >= MIN_LEN \/ 2\) \{\s*inject\(article/,
+    );
+  });
+
+  it("keeps the explicit summary action available on ordinary X posts", () => {
+    const scanXSource = content.slice(
+      content.indexOf("function scanXPosts()"),
+      content.indexOf("function scanFBAllPosts()"),
+    );
+    assert.match(scanXSource, /if \(text\.length < 50\) continue/);
+    assert.doesNotMatch(
+      scanXSource,
+      /getSummaryPolicyDecision\(text, "summary"\)\.shouldSummarize/,
+    );
+    assert.match(content, /if \(type === "summary" && SITE !== "x"\)/);
+    assert.match(
+      content,
+      /SITE !== "x" &&\s*!getSummaryPolicyDecision\(initialText, "summary"\)\.shouldSummarize/,
+    );
+    assert.match(
+      background,
+      /type === "summary" &&\s*site !== "x" &&\s*!summaryPolicy\.summary\.shouldSummarize/,
     );
   });
 

@@ -35,6 +35,16 @@ describe("manifest scope", () => {
     assert.ok(nonFacebook.every((entry) => entry.js.includes("content-composer-runtime.js")));
     assert.ok(nonFacebook.every((entry) => entry.js.filter((file) => file.startsWith("poster-")).length === 1));
   });
+
+  it("loads the shared summary policy before every social content script", () => {
+    const socialEntries = manifest.content_scripts.slice(0, -1);
+    for (const entry of socialEntries) {
+      const policyIndex = entry.js.indexOf("lib/summary-policy.js");
+      const contentIndex = entry.js.indexOf("content.js");
+      assert.ok(policyIndex >= 0, entry.matches.join(", "));
+      assert.ok(policyIndex < contentIndex, entry.matches.join(", "));
+    }
+  });
 });
 
 describe("popup controls", () => {

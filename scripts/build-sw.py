@@ -15,7 +15,14 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-ORDER = ["utils.js", "lib/message-schema.js", "bg-prompts.js", "bg-api.js", "background.js"]
+ORDER = [
+    "utils.js",
+    "lib/message-schema.js",
+    "lib/summary-policy.js",
+    "bg-prompts.js",
+    "bg-api.js",
+    "background.js",
+]
 OUT = ROOT / "service-worker.js"
 
 HEADER = """/* ==========================================================================
