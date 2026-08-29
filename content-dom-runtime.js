@@ -2072,6 +2072,11 @@ function extractPostImages(element) {
         if (src.includes("emoji") || src.includes("static")) continue;
         if (src.includes("profile") || src.includes("avatar")) continue;
         try { if (getComputedStyle(img).borderRadius === "50%") continue; } catch (_) {}
+        // On X: skip link preview images (card thumbnails) — these are not user-uploaded
+        if (SITE === "x") {
+          const card = img.closest('[data-testid="card.wrapper"], [data-testid="card2"], [data-testid="socialContext"], a[href*="t.co"]');
+          if (card) continue;
+        }
         results.push(src);
       }
       return results;
@@ -3494,7 +3499,7 @@ function _dedupeRelatedLinks(links) {
   }
   return [...byUrl.values()]
     .sort((a, b) => b.score - a.score)
-    .slice(0, 12);
+    .slice(0, 4);
 }
 
 async function discoverRelatedSourceLinks(element, summaryText = "") {

@@ -464,9 +464,9 @@ describe("UI system v3 contracts", () => {
 });
 
 describe("Composer source-card density", () => {
-  it("keeps optional links and source preview collapsed until needed", () => {
+  it("keeps optional links collapsed and source preview open by default", () => {
     assert.match(composer, /<details class="fbs-sp-link-input fbs-sp-related-block">/);
-    assert.match(composer, /<details class="fbs-sp-comment" style="display:none">/);
+    assert.match(composer, /<details class="fbs-sp-comment" open>/);
     assert.match(css, /\.is-composer \.fbs-status-preview[\s\S]*?border:\s*none\s*!important/);
     assert.match(css, /max-height:\s*104px\s*!important/);
   });

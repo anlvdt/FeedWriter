@@ -191,12 +191,10 @@ function initWizard() {
 
   async function saveWizardSettings() {
     try {
-      const outputLanguage =
-        document.getElementById("wizardOutputLanguage")?.value || "vi";
       const summaryLength =
         document.getElementById("wizardSummaryLength")?.value || "medium";
       await chrome.storage.sync.set({
-        outputLanguage,
+        outputLanguage: "vi",
         summaryLength,
         languageAutoDetected: false,
       });
@@ -481,7 +479,7 @@ if (saveBtn) saveBtn.addEventListener("click", () => {
   chrome.storage.sync.set(
     {
       minLength: minLen,
-      outputLanguage: outputLangSel.value,
+      outputLanguage: "vi",
       summaryLength: summaryLengthSel.value,
       promptStyle: promptStyleSel.value,
       customInstructions: customInstructionsEl.value.trim(),
@@ -494,7 +492,7 @@ if (saveBtn) saveBtn.addEventListener("click", () => {
         ? enableUnicodeBoldEl.checked !== false
         : true,
       advancedModeEnabled: !!(advancedModeToggle && advancedModeToggle.checked),
-      languageAutoDetected: false, // User manually changed settings
+      languageAutoDetected: false,
     },
     () => {
       restoreSaveBtn();

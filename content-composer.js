@@ -115,7 +115,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
     '<div class="fbs-sp-link-chips"></div>' +
     "</details>" +
     '<div class="fbs-sp-link-status" role="status" aria-live="polite"></div>' +
-    '<details class="fbs-sp-comment" style="display:none">' +
+    '<details class="fbs-sp-comment" open>' +
     '<summary class="fbs-sp-comment-label">Bình luận nguồn <span>Xem trước</span></summary>' +
     '<div class="fbs-sp-comment-text" tabindex="0" title="Bấm để bôi đen khi cần copy thủ công"></div>' +
     "</details>" +
@@ -264,7 +264,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
   // LUÔN hiển thị section comment (kể cả khi chưa có URL) để user biết
   // cần paste link. Nếu thiếu link mà có author/source → vẫn show "Nguồn: X"
   function updateComment(url, githubUrl) {
-    commentSection.style.display = "block";
+
     const relatedLinks = parseRelatedLinks(githubUrl);
     const oldRelatedLinks = typeof globalRelatedSourceLinks !== "undefined"
       ? globalRelatedSourceLinks
@@ -668,6 +668,11 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
             fallbackContent += `\n· ${label}: ${item.url}`;
           }
           sourceLine = fallbackContent;
+        }
+
+        // Auto-copy source comment so user doesn't need a separate click
+        if (sourceLine) {
+          try { await navigator.clipboard.writeText(sourceLine); } catch (_) {}
         }
 
         // Bước 1: Xác định ảnh user muốn đăng

@@ -340,35 +340,11 @@ function updateBlockedState(rawPatterns = "") {
   isBlocked = patterns.some((pattern) => location.href.includes(pattern));
 }
 
-// Detect language from Facebook page and set as default
+// Output language is always Vietnamese. No detection needed.
 function detectAndSetLanguage() {
-  const htmlLang = document.documentElement.lang || "";
-  let detectedLang = "vi"; // Default to Vietnamese
-
-  // Map Facebook language codes to our output language
-  if (htmlLang.startsWith("en")) {
-    detectedLang = "en";
-  } else if (htmlLang.startsWith("vi")) {
-    detectedLang = "vi";
-  } else if (htmlLang.startsWith("zh")) {
-    detectedLang = "zh";
-  } else if (htmlLang.startsWith("ja")) {
-    detectedLang = "ja";
-  } else if (htmlLang.startsWith("ko")) {
-    detectedLang = "ko";
-  } else if (htmlLang.startsWith("th")) {
-    detectedLang = "th";
-  } else if (htmlLang.startsWith("id")) {
-    detectedLang = "id";
-  }
-
-  // Only set if user hasn't explicitly chosen a language
-  chrome.storage.sync.get(["outputLanguage", "languageAutoDetected"], (data) => {
-    if (!data.outputLanguage || data.languageAutoDetected !== false) {
-      chrome.storage.sync.set({
-        outputLanguage: detectedLang,
-        languageAutoDetected: true
-      });
+  chrome.storage.sync.get(["outputLanguage"], (data) => {
+    if (data.outputLanguage !== "vi") {
+      chrome.storage.sync.set({ outputLanguage: "vi" });
     }
   });
 }
@@ -1416,6 +1392,7 @@ function ensureOverlay() {
     '<div class="fbs-tone-row" hidden>' +
       '<span class="fbs-tone-label">Viết lại với tone</span>' +
       '<div class="fbs-tone-chips" role="group" aria-label="Tone">' +
+        '<button type="button" class="fbs-tone-btn fbs-tone-default" data-tone="" title="Trở về tone mặc định">Mặc định</button>' +
         '<button type="button" class="fbs-tone-btn" data-tone="short">Ngắn hơn</button>' +
         '<button type="button" class="fbs-tone-btn" data-tone="reporter">Phóng viên</button>' +
         '<button type="button" class="fbs-tone-btn" data-tone="academic">Học thuật</button>' +
@@ -1495,7 +1472,7 @@ function ensureOverlay() {
   panel.querySelectorAll(".fbs-tone-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (!lastSummarizeParams) return;
-      const tone = btn.dataset.tone;
+      const tone = btn.dataset.tone || null;
       panel.querySelectorAll(".fbs-tone-btn").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       const { text, type, _element } = lastSummarizeParams;
@@ -3050,10 +3027,36 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
   const _el = lastSummarizeParams._element;
   const _meta = _el && typeof extractPostMeta === "function" ? extractPostMeta(_el) : null;
   const _sourceUrl = _meta?.permalink || extractPostPermalink(_el);
-  const _imageUrl = extractPostImage(_el);
+  let _imageUrl = extractPostImage(_el);
   const _author = _meta?.author || extractPostAuthor(_el);
   const _title = extractPostTitle(_el);
   const _source = _meta?.source || extractPostSource(_el);
+
+  // On X: if post has no images, screenshot the post element as illustration
+  if (SITE === "x" && !_imageUrl && _el) {
+    try {
+      const bounds = _el.getBoundingClientRect();
+      if (bounds.width > 100 && bounds.height > 100) {
+        const screenshotResp = await new Promise((resolve) => {
+          chrome.runtime.sendMessage(
+            {
+              action: "capture-screenshot",
+              bounds: {
+                x: Math.round(bounds.x + window.scrollX),
+                y: Math.round(bounds.y + window.scrollY),
+                width: Math.round(bounds.width),
+                height: Math.round(bounds.height),
+              },
+            },
+            resolve,
+          );
+        });
+        if (screenshotResp?.base64) {
+          _imageUrl = screenshotResp.base64;
+        }
+      }
+    } catch (_) {}
+  }
   const _modelSelect = panel && panel.querySelector(".fbs-model-select");
   const _preferredProvider = _modelSelect ? _modelSelect.value : "";
   currentPort.postMessage({

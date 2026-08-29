@@ -1330,6 +1330,42 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     })().catch((e) => sendResponse({ error: e.message || "fetch failed" }));
     return true;
   }
+
+  // Capture screenshot of visible tab and crop to element bounds
+  if (request.action === "capture-screenshot") {
+    (async () => {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab) throw new Error("No active tab");
+
+      // Capture visible tab as data URL
+      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+        format: "png",
+        quality: 100,
+      });
+
+      if (!dataUrl) throw new Error("captureVisibleTab failed");
+
+      // If bounds provided, crop to element
+      if (request.bounds) {
+        const { x, y, width, height } = request.bounds;
+        // Load image and crop using OffscreenCanvas
+        const img = await createImageBitmap(
+          await (await fetch(dataUrl)).blob()
+        );
+        const canvas = new OffscreenCanvas(width, height);
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, x, y, width, height, 0, 0, width, height);
+        const croppedBlob = await canvas.convertToBlob({ type: "image/png" });
+        const reader = new FileReader();
+        reader.onloadend = () => sendResponse({ base64: reader.result });
+        reader.onerror = () => sendResponse({ error: "Crop failed" });
+        reader.readAsDataURL(croppedBlob);
+      } else {
+        sendResponse({ base64: dataUrl });
+      }
+    })().catch((e) => sendResponse({ error: e.message || "screenshot failed" }));
+    return true;
+  }
 });
 } // end if (chrome?.runtime?.onMessage)
 
@@ -1599,6 +1635,22 @@ function postProcessOutput(output, sourceText, type) {
       text: processed,
       quality: "fail",
       issues: ["Output trống hoặc quá ngắn."],
+    };
+  }
+
+  // 1b. Refusal detection — some providers return polite refusals
+  const refusalPatterns = [
+    /i(?:'|')?m\s+sorry.*(?:can(?:'|')?t|unable)\s+(?:help|assist|do|comply|fulfill)/i,
+    /(?:can(?:'|')?t|unable)\s+(?:help|assist)\s+(?:with\s+)?(?:that|this|your|the\s+request)/i,
+    /(?:not\s+able|unable)\s+to\s+(?:comply|assist|help|process|fulfill)/i,
+    /(?:against|violates?)\s+(?:my|our|the)\s+(?:policy|policies|guidelines|rules)/i,
+    /(?:content|safety)\s+(?:policy|filter|guideline)\s+(?:violation|triggered)/i,
+  ];
+  if (refusalPatterns.some((p) => p.test(processed))) {
+    return {
+      text: processed,
+      quality: "fail",
+      issues: ["Provider từ chối xử lý. Thử đổi provider hoặc viết lại prompt."],
     };
   }
 

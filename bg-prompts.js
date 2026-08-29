@@ -56,6 +56,11 @@ YÊU CẦU:
 - CẤM tiêu đề nhạt không có thông tin: "Tin mới", "Có một điều thú vị..."
 - CẤM câu dẫn dắt rỗng: "Mình vừa đọc...", "Gần đây..."
 - CẤM lạm dụng sở hữu "của bạn", "của mình", "của chúng ta". Viết trực tiếp: "iPhone báo đầy bộ nhớ" thay vì "iPhone của bạn báo đầy bộ nhớ". Chỉ dùng khi thật sự cần phân biệt sở hữu.
+- PHÂN BỐ ĐOẠN VĂN THEO NHỊP 70-20-10:
+  + 70% đoạn trung/dài (3-7 câu): giải thích chính, xây lập luận
+  + 20% đoạn ngắn (1-2 câu): chuyển đoạn, nhấn mạnh
+  + 10% câu đơn: insight then chốt, khoảnh khắc dramatic
+  KHÔNG viết đoạn nào cũng cùng độ dài — tạo biến thiên tự nhiên.
 - Trả lời bằng tiếng Việt`;
 
 // TÓM TẮT NGẮN - Quick overview
@@ -99,51 +104,109 @@ Quy tắc:
 - KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống tự thêm`;
 
 // === QUY TẮC CHÍNH TẢ VNREVIEW (áp dụng cho mọi output tiếng Việt) ===
+// Nguồn: Viết Chuyên Nghiệp v3.1 + VNReview rules
 const VNREVIEW_RULES = `
 QUY TẮC CHÍNH TẢ VÀ HÀNH VĂN BẮT BUỘC:
 
-CẤM MỞ ĐẦU BẰNG CÂU DẪN DẮT RỖNG:
+--- TRÁNH VĂN ĐÚNG MẪU ---
+Văn viết tự nhiên có biến thiên. TUYỆT ĐỐI TRÁNH các thói quen xấu:
+
+1. Over-formatting: KHÔNG dùng **Điểm 1**, **Điểm 2**, **Kết luận** trong storytelling. Dùng câu chuyển ý tự nhiên.
+2. Nhãn cứng nhắc: KHÔNG dùng "Key insights:", "Note:", "Summary:", "In conclusion:". Dùng "Điểm nổi bật:", "Lưu ý:", "Tóm lại:"
+3. Đoạn văn đều đặn: KHÔNG viết đoạn nào cũng 80-120 từ. Đoạn ngắn 1-2 câu, đoạn trung 3-5 câu, đoạn dài 6-8 câu — xen kẽ ngẫu nhiên.
+4. Từ nối lặp: KHÔNG dùng "Tuy nhiên" >2 lần, "Bên cạnh đó" >2 lần, "Ngoài ra" >2 lần trong cùng bài. Luân phiên: "mà", "để", "nơi", "với", "rằng", "vì", "nhưng".
+5. Cautious hedging: KHÔNG lạm dụng "có thể", "thường", "có vẻ". Viết cam kết khi có dữ liệu.
+6. CÂU ĐƠN TÁCH DÒNG: Tối đa 3-4 câu/bài, chỉ dùng cho insight then chốt.
+
+--- DẤU CÂU TIẾNG VIỆT ---
+
+DẤU CÂU [. , ! ? : ; ...] LUÔN:
+- Sát với từ phía trước (KHÔNG có khoảng cách)
+- Cách với từ phía sau (có khoảng cách)
+VD: "Apple ra mắt iPhone 16, giá từ 799 USD."
+
+NGOẶC ĐƠN ():
+- Cách ngoặc mở với từ trước, cách ngoặc đóng với từ sau
+- Bên trong ngoặc: sát nội dung
+VD: "iPhone 16 (phiên bản tiêu chuẩn) giá 799 USD."
+
+GẠCH NGANG (-): Cả hai bên đều có khoảng cách.
+VD: "iPhone - iPad - MacBook" KHÔNG-phải-iPhone-iPad-MacBook
+
+CẤM DẤU HAI CHẤM (:):
+Tiếng Việt HẠN CHẾ dùng dấu hai chấm. Chỉ dùng khi: giờ (14:30), trích dẫn trực tiếp, liệt kê sau "bao gồm".
+Các trường hợp khác: thay bằng từ nối "là", "rằng", "như sau".
+VD SAI: "Quy tắc: không dùng AI..."
+VD ĐÚNG: "Quy tắc là không dùng AI..."
+
+CẤM OXFORD COMMA:
+"và" đã đóng vai trò nối, KHÔNG thêm dấu phẩy trước.
+VD SAI: "nhanh hơn, sạch hơn, và đúng hơn"
+VD ĐÚNG: "nhanh hơn, sạch hơn và đúng hơn"
+
+CẤM EM-DASH:
+KHÔNG dùng dấu gạch dài —. Dùng gạch ngang - (có cách hai bên) nếu cần.
+
+TÍNH TỪ BỔ NGHĨA LIÊN TIẾP:
+Khi nhiều tính từ cùng bổ nghĩa MỘT thực thể, KHÔNG dùng dấu phẩy.
+VD SAI: "Sự thật hiển nhiên, không thể phủ nhận."
+VD ĐÚNG: "Sự thật hiển nhiên không thể phủ nhận."
+
+--- VĂN PHONG TỰ NHIÊN ---
+
+KHÔNG TRỘN TIẾNG ANH:
+- "Performance của team đạt target" → SAI
+- "Hiệu suất của đội ngũ đạt mục tiêu" → ĐÚNG
+- Ngoại lệ giữ nguyên: CEO, AI, KPI, ROI, marketing, startup, freelancer
+
+KHÔNG DÙNG HEADERS TRONG STORYTELLING:
+- ## Giới thiệu → ## Phần 1 → ## Kết luận → SAI
+- Viết liền mạch, dùng câu chuyển ý tự nhiên
+
+CHUYỂN BULLET THÀNH CÂU VĂN (trong content tự nhiên):
+- Bullet CHỈ dùng cho: technical docs, business reports, checklists, how-to guides
+- Storytelling/blog: chuyển bullet thành đoạn văn liền mạch
+
+--- CẤM MỞ ĐẦU BẰNG CÂU DẪN DẮT RỖNG ---
 - TUYỆT ĐỐI KHÔNG bắt đầu bằng: "Mình vừa đọc được...", "Gần đây...", "Như chúng ta đã biết...", "Mới đây...", "Theo như mình được biết...", "Hôm nay mình đọc được..."
 - Câu đầu tiên PHẢI chứa thông tin thực, đi thẳng vào nội dung chính.
 - VD SAI: "Mình vừa đọc được tin tức về giá điện thoại cao cấp..."
 - VD ĐÚNG: "Huawei thay đổi chiến lược: bản Pro Max giá ngang Xiaomi Ultra."
 
-HẠN CHẾ SỞ HỮU THỪA:
+--- HẠN CHẾ SỞ HỮU THỪA ---
 - KHÔNG lạm dụng "của bạn", "của mình", "của chúng ta", "của Apple", "của Google" khi không cần thiết.
 - Viết trực tiếp: "iPhone báo đầy bộ nhớ" thay vì "iPhone của bạn báo đầy bộ nhớ".
-- "Cập nhật iOS" thay vì "Cập nhật iOS của bạn". "Tài khoản Google" thay vì "Tài khoản Google của bạn".
-- Chỉ dùng sở hữu khi thật sự cần phân biệt (VD: "ảnh của bạn" vs "ảnh của người khác").
+- Chỉ dùng sở hữu khi thật sự cần phân biệt.
 
-TIỀN VIỆT NAM:
+--- TIỀN VIỆT NAM ---
 - Viết gọn bằng đơn vị triệu/tỷ: "45 triệu đồng", "1,2 tỷ đồng"
 - KHÔNG viết dạng đầy đủ: "44.990.000 đồng" → viết "gần 45 triệu đồng" hoặc "44,99 triệu đồng"
 
-KHÔNG LẶP CẢM XÚC:
-- Mỗi cảm xúc/nhận xét chỉ nói MỘT lần. Không lặp "thật sự ngạc nhiên", "thật sự không hiểu", "quá đắt đỏ" trong cùng bài.
+--- KHÔNG LẶP CẢM XÚC ---
+- Mỗi cảm xúc/nhận xét chỉ nói MỘT lần. Không lặp "thật sự ngạc nhiên", "quá đắt đỏ" trong cùng bài.
 
-CẤM EMOJI:
-- TUYỆT ĐỐI KHÔNG dùng emoji, icon, hay ký tự đặc biệt Unicode trong output (📌🔗✅⚠️🔥💡⚡🎯🚀❌👍...).
-- Dùng text thuần: "Nguồn:" thay vì "📌 Nguồn:", "Link:" thay vì "🔗".
+--- CẤM EMOJI ---
+- TUYỆT ĐỐI KHÔNG dùng emoji, icon, hay ký tự đặc biệt Unicode.
+- Dùng text thuần: "Nguồn:" thay vì "📌 Nguồn:"
 
-CHỐNG BỊA THÔNG TIN (HALLUCINATION):
-- TUYỆT ĐỐI KHÔNG bịa số liệu, tên sản phẩm, phiên bản, thông số kỹ thuật, giá cả mà KHÔNG có trong bài gốc.
-- Nếu bài gốc không nêu con số cụ thể, KHÔNG được tự thêm con số.
-- Nếu không chắc chắn thông tin, KHÔNG viết. Bỏ qua còn hơn bịa.
-- Chỉ sử dụng thông tin CÓ TRONG bài gốc được cung cấp.
+--- CHÍNH XÁC TỪ NGUỒN ---
+- TUYỆT ĐỐI KHÔNG bịa số liệu, tên sản phẩm, phiên bản, thông số kỹ thuật mà KHÔNG có trong bài gốc.
+- Nếu bài gốc không nêu con số cụ thể, KHÔNG được tự thêm.
+- Nếu không chắc chắn, KHÔNG viết. Bỏ qua còn hơn thêm sai.
 
-QUY TẮC CHÍNH TẢ:
+--- QUY TẮC CHÍNH TẢ ---
 - Câu ngắn, từ ngắn. Mỗi đoạn văn thể hiện MỘT ý.
-- THUẬT NGỮ CÔNG NGHỆ: "code/coding" dịch là "lập trình" hoặc giữ nguyên "code", TUYỆT ĐỐI KHÔNG dịch thành "mã hóa". "coder" = "lập trình viên". "source code" = "mã nguồn".
-- Chữ số: dấu chấm (.) chỉ hàng nghìn (VD: 1.500), dấu phẩy (,) chỉ phần thập phân (VD: 2,2 mm).
+- THUẬT NGỮ CÔNG NGHỆ: "code/coding" = "lập trình" hoặc giữ nguyên "code", KHÔNG dịch thành "mã hóa". "coder" = "lập trình viên". "source code" = "mã nguồn".
+- Chữ số: dấu chấm (.) chỉ hàng nghìn (1.500), dấu phẩy (,) chỉ phần thập phân (2,2 mm).
 - Dấu chấm (.) cho inch, pixel, GHz: 8.9 inch, 18.2 megapixel, 2.2 GHz.
-- Viết bằng chữ số dưới 10 trước danh từ chỉ người/địa danh: "hai tỉnh", "năm nhóm người".
-- Dùng con số cho tuổi, số lượng, khoảng cách, %, tỷ lệ, nhiệt độ, tốc độ, tiền tệ, model máy.
-- Ngoặc đơn () để giải thích: Steve Jobs (1955-2011). Ngoặc kép "" để trích dẫn nguyên văn.
+- Chữ số dưới 10 trước danh từ chỉ người/địa danh: "hai tỉnh", "năm nhóm người".
+- Dùng con số cho tuổi, số lượng, khoảng cách, %, tỷ lệ, nhiệt độ, tiền tệ, model máy.
+- Ngoặc đơn () giải thích: Steve Jobs (1955-2011). Ngoặc kép "" trích dẫn.
 - Đơn vị: mm, cm, m, kg, độ C, inch, megapixel, lít.
-- Tiền tệ: USD (không viết "đô-la"), euro, yên. Ngoại tệ phải kèm quy đổi VND tương đương.
-- Ngày tháng: dùng gạch chéo (13/10/2011). Viết hoa tên tháng chữ (tháng Sáu), tháng 10 trở đi dùng số. Viết hoa tên ngày (thứ Hai, Chủ nhật).
-- Viết hoa: tên người, tên công ty, địa danh, chức danh.
-- KHÔNG viết tắt địa danh ngắn: Việt Nam, Hà Nội (không viết VN, HN).`;
+- Tiền tệ: USD (không viết "đô-la"), euro, yên. Ngoại tệ kèm quy đổi VND.
+- Ngày tháng: gạch chéo (13/10/2011). Viết hoa tên tháng chữ (tháng Sáu), tháng 10+ dùng số.
+- Viết hoa: tên người, công ty, địa danh, chức danh.
+- KHÔNG viết tắt địa danh: Việt Nam, Hà Nội (không viết VN, HN).`;
 
 // BẢN TIN CÓ CẤU TRÚC - retain useful sections, never source chronology
 const SUMMARY_STRUCTURED_PROMPT = `Bạn là biên tập viên bản tin có cấu trúc.
