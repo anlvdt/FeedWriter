@@ -494,6 +494,26 @@ describe("Composer source-card density", () => {
     assert.match(composer, /Sẵn sàng — nguồn đã copy, bấm Đăng/);
     assert.doesNotMatch(composer, /không tự copy nguồn/);
   });
+
+  it("materializes captured X screenshot data URLs for Facebook", () => {
+    const domSource = fs.readFileSync(path.join(root, "content-dom.js"), "utf8");
+    assert.match(domSource, /\^data:image\\\/\(\?:png\|jpeg\|webp\);base64,/);
+    assert.match(domSource, /const response = await fetch\(imgSrc\)/);
+    assert.match(domSource, /return new File\(\[blob\]/);
+  });
+
+  it("recovers GitHub destinations hidden behind X t.co anchors", () => {
+    assert.match(contentDom, /function _expandedXAnchorUrls\(anchor, label = ""\)/);
+    assert.match(contentDom, /data-expanded-url/);
+    assert.match(contentDom, /github\\\.com\|gitlab\\\.com/);
+    assert.match(contentDom, /"https:\/\/" \+ displayed/);
+    const collector = contentDom.slice(
+      contentDom.indexOf("function _collectPostOutboundLinks"),
+      contentDom.indexOf("function _dedupeRelatedLinks"),
+    );
+    assert.match(collector, /_expandedXAnchorUrls\(anchor, label\)/);
+    assert.match(collector, /"x-expanded-link"/);
+  });
 });
 
 describe("No autonomous Facebook publishing", () => {

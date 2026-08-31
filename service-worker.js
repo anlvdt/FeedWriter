@@ -763,6 +763,15 @@ if (typeof globalThis !== "undefined") {
     "webassembly", "webrtc", "zero-day", "zero day",
   ];
 
+  // Acronyms worth explaining even when the source does not spell them out.
+  // Do not treat arbitrary ALL-CAPS words as terminology: social posts often
+  // capitalize ordinary English words such as LOT, NEW, BIG, or FREE.
+  const KNOWN_TECH_ACRONYMS = new Set([
+    "agi", "asi", "cdn", "cli", "crm", "cuda", "dlss", "erp", "gan",
+    "gpt", "hdr", "llm", "mcp", "nlp", "npu", "ocr", "oled", "rag",
+    "saas", "sdk", "sso", "tpu", "ui", "ux", "vpn", "wasm",
+  ]);
+
   function normalizeText(value) {
     return String(value || "")
       .normalize("NFKC")
@@ -857,6 +866,24 @@ if (typeof globalThis !== "undefined") {
     result.push({ term: clean, normalized, category });
   }
 
+  function sourceDefinesAcronym(source, acronym) {
+    const escaped = String(acronym || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (!escaped) return false;
+    const longForm = "[A-Z][A-Za-z0-9+.-]+(?:\\s+[A-Z][A-Za-z0-9+.-]+){1,7}";
+    return new RegExp(
+      "(?:" + longForm + "\\s*\\(\\s*" + escaped + "\\s*\\)|" +
+        escaped + "\\s*\\(\\s*" + longForm + "\\s*\\))",
+      "i",
+    ).test(String(source || ""));
+  }
+
+  function isGlossaryAcronym(source, term) {
+    const normalized = normalizeText(term);
+    return KNOWN_TECH_ACRONYMS.has(normalized) ||
+      /\d/.test(String(term || "")) ||
+      sourceDefinesAcronym(source, term);
+  }
+
   function extractGlossaryCandidates(text) {
     const source = String(text || "");
     const normalizedSource = normalizeText(source);
@@ -866,6 +893,7 @@ if (typeof globalThis !== "undefined") {
     const acronymPattern = /(?:^|[^\p{L}\p{N}])([A-Z][A-Z0-9]{1,7})(?=$|[^\p{L}\p{N}])/gu;
     let match;
     while ((match = acronymPattern.exec(source))) {
+      if (!isGlossaryAcronym(source, match[1])) continue;
       addCandidate(result, seen, match[1], "acronym");
     }
 
@@ -966,6 +994,7 @@ if (typeof globalThis !== "undefined") {
     buildGlossaryInstruction,
     sanitizeGlossaryOutput,
     normalizeText,
+    isGlossaryAcronym,
   };
 
   if (typeof module !== "undefined" && module.exports) module.exports = api;
@@ -2962,9 +2991,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       const images = Array.isArray(raw.images)
         ? raw.images.slice(0, 10).map((image, index) => ({
             name: String(image?.name || `image-${index}.jpg`).slice(0, 120),
-            url: String(image?.url || "").slice(0, 8000),
+            url: String(image?.url || ""),
             type: String(image?.type || "image/jpeg").slice(0, 80),
-          })).filter((image) => /^https?:\/\//i.test(image.url))
+          })).filter((image) => {
+            if (/^https?:\/\//i.test(image.url)) {
+              image.url = image.url.slice(0, 8000);
+              return true;
+            }
+            // Cropped X screenshots are trusted extension-generated PNG data
+            // URLs. Keep them across the pending Facebook handoff.
+            return /^data:image\/png;base64,/i.test(image.url) &&
+              image.url.length <= 8 * 1024 * 1024;
+          })
         : [];
       const postData = {
         title: String(raw.title || "").slice(0, 500),

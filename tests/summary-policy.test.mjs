@@ -74,6 +74,25 @@ describe("glossary policy", () => {
     assert.equal(result.candidates.length, 1);
   });
 
+  it("does not mistake capitalized ordinary words for terminology", () => {
+    const result = policy.decideGlossary({
+      site: "x",
+      text: "A LOT OF PEOPLE WANT THIS NEW FEATURE FOR FREE.",
+    });
+    assert.equal(result.mode, "omit");
+    assert.deepEqual(result.candidates, []);
+  });
+
+  it("keeps known, versioned, and explicitly defined acronyms", () => {
+    const candidates = policy.extractGlossaryCandidates(
+      "MCP kết nối model; chuẩn XYZ (Extended Yield Zone) và DDR5 cũng xuất hiện.",
+    );
+    assert.deepEqual(
+      candidates.map((item) => item.term),
+      ["MCP", "XYZ", "DDR5"],
+    );
+  });
+
   it("removes an unsolicited glossary when policy says omit", () => {
     const output =
       "APPLE CẬP NHẬT IPHONE\n\nBản mới cải thiện pin.\n\n" +

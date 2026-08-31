@@ -811,10 +811,13 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
  * Generate standard premium Facebook footer with dynamic Call to Action
  */
 function getFacebookFooter(hasRepo) {
+  const disclaimer =
+    "ℹ️ Lưu ý: Bài viết tổng hợp từ nguồn công khai, chưa dựa trên trải nghiệm trực tiếp. " +
+    "Vui lòng kiểm tra mức độ phù hợp trước khi sử dụng.";
   if (hasRepo) {
-    return "\n━━━━━━━━━━\nLink gốc & mã nguồn dưới bình luận đầu tiên";
+    return disclaimer + "\n\n━━━━━━━━━━\nLink gốc & mã nguồn dưới bình luận đầu tiên";
   } else {
-    return "\n━━━━━━━━━━\nChi tiết & nguồn dưới bình luận đầu tiên";
+    return disclaimer + "\n\n━━━━━━━━━━\nChi tiết & nguồn dưới bình luận đầu tiên";
   }
 }
 

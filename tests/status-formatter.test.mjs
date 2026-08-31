@@ -101,6 +101,21 @@ describe("StatusFormatter.format", () => {
     assert.match(out, /Link gốc & mã nguồn dưới bình luận đầu tiên/);
   });
 
+  it("adds a transparent introduction disclaimer without weakening the article", () => {
+    const raw = "Công cụ mới hỗ trợ viết nội dung\n\nSản phẩm cung cấp nhiều tính năng tự động.";
+    const out = StatusFormatter.format(raw, "facebook", { hasRepo: false });
+    assert.match(out, /Bài viết tổng hợp từ nguồn công khai/);
+    assert.match(out, /chưa dựa trên trải nghiệm trực tiếp/);
+    assert.match(out, /mức độ phù hợp trước khi sử dụng/);
+    assert.equal((out.match(/Bài viết tổng hợp từ nguồn công khai/g) || []).length, 1);
+
+    const rerendered = StatusFormatter.format(out, "facebook", { hasRepo: false });
+    assert.equal((rerendered.match(/Bài viết tổng hợp từ nguồn công khai/g) || []).length, 1);
+
+    const html = StatusFormatter.toDisplayHTML(raw, { hasRepo: false });
+    assert.match(html, /class="fbs-disclaimer"/);
+  });
+
   it("does not append Facebook footer on threads profile", () => {
     const raw = "Short threads title here\n\nBody line.";
     const out = StatusFormatter.format(raw, "threads", {});

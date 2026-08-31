@@ -945,9 +945,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       const images = Array.isArray(raw.images)
         ? raw.images.slice(0, 10).map((image, index) => ({
             name: String(image?.name || `image-${index}.jpg`).slice(0, 120),
-            url: String(image?.url || "").slice(0, 8000),
+            url: String(image?.url || ""),
             type: String(image?.type || "image/jpeg").slice(0, 80),
-          })).filter((image) => /^https?:\/\//i.test(image.url))
+          })).filter((image) => {
+            if (/^https?:\/\//i.test(image.url)) {
+              image.url = image.url.slice(0, 8000);
+              return true;
+            }
+            // Cropped X screenshots are trusted extension-generated PNG data
+            // URLs. Keep them across the pending Facebook handoff.
+            return /^data:image\/png;base64,/i.test(image.url) &&
+              image.url.length <= 8 * 1024 * 1024;
+          })
         : [];
       const postData = {
         title: String(raw.title || "").slice(0, 500),

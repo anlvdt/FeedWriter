@@ -1905,11 +1905,17 @@ async function handlePostStatus() {
     let author = meta?.author || (_element ? extractPostAuthor(_element) : "");
     let source = meta?.source || (_element ? extractPostSource(_element) : "");
     let linkQuality = meta?.quality || "";
-    const imageUrl = _element ? extractPostImage(_element) : "";
+    const capturedImageUrl =
+      lastSummarizeParams?._element === _element
+        ? lastSummarizeParams?.capturedImageUrl || ""
+        : "";
+    const imageUrl = capturedImageUrl || (_element ? extractPostImage(_element) : "");
     // Lấy TẤT CẢ ảnh để user có thể chọn paste multi-image
-    const allImages = _element && typeof window.fbsExtractImages === "function"
-      ? window.fbsExtractImages(_element)
-      : (imageUrl ? [imageUrl] : []);
+    const allImages = capturedImageUrl
+      ? [capturedImageUrl]
+      : _element && typeof window.fbsExtractImages === "function"
+        ? window.fbsExtractImages(_element)
+        : (imageUrl ? [imageUrl] : []);
     let relatedLinks = [];
     if (_element && typeof window.fbsDiscoverRelatedSourceLinks === "function") {
       try {
@@ -3035,12 +3041,6 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
   // X exposes a generic page-level OpenGraph image ("See what's happening")
   // when a tweet has no real media. Never attach that branding placeholder to
   // the summary; use the exact rendered tweet as the illustration instead.
-  const _xNativeMedia = SITE === "x" && _el
-    ? _el.querySelector(
-        '[data-testid="tweetPhoto"] img, [data-testid="videoPlayer"], ' +
-          '[data-testid="videoComponent"], video[poster]',
-      )
-    : null;
   const _xOgImage = SITE === "x"
     ? document.querySelector('meta[property="og:image"]')?.content || ""
     : "";
@@ -3052,9 +3052,30 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
       return String(value || "").split(/[?#]/)[0];
     }
   };
-  const _xGenericImage = SITE === "x" && !_xNativeMedia && !!_imageUrl && (
+  const _xImageNode = SITE === "x" && _el && _imageUrl
+    ? Array.from(_el.querySelectorAll("img")).find((image) =>
+        _normalizeImageUrl(image.currentSrc || image.src || "") ===
+          _normalizeImageUrl(_imageUrl),
+      )
+    : null;
+  const _xImageLink = _xImageNode?.closest("a[href]")?.href || "";
+  let _xImageLinkHost = "";
+  try {
+    _xImageLinkHost = new URL(_xImageLink).hostname.toLowerCase();
+  } catch (_) {}
+  const _xGenericCardImage = !!_xImageNode && (
+    /(?:^|\.)(?:x\.com|twitter\.com)$/.test(_xImageLinkHost) ||
+    (!!_xImageNode.closest('[data-testid^="card."]') && /\/card_img\//i.test(_imageUrl))
+  );
+  const _xImageLabel = (
+    (_xImageNode?.getAttribute("alt") || "") + " " +
+    (_xImageNode?.getAttribute("title") || "")
+  ).toLowerCase();
+  const _xGenericImage = SITE === "x" && !!_imageUrl && (
     (_xOgImage && _normalizeImageUrl(_imageUrl) === _normalizeImageUrl(_xOgImage)) ||
-    /(?:abs\.twimg\.com|static\.twitter\.com)\//i.test(_imageUrl)
+    /(?:abs\.twimg\.com|static\.twitter\.com)\//i.test(_imageUrl) ||
+    /see\s+what(?:'|’)?s\s+happening/.test(_xImageLabel) ||
+    _xGenericCardImage
   );
   if (_xGenericImage) _imageUrl = "";
 
@@ -3086,6 +3107,9 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
         });
         if (screenshotResp?.base64) {
           _imageUrl = screenshotResp.base64;
+          // Preserve the screenshot for the later "Đăng Facebook" action.
+          // Re-extracting from X's DOM would select the generic OG image again.
+          lastSummarizeParams.capturedImageUrl = _imageUrl;
         }
       }
     } catch (_) {}

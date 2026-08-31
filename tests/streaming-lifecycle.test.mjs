@@ -152,6 +152,10 @@ describe("streaming lifecycle", () => {
 
     assert.match(content, /const _xGenericImage = SITE === "x"/);
     assert.match(content, /meta\[property="og:image"\]/);
+    assert.match(content, /const _xGenericCardImage = !!_xImageNode/);
+    assert.match(content, /x\\\.com\|twitter\\\.com/);
+    assert.match(content, /see\\s\+what/);
+    assert.doesNotMatch(content, /SITE === "x" && !_xNativeMedia/);
     assert.match(content, /if \(_xGenericImage\) _imageUrl = ""/);
     assert.match(content, /x: Math\.round\(bounds\.x\)/);
     assert.match(content, /y: Math\.round\(bounds\.y\)/);
@@ -161,5 +165,8 @@ describe("streaming lifecycle", () => {
     assert.match(background, /const scaleX = img\.width \/ viewportWidth/);
     assert.match(background, /const scaleY = img\.height \/ viewportHeight/);
     assert.match(background, /ctx\.drawImage\([\s\S]*?sourceX,[\s\S]*?sourceY/);
+    assert.match(content, /lastSummarizeParams\.capturedImageUrl = _imageUrl/);
+    assert.match(content, /const imageUrl = capturedImageUrl \|\|/);
+    assert.match(background, /\^data:image\\\/png;base64,/);
   });
 });

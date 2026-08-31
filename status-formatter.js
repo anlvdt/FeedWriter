@@ -94,6 +94,10 @@ const StatusFormatter = {
     text = text.replace(/\s*(?:Chi tiết|Link gốc|Nguồn)\s*&?\s*$/gim, ""); // truncated footer like "Chi tiết &"
     text = text.replace(/(?:_{5,}|━━━━━━━━━━)\s*(?:|•)?\s*(?:Chi\s+tiết|Link\s+gốc|Nguồn)?.*$/gi, "");
     text = text.replace(/👉\s*/g, ""); // Remove any stray 👉 emoji
+    text = text.replace(
+      /\s*ℹ️?\s*Lưu ý:\s*Bài viết tổng hợp từ nguồn công khai, chưa dựa trên trải nghiệm trực tiếp\.\s*Vui lòng kiểm tra mức độ phù hợp trước khi sử dụng\.\s*$/i,
+      "",
+    );
     
     // Fix AI sometimes ignoring "write normally, system will uppercase" instruction
     // Check if the ENTIRE content (not just body) is mostly uppercase
@@ -615,7 +619,10 @@ const StatusFormatter = {
     const cta = hasRepo
       ? "Link gốc & mã nguồn dưới bình luận đầu tiên"
       : "Chi tiết & nguồn dưới bình luận đầu tiên";
-    return separator + "\n👉 " + cta;
+    const disclaimer =
+      "ℹ️ Lưu ý: Bài viết tổng hợp từ nguồn công khai, chưa dựa trên trải nghiệm trực tiếp. " +
+      "Vui lòng kiểm tra mức độ phù hợp trước khi sử dụng.";
+    return disclaimer + "\n\n" + separator + "\n👉 " + cta;
   },
 
   _collapseBulletPrefix(text) {
@@ -780,6 +787,12 @@ const StatusFormatter = {
 
     // Footer — class-driven (ui.css v3), no inline zinc colors
     const hasRepo = !!options.hasRepo;
+    htmlParts.push(
+      '<div class="fbs-disclaimer">' +
+      "Lưu ý: Bài viết tổng hợp từ nguồn công khai, chưa dựa trên trải nghiệm trực tiếp. " +
+      "Vui lòng kiểm tra mức độ phù hợp trước khi sử dụng." +
+      "</div>"
+    );
     htmlParts.push(
       '<div class="fbs-source-footer">' +
       (hasRepo
