@@ -1845,6 +1845,105 @@ function copyResult() {
 
 // === ĐĂNG STATUS ===
 
+function normalizeXImageUrl(value) {
+  try {
+    const url = new URL(value, location.href);
+    return url.origin + url.pathname;
+  } catch (_) {
+    return String(value || "").split(/[?#]/)[0];
+  }
+}
+
+function isXPlaceholderImage(imageUrl, postElement) {
+  if (SITE !== "x" || !imageUrl) return false;
+  if (/^data:image\/(?:png|jpeg|webp);base64,/i.test(imageUrl)) return false;
+
+  const normalized = normalizeXImageUrl(imageUrl);
+  const ogImage = document.querySelector('meta[property="og:image"]')?.content || "";
+  const ogImageLabel = (
+    document.querySelector('meta[property="og:image:alt"]')?.content ||
+    document.querySelector('meta[name="twitter:image:alt"]')?.content ||
+    ""
+  ).toLowerCase();
+  if (
+    ogImage &&
+    normalized === normalizeXImageUrl(ogImage) &&
+    /(?:see\s+)?what(?:'|’)?s\s+happening/.test(ogImageLabel)
+  ) return true;
+  if (/(?:abs\.twimg\.com|static\.twitter\.com)\//i.test(imageUrl)) return true;
+  if (/\/(?:default|placeholder)\.(?:png|jpe?g|webp)(?:[?#]|$)/i.test(imageUrl)) return true;
+
+  const imageNode = postElement
+    ? Array.from(postElement.querySelectorAll("img")).find((image) =>
+        normalizeXImageUrl(image.currentSrc || image.src || "") === normalized,
+      )
+    : null;
+  if (!imageNode) return false;
+
+  const label = [imageNode.alt, imageNode.title, imageNode.getAttribute("aria-label")]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  if (/(?:see\s+)?what(?:'|’)?s\s+happening/.test(label)) return true;
+
+  const card = imageNode.closest('[data-testid^="card."], [data-testid="card.wrapper"], [data-testid="card2"]');
+  const link = imageNode.closest("a[href]")?.href || "";
+  let linkHost = "";
+  try {
+    linkHost = new URL(link).hostname.toLowerCase();
+  } catch (_) {}
+  return !!card && (
+    /\/card_img\//i.test(imageUrl) ||
+    /(?:^|\.)(?:x\.com|twitter\.com)$/.test(linkHost)
+  );
+}
+
+function extractRealXPostImages(postElement) {
+  if (!postElement || typeof window.fbsExtractImages !== "function") return [];
+  return window.fbsExtractImages(postElement).filter(
+    (imageUrl) => !isXPlaceholderImage(imageUrl, postElement),
+  );
+}
+
+async function captureXPostForStatusComposer(postElement) {
+  if (SITE !== "x" || !postElement) throw new Error("Không tìm thấy bài X để chụp");
+  // captureVisibleTab specifically requires activeTab or <all_urls>. A click
+  // on an injected content-script button does not grant activeTab, so request
+  // the optional host permission while this user gesture is still active.
+  const permission = await chrome.runtime.sendMessage({
+    action: "request-optional-permission",
+    origins: ["<all_urls>"],
+  });
+  if (!permission?.granted) {
+    throw new Error("Cần cấp quyền chụp tab để tạo screenshot");
+  }
+  const previousVisibility = panel?.style.visibility || "";
+  try {
+    // Hide FeedWriter so the fixed panel is never baked into the screenshot.
+    if (panel) panel.style.visibility = "hidden";
+    postElement.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" });
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const bounds = postElement.getBoundingClientRect();
+    if (bounds.width <= 100 || bounds.height <= 100) {
+      throw new Error("Kích thước bài viết không hợp lệ");
+    }
+    const response = await chrome.runtime.sendMessage({
+      action: "capture-screenshot",
+      bounds: {
+        x: Math.round(bounds.x),
+        y: Math.round(bounds.y),
+        width: Math.round(bounds.width),
+        height: Math.round(bounds.height),
+      },
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+    });
+    if (!response?.base64) throw new Error(response?.error || "Không chụp được bài viết");
+    return response.base64;
+  } finally {
+    if (panel) panel.style.visibility = previousVisibility;
+  }
+}
+
 async function handlePostStatus() {
   // Không cần check lastSummarizeParams — lấy text trực tiếp từ panel
   if (isSummarizing || !panelBody) return;
@@ -1905,17 +2004,38 @@ async function handlePostStatus() {
     let author = meta?.author || (_element ? extractPostAuthor(_element) : "");
     let source = meta?.source || (_element ? extractPostSource(_element) : "");
     let linkQuality = meta?.quality || "";
-    const capturedImageUrl =
-      lastSummarizeParams?._element === _element
+    const extractedImages = _element && typeof window.fbsExtractImages === "function"
+      ? window.fbsExtractImages(_element)
+      : [];
+    const realPostImages = SITE === "x"
+      ? extractRealXPostImages(_element)
+      : extractedImages;
+    let livePublishScreenshot = "";
+    if (SITE === "x" && realPostImages.length === 0) {
+      const cachedScreenshot = lastSummarizeParams?._element === _element
         ? lastSummarizeParams?.capturedImageUrl || ""
         : "";
-    const imageUrl = capturedImageUrl || (_element ? extractPostImage(_element) : "");
+      try {
+        livePublishScreenshot = cachedScreenshot || await captureXPostForStatusComposer(_element);
+        if (lastSummarizeParams) {
+          lastSummarizeParams.capturedImageUrl = livePublishScreenshot;
+        }
+      } catch (error) {
+        openOverlay(
+          '<div class="fbs-error">Không chụp được bài X: ' +
+            esc(error?.message || String(error)) +
+            ". Vui lòng thử lại.</div>",
+          false,
+        );
+        return;
+      }
+    }
+    const capturedImageUrl = realPostImages.length === 0 ? livePublishScreenshot : "";
+    const imageUrl = realPostImages[0] || capturedImageUrl || (_element ? extractPostImage(_element) : "");
     // Lấy TẤT CẢ ảnh để user có thể chọn paste multi-image
-    const allImages = capturedImageUrl
-      ? [capturedImageUrl]
-      : _element && typeof window.fbsExtractImages === "function"
-        ? window.fbsExtractImages(_element)
-        : (imageUrl ? [imageUrl] : []);
+    const allImages = realPostImages.length > 0
+      ? realPostImages
+      : (capturedImageUrl ? [capturedImageUrl] : (imageUrl ? [imageUrl] : []));
     let relatedLinks = [];
     if (_element && typeof window.fbsDiscoverRelatedSourceLinks === "function") {
       try {

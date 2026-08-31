@@ -2071,12 +2071,14 @@ function extractPostImages(element) {
         if (w < 200 && h < 200) continue;
         if (src.includes("emoji") || src.includes("static")) continue;
         if (src.includes("profile") || src.includes("avatar")) continue;
-        try { if (getComputedStyle(img).borderRadius === "50%") continue; } catch (_) {}
-        // On X: skip link preview images (card thumbnails) — these are not user-uploaded
         if (SITE === "x") {
+          // Skip X default/placeholder images (e.g. pbs.twimg.com/media/.../default.jpg or static images)
+          if (src.includes("default.jpg") || src.includes("default.png") || src.includes("/static/") || src.includes("profile_images")) continue;
+          // Skip link preview images (card thumbnails) — these are not user-uploaded
           const card = img.closest('[data-testid="card.wrapper"], [data-testid="card2"], [data-testid="socialContext"], a[href*="t.co"]');
           if (card) continue;
         }
+        try { if (getComputedStyle(img).borderRadius === "50%") continue; } catch (_) {}
         results.push(src);
       }
       return results;

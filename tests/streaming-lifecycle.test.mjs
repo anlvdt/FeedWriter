@@ -166,7 +166,8 @@ describe("streaming lifecycle", () => {
     assert.match(background, /const scaleY = img\.height \/ viewportHeight/);
     assert.match(background, /ctx\.drawImage\([\s\S]*?sourceX,[\s\S]*?sourceY/);
     assert.match(content, /lastSummarizeParams\.capturedImageUrl = _imageUrl/);
-    assert.match(content, /const imageUrl = capturedImageUrl \|\|/);
+    assert.match(content, /const imageUrl = realPostImages\[0\] \|\| capturedImageUrl \|\|/);
+    assert.match(content, /SITE === "x" && realPostImages\.length === 0/);
     assert.match(background, /\^data:image\\\/png;base64,/);
   });
 });

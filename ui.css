@@ -1507,7 +1507,7 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
   border: none !important;
   border-radius: 10px !important;
   background: var(--fw-accent) !important;
-  color: #fff !important;
+  color: var(--fw-accent-fg) !important;
   font-size: 13px !important;
   font-weight: 700 !important;
   display: inline-flex !important;
@@ -1519,6 +1519,20 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
 }
 .fbs-sp-open-fb:hover {
   background: var(--fw-accent-hover) !important;
+  color: var(--fw-accent-fg) !important;
+}
+.fbs-sp-open-fb:focus-visible {
+  outline: 2px solid var(--fw-text) !important;
+  outline-offset: 2px !important;
+}
+.fbs-sp-open-fb:active:not(:disabled) {
+  transform: translateY(1px) !important;
+}
+.fbs-sp-open-fb:disabled {
+  background: var(--fw-surface-2) !important;
+  color: var(--fw-text-2) !important;
+  cursor: wait !important;
+  opacity: 1 !important;
 }
 
 .fbs-sp-image img {

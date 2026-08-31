@@ -472,6 +472,19 @@ describe("Composer source-card density", () => {
     assert.match(css, /max-height:\s*104px\s*!important/);
   });
 
+  it("keeps the Facebook publish action legible in every theme and state", () => {
+    assert.match(
+      css,
+      /\.fbs-sp-open-fb\s*\{[\s\S]*?color:\s*var\(--fw-accent-fg\)\s*!important/,
+    );
+    assert.match(
+      css,
+      /\.fbs-sp-open-fb:hover\s*\{[\s\S]*?color:\s*var\(--fw-accent-fg\)\s*!important/,
+    );
+    assert.match(css, /\.fbs-sp-open-fb:focus-visible\s*\{/);
+    assert.match(css, /\.fbs-sp-open-fb:disabled\s*\{/);
+  });
+
   it("keeps the source-copy action available when the preview is collapsed", () => {
     assert.match(
       composer,
@@ -493,6 +506,36 @@ describe("Composer source-card density", () => {
     assert.match(xBranch, /Đã mở Facebook — nguồn đã copy/);
     assert.match(composer, /Sẵn sàng — nguồn đã copy, bấm Đăng/);
     assert.doesNotMatch(composer, /không tự copy nguồn/);
+  });
+
+  it("uses real X media and only screenshots media-less or placeholder-only posts", () => {
+    assert.match(content, /function isXPlaceholderImage\(imageUrl, postElement\)/);
+    assert.match(content, /what\(\?:'\|’\)\?s\\s\+happening/);
+    assert.match(content, /function extractRealXPostImages\(postElement\)/);
+    assert.match(content, /async function captureXPostForStatusComposer\(postElement\)/);
+    assert.match(content, /panel\.style\.visibility = "hidden"/);
+    assert.match(content, /postElement\.scrollIntoView/);
+    assert.match(content, /action: "capture-screenshot"/);
+    assert.match(content, /origins: \["<all_urls>"\]/);
+    const captureHelper = content.slice(
+      content.indexOf("async function captureXPostForStatusComposer"),
+      content.indexOf("async function handlePostStatus"),
+    );
+    assert.ok(
+      captureHelper.indexOf('action: "request-optional-permission"') <
+        captureHelper.indexOf('action: "capture-screenshot"'),
+    );
+    const postHandler = content.slice(
+      content.indexOf("async function handlePostStatus"),
+      content.indexOf("document.addEventListener", content.indexOf("async function handlePostStatus")),
+    );
+    assert.ok(
+      postHandler.indexOf("extractRealXPostImages(_element)") <
+        postHandler.indexOf("captureXPostForStatusComposer(_element)"),
+    );
+    assert.match(postHandler, /SITE === "x" && realPostImages\.length === 0/);
+    assert.match(postHandler, /realPostImages\.length > 0\s*\? realPostImages/);
+    assert.doesNotMatch(composer, /captureXPostAtPublish/);
   });
 
   it("materializes captured X screenshot data URLs for Facebook", () => {

@@ -26,6 +26,7 @@ describe("manifest scope", () => {
     assert.ok(!(manifest.permissions || []).includes("cookies"));
     assert.ok(!manifest.host_permissions.some((h) => /shopee|shope\.ee/i.test(h)));
     assert.ok((manifest.optional_host_permissions || []).includes("https://*/*"));
+    assert.ok((manifest.optional_host_permissions || []).includes("<all_urls>"));
   });
 
   it("loads only one platform-specific posting adapter per social site", () => {

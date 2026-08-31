@@ -15,7 +15,8 @@
     "clipboardRead"
   ],
   "optional_host_permissions": [
-    "https://*/*"
+    "https://*/*",
+    "<all_urls>"
   ],
   "host_permissions": [
     "https://generativelanguage.googleapis.com/*",
