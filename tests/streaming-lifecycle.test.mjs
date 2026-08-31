@@ -119,10 +119,47 @@ describe("streaming lifecycle", () => {
     assert.match(background, /saveHistory\([\s\S]*?site,\s*type,/);
   });
 
+  it("rotates providers instead of publishing polite refusals", () => {
+    const background = readFileSync(path.join(root, "background.js"), "utf8");
+    assert.ok(background.includes("/^i(?:'|’)?m\\s+sorry\\b/i"));
+    assert.match(background, /failure: "provider_refusal"/);
+    assert.match(
+      background,
+      /if \(postResult\.failure\) \{[\s\S]*?markKeyCooldown[\s\S]*?continue;/,
+    );
+    assert.match(background, /action: "retry"/);
+
+    const content = readFileSync(path.join(root, "content.js"), "utf8");
+    assert.match(content, /msg\.action === "retry"/);
+    assert.match(content, /streamBuffer = "";[\s\S]*?first = true;/);
+
+    const refusalBranch = background.indexOf("if (postResult.failure)");
+    const telemetry = background.indexOf("await incrementTelemetry('summaries')", refusalBranch);
+    const history = background.indexOf("await saveHistory(", refusalBranch);
+    assert.ok(refusalBranch >= 0 && telemetry > refusalBranch && history > telemetry);
+  });
+
   it("restores result actions when the UI watchdog has partial text", () => {
     const content = readFileSync(path.join(root, "content.js"), "utf8");
     assert.match(content, /const partial = streamBuffer\.trim\(\)/);
     assert.match(content, /Provider đã ngừng phản hồi/);
     assert.match(content, /\{ ok: true, summary: partial, partial: true \}/);
+  });
+
+  it("replaces X's generic OpenGraph image with an exact tweet screenshot", () => {
+    const content = readFileSync(path.join(root, "content.js"), "utf8");
+    const background = readFileSync(path.join(root, "background.js"), "utf8");
+
+    assert.match(content, /const _xGenericImage = SITE === "x"/);
+    assert.match(content, /meta\[property="og:image"\]/);
+    assert.match(content, /if \(_xGenericImage\) _imageUrl = ""/);
+    assert.match(content, /x: Math\.round\(bounds\.x\)/);
+    assert.match(content, /y: Math\.round\(bounds\.y\)/);
+    assert.doesNotMatch(content, /bounds\.y \+ window\.scrollY/);
+    assert.match(content, /viewport:[\s\S]*?width: window\.innerWidth/);
+
+    assert.match(background, /const scaleX = img\.width \/ viewportWidth/);
+    assert.match(background, /const scaleY = img\.height \/ viewportHeight/);
+    assert.match(background, /ctx\.drawImage\([\s\S]*?sourceX,[\s\S]*?sourceY/);
   });
 });

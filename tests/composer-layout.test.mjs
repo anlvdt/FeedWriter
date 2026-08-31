@@ -464,8 +464,9 @@ describe("UI system v3 contracts", () => {
 });
 
 describe("Composer source-card density", () => {
-  it("keeps optional links collapsed and source preview open by default", () => {
-    assert.match(composer, /<details class="fbs-sp-link-input fbs-sp-related-block">/);
+  it("keeps reference links always open and source preview open by default", () => {
+    assert.match(composer, /<div class="fbs-sp-link-input fbs-sp-related-block">/);
+    assert.doesNotMatch(composer, /<details class="fbs-sp-link-input fbs-sp-related-block"/);
     assert.match(composer, /<details class="fbs-sp-comment" open>/);
     assert.match(css, /\.is-composer \.fbs-status-preview[\s\S]*?border:\s*none\s*!important/);
     assert.match(css, /max-height:\s*104px\s*!important/);
@@ -476,6 +477,22 @@ describe("Composer source-card density", () => {
       composer,
       /"<\/details>" \+\s*'<button type="button" class="fbs-sp-copy-comment"/,
     );
+  });
+
+  it("copies the source before opening Facebook from X", () => {
+    assert.match(composer, /async function copySourceComment\(\)/);
+    const xBranch = composer.slice(
+      composer.indexOf('if \(SITE === "x"\)'.replace(/\\/g, "")),
+      composer.indexOf("// Cross-platform:", composer.indexOf('if (SITE === "x")')),
+    );
+    assert.ok(xBranch.indexOf("await copySourceComment()") >= 0);
+    assert.ok(
+      xBranch.indexOf("await copySourceComment()") <
+        xBranch.indexOf('action: "open-facebook-composer"'),
+    );
+    assert.match(xBranch, /Đã mở Facebook — nguồn đã copy/);
+    assert.match(composer, /Sẵn sàng — nguồn đã copy, bấm Đăng/);
+    assert.doesNotMatch(composer, /không tự copy nguồn/);
   });
 });
 

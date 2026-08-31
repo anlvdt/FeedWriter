@@ -121,6 +121,20 @@ describe("validate / ACTION_SCHEMAS", () => {
     assert.equal(r.ok, true);
   });
 
+  it("accepts bounded screenshot capture only from a content tab", () => {
+    const request = {
+      action: "capture-screenshot",
+      bounds: { x: 10, y: 20, width: 600, height: 400 },
+      viewport: { width: 1440, height: 900 },
+    };
+    assert.equal(validate(request, contentTabSender).ok, true);
+    assert.equal(validate(request, extensionPageSender).ok, false);
+    assert.equal(
+      validate({ action: "capture-screenshot", bounds: request.bounds }, contentTabSender).ok,
+      false,
+    );
+  });
+
   it("rejects unknown action", () => {
     const r = validate({ action: "totally-unknown-xyz" }, extensionPageSender);
     assert.equal(r.ok, false);

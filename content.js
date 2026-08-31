@@ -3032,7 +3032,34 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
   const _title = extractPostTitle(_el);
   const _source = _meta?.source || extractPostSource(_el);
 
-  // On X: if post has no images, screenshot the post element as illustration
+  // X exposes a generic page-level OpenGraph image ("See what's happening")
+  // when a tweet has no real media. Never attach that branding placeholder to
+  // the summary; use the exact rendered tweet as the illustration instead.
+  const _xNativeMedia = SITE === "x" && _el
+    ? _el.querySelector(
+        '[data-testid="tweetPhoto"] img, [data-testid="videoPlayer"], ' +
+          '[data-testid="videoComponent"], video[poster]',
+      )
+    : null;
+  const _xOgImage = SITE === "x"
+    ? document.querySelector('meta[property="og:image"]')?.content || ""
+    : "";
+  const _normalizeImageUrl = (value) => {
+    try {
+      const url = new URL(value, location.href);
+      return url.origin + url.pathname;
+    } catch (_) {
+      return String(value || "").split(/[?#]/)[0];
+    }
+  };
+  const _xGenericImage = SITE === "x" && !_xNativeMedia && !!_imageUrl && (
+    (_xOgImage && _normalizeImageUrl(_imageUrl) === _normalizeImageUrl(_xOgImage)) ||
+    /(?:abs\.twimg\.com|static\.twitter\.com)\//i.test(_imageUrl)
+  );
+  if (_xGenericImage) _imageUrl = "";
+
+  // On X: if there is no real tweet media (or the generic X placeholder was
+  // rejected above), screenshot the post element as the illustration.
   if (SITE === "x" && !_imageUrl && _el) {
     try {
       const bounds = _el.getBoundingClientRect();
@@ -3042,10 +3069,16 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
             {
               action: "capture-screenshot",
               bounds: {
-                x: Math.round(bounds.x + window.scrollX),
-                y: Math.round(bounds.y + window.scrollY),
+                // captureVisibleTab uses viewport coordinates, not document
+                // coordinates. Adding scroll offsets crops the wrong region.
+                x: Math.round(bounds.x),
+                y: Math.round(bounds.y),
                 width: Math.round(bounds.width),
                 height: Math.round(bounds.height),
+              },
+              viewport: {
+                width: window.innerWidth,
+                height: window.innerHeight,
               },
             },
             resolve,
@@ -3175,6 +3208,24 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
       if (!streamRafId) {
         streamRafId = requestAnimationFrame(renderStream);
       }
+    } else if (msg.action === "retry") {
+      streamBuffer = "";
+      first = true;
+      if (streamRafId) {
+        cancelAnimationFrame(streamRafId);
+        streamRafId = null;
+      }
+      openOverlay(
+        '<div class="fbs-panel-body fbs-loading">' +
+          '<div class="fbs-skeleton fbs-skeleton-text"></div>' +
+          '<div class="fbs-skeleton fbs-skeleton-text"></div>' +
+          '<div class="fbs-skeleton fbs-skeleton-text"></div>' +
+          '<div style="margin-top:8px;font-size:11px;color:rgba(255,255,255,0.5);">' +
+          esc(msg.message || "Đang thử provider khác...") +
+          "</div></div>",
+        true,
+        type,
+      );
     } else if (msg.action === "status") {
       const statusEl = panelBody.querySelector(".fbs-loading div:last-child");
       if (statusEl) statusEl.textContent = msg.message;

@@ -627,6 +627,11 @@ const ACTION_SCHEMAS = {
     fields: { url: "nonEmptyString" },
     required: ["url"],
   },
+  "capture-screenshot": {
+    sender: SENDER.CONTENT_TAB,
+    fields: { bounds: "object", viewport: "object" },
+    required: ["bounds", "viewport"],
+  },
   "enrich-related-source-links": {
     sender: SENDER.ANY_EXTENSION,
     fields: { urls: "array" },
@@ -1723,6 +1728,7 @@ async function getSystemPrompt(
   }
 
   // Output language is always Vietnamese (journalistic standard).
+  // Source language is irrelevant — the AI must translate and rewrite in Vietnamese.
   prompt +=
     "\n- Luôn trả lời bằng tiếng Việt chuẩn báo chí. Nếu bài viết bằng tiếng Anh hoặc bất kỳ ngôn ngữ nào khác, PHẢI dịch và viết lại thành tiếng Việt. Không được giữ nguyên ngôn ngữ gốc.";
 
@@ -3363,9 +3369,33 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         const img = await createImageBitmap(
           await (await fetch(dataUrl)).blob()
         );
-        const canvas = new OffscreenCanvas(width, height);
+        const viewportWidth = Number(request.viewport?.width) || img.width;
+        const viewportHeight = Number(request.viewport?.height) || img.height;
+        const scaleX = img.width / viewportWidth;
+        const scaleY = img.height / viewportHeight;
+        const sourceX = Math.max(0, Math.round(x * scaleX));
+        const sourceY = Math.max(0, Math.round(y * scaleY));
+        const sourceWidth = Math.max(
+          1,
+          Math.min(img.width - sourceX, Math.round(width * scaleX)),
+        );
+        const sourceHeight = Math.max(
+          1,
+          Math.min(img.height - sourceY, Math.round(height * scaleY)),
+        );
+        const canvas = new OffscreenCanvas(sourceWidth, sourceHeight);
         const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, x, y, width, height, 0, 0, width, height);
+        ctx.drawImage(
+          img,
+          sourceX,
+          sourceY,
+          sourceWidth,
+          sourceHeight,
+          0,
+          0,
+          sourceWidth,
+          sourceHeight,
+        );
         const croppedBlob = await canvas.convertToBlob({ type: "image/png" });
         const reader = new FileReader();
         reader.onloadend = () => sendResponse({ base64: reader.result });
@@ -3645,22 +3675,27 @@ function postProcessOutput(output, sourceText, type) {
     return {
       text: processed,
       quality: "fail",
+      failure: "invalid_output",
       issues: ["Output trống hoặc quá ngắn."],
     };
   }
 
   // 1b. Refusal detection — some providers return polite refusals
   const refusalPatterns = [
+    /^i(?:'|’)?m\s+sorry\b/i,
+    /^i\s+(?:am\s+)?sorry\b/i,
     /i(?:'|')?m\s+sorry.*(?:can(?:'|')?t|unable)\s+(?:help|assist|do|comply|fulfill)/i,
     /(?:can(?:'|')?t|unable)\s+(?:help|assist)\s+(?:with\s+)?(?:that|this|your|the\s+request)/i,
     /(?:not\s+able|unable)\s+to\s+(?:comply|assist|help|process|fulfill)/i,
     /(?:against|violates?)\s+(?:my|our|the)\s+(?:policy|policies|guidelines|rules)/i,
     /(?:content|safety)\s+(?:policy|filter|guideline)\s+(?:violation|triggered)/i,
+    /^(?:xin\s+lỗi|tôi\s+xin\s+lỗi)[,!.\s]/i,
   ];
   if (refusalPatterns.some((p) => p.test(processed))) {
     return {
       text: processed,
       quality: "fail",
+      failure: "provider_refusal",
       issues: ["Provider từ chối xử lý. Thử đổi provider hoặc viết lại prompt."],
     };
   }
@@ -4118,9 +4153,6 @@ async function handleStream(
     }
 
     if (result.summary) {
-      // Track successful summary
-      await incrementTelemetry('summaries');
-      trackEvent('summary_completed', { provider: keyInfo.provider, type });
       if (typeof FeedWriterSummaryPolicy !== "undefined") {
         result.summary = FeedWriterSummaryPolicy.sanitizeGlossaryOutput(
           result.summary,
@@ -4128,6 +4160,21 @@ async function handleStream(
         );
       }
       const postResult = postProcessOutput(result.summary, text, type);
+      if (postResult.failure) {
+        const reason = postResult.failure === "provider_refusal"
+          ? "provider-refusal"
+          : "invalid-output";
+        await markKeyCooldown(keyInfo.key, 30_000, reason);
+        attemptErrors.push(`${keyInfo.provider}: ${reason}`);
+        try {
+          port.postMessage({
+            action: "retry",
+            message: `${keyInfo.provider} không tạo được bản tóm tắt — thử provider khác...`,
+          });
+        } catch (_) {}
+        continue;
+      }
+
       result.summary = postResult.text;
       result.quality = postResult.quality;
       result.issues = postResult.issues;
@@ -4138,6 +4185,10 @@ async function handleStream(
           ...(result.issues || []),
         ];
       }
+      // Count and persist only a usable summary. Provider refusals and empty
+      // outputs rotate to another key above instead of becoming fake success.
+      await incrementTelemetry('summaries');
+      trackEvent('summary_completed', { provider: keyInfo.provider, type });
       incrementBadge();
       await saveHistory(
         text,
