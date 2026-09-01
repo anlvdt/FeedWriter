@@ -1905,6 +1905,60 @@ function extractRealXPostImages(postElement) {
   );
 }
 
+function suppressFeedWriterUiForScreenshot() {
+  // content.js can be injected again after an extension reload. In that case
+  // an older v3 panel may still be visible even though the module-level `panel`
+  // variable points at the newest instance. Hide every FeedWriter surface,
+  // including controls mounted inside the post, while preserving their layout.
+  const selector = [
+    ".fbs-panel",
+    ".fbs-backdrop",
+    ".fbs-wrap",
+    ".fbs-chip-host",
+    ".fbs-btn-inline",
+    ".fbs-comment-summary-btn",
+    ".fbs-batch-checkbox",
+    ".fbs-floating-toolbar",
+    ".fbs-batch-bar",
+    ".fbs-translate-tooltip",
+  ].join(", ");
+  const snapshots = new Map();
+
+  const hide = () => {
+    const candidates = new Set(document.querySelectorAll(selector));
+    if (panel?.isConnected) candidates.add(panel);
+    if (backdrop?.isConnected) candidates.add(backdrop);
+    for (const element of candidates) {
+      if (!snapshots.has(element)) {
+        snapshots.set(element, {
+          value: element.style.getPropertyValue("visibility"),
+          priority: element.style.getPropertyPriority("visibility"),
+        });
+      }
+      element.style.setProperty("visibility", "hidden", "important");
+    }
+  };
+
+  hide();
+  return {
+    refresh: hide,
+    restore() {
+      for (const [element, previous] of snapshots) {
+        if (!element.isConnected) continue;
+        if (previous.value) {
+          element.style.setProperty(
+            "visibility",
+            previous.value,
+            previous.priority,
+          );
+        } else {
+          element.style.removeProperty("visibility");
+        }
+      }
+    },
+  };
+}
+
 async function captureXPostForStatusComposer(postElement) {
   if (SITE !== "x" || !postElement) throw new Error("Không tìm thấy bài X để chụp");
   // captureVisibleTab specifically requires activeTab or <all_urls>. A click
@@ -1917,12 +1971,14 @@ async function captureXPostForStatusComposer(postElement) {
   if (!permission?.granted) {
     throw new Error("Cần cấp quyền chụp tab để tạo screenshot");
   }
-  const previousVisibility = panel?.style.visibility || "";
+  const suppressedUi = suppressFeedWriterUiForScreenshot();
   try {
-    // Hide FeedWriter so the fixed panel is never baked into the screenshot.
-    if (panel) panel.style.visibility = "hidden";
     postElement.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" });
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    // Scrolling can cause observers to mount a fresh inline summary control.
+    // Sweep once more and let Chromium paint the hidden state before capture.
+    suppressedUi.refresh();
+    await new Promise((resolve) => requestAnimationFrame(resolve));
     const bounds = postElement.getBoundingClientRect();
     if (bounds.width <= 100 || bounds.height <= 100) {
       throw new Error("Kích thước bài viết không hợp lệ");
@@ -1940,7 +1996,7 @@ async function captureXPostForStatusComposer(postElement) {
     if (!response?.base64) throw new Error(response?.error || "Không chụp được bài viết");
     return response.base64;
   } finally {
-    if (panel) panel.style.visibility = previousVisibility;
+    suppressedUi.restore();
   }
 }
 

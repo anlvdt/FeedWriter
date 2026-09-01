@@ -512,8 +512,13 @@ describe("Composer source-card density", () => {
     assert.match(content, /function isXPlaceholderImage\(imageUrl, postElement\)/);
     assert.match(content, /what\(\?:'\|’\)\?s\\s\+happening/);
     assert.match(content, /function extractRealXPostImages\(postElement\)/);
+    assert.match(content, /function suppressFeedWriterUiForScreenshot\(\)/);
     assert.match(content, /async function captureXPostForStatusComposer\(postElement\)/);
-    assert.match(content, /panel\.style\.visibility = "hidden"/);
+    assert.match(content, /document\.querySelectorAll\(selector\)/);
+    assert.match(content, /"\.fbs-panel"/);
+    assert.match(content, /"\.fbs-backdrop"/);
+    assert.match(content, /"\.fbs-wrap"/);
+    assert.match(content, /setProperty\("visibility", "hidden", "important"\)/);
     assert.match(content, /postElement\.scrollIntoView/);
     assert.match(content, /action: "capture-screenshot"/);
     assert.match(content, /origins: \["<all_urls>"\]/);
@@ -525,6 +530,11 @@ describe("Composer source-card density", () => {
       captureHelper.indexOf('action: "request-optional-permission"') <
         captureHelper.indexOf('action: "capture-screenshot"'),
     );
+    assert.ok(
+      captureHelper.indexOf("suppressedUi.refresh()") <
+        captureHelper.indexOf('action: "capture-screenshot"'),
+    );
+    assert.match(captureHelper, /finally\s*\{[\s\S]*?suppressedUi\.restore\(\)/);
     const postHandler = content.slice(
       content.indexOf("async function handlePostStatus"),
       content.indexOf("document.addEventListener", content.indexOf("async function handlePostStatus")),
