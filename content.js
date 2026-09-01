@@ -942,6 +942,7 @@ function scanSponsoredFast(postsOrRoot, opts) {
 /** Inject Tóm tắt for a small set of posts — no whole-feed walks. */
 function injectSummaryOnPosts(posts, { allowDuringScroll = false, limit = 10 } = {}) {
   if (!posts) return;
+  if (isFeedWriterScreenshotCaptureActive()) return;
   if (_isFbScrollBusy() && !allowDuringScroll) return;
   let n = 0;
   for (const article of posts) {
@@ -1332,6 +1333,8 @@ let overlayPreviousFocus = null;
 // by extractPostImages() helper exposed on window.
 let isSummarizing = false,
   currentPort = null;
+
+let screenshotCaptureDepth = 0;
 
 function ensureOverlay() {
   // Force rebuild when an old panel shell is still on the page
@@ -1905,80 +1908,132 @@ function extractRealXPostImages(postElement) {
   );
 }
 
+function isFeedWriterScreenshotCaptureActive() {
+  return screenshotCaptureDepth > 0;
+}
+
+function waitForNextPaint() {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  });
+}
+
+function waitForCompositorSettle() {
+  // captureVisibleTab reads compositor output. Two animation frames are not
+  // always enough after a fixed overlay is hidden; give Chromium a short
+  // extra tick so the tweet is painted without FeedWriter chrome.
+  return new Promise((resolve) => setTimeout(resolve, 48));
+}
+
 function suppressFeedWriterUiForScreenshot() {
   // content.js can be injected again after an extension reload. In that case
   // an older v3 panel may still be visible even though the module-level `panel`
   // variable points at the newest instance. Hide every FeedWriter surface,
   // including controls mounted inside the post, while preserving their layout.
+  screenshotCaptureDepth += 1;
+  document.documentElement.classList.add("fbs-screenshot-capture");
+  document.body?.classList.add("fbs-screenshot-capture");
   const selector = [
     ".fbs-panel",
     ".fbs-backdrop",
     ".fbs-wrap",
     ".fbs-chip-host",
     ".fbs-btn-inline",
+    ".fbs-allpost-btn",
     ".fbs-comment-summary-btn",
     ".fbs-batch-checkbox",
     ".fbs-floating-toolbar",
     ".fbs-batch-bar",
+    ".fbs-batch-progress",
     ".fbs-translate-tooltip",
+    ".fbs-filter-indicator",
+    ".fbs-mark-badge",
+    "[data-fbs-ui]",
   ].join(", ");
   const snapshots = new Map();
+  const hidden = new Set();
 
   const hide = () => {
     const candidates = new Set(document.querySelectorAll(selector));
     if (panel?.isConnected) candidates.add(panel);
     if (backdrop?.isConnected) candidates.add(backdrop);
+    if (floatingToolbar?.isConnected) candidates.add(floatingToolbar);
+    if (batchBar?.isConnected) candidates.add(batchBar);
     for (const element of candidates) {
-      if (!snapshots.has(element)) {
+      if (!element) continue;
+      if (!hidden.has(element)) {
+        hidden.add(element);
         snapshots.set(element, {
-          value: element.style.getPropertyValue("visibility"),
-          priority: element.style.getPropertyPriority("visibility"),
+          visibility: {
+            value: element.style.getPropertyValue("visibility"),
+            priority: element.style.getPropertyPriority("visibility"),
+          },
+          opacity: {
+            value: element.style.getPropertyValue("opacity"),
+            priority: element.style.getPropertyPriority("opacity"),
+          },
+          pointerEvents: {
+            value: element.style.getPropertyValue("pointer-events"),
+            priority: element.style.getPropertyPriority("pointer-events"),
+          },
         });
       }
+      element.setAttribute("data-fbs-screenshot-hidden", "1");
       element.style.setProperty("visibility", "hidden", "important");
+      element.style.setProperty("opacity", "0", "important");
+      element.style.setProperty("pointer-events", "none", "important");
     }
+    return [...hidden];
+  };
+
+  const restoreOne = (element, previous) => {
+    if (!element.isConnected) return;
+    element.removeAttribute("data-fbs-screenshot-hidden");
+    const restoreProp = (name, snapshot) => {
+      if (snapshot.value) {
+        element.style.setProperty(name, snapshot.value, snapshot.priority);
+      } else {
+        element.style.removeProperty(name);
+      }
+    };
+    restoreProp("visibility", previous.visibility);
+    restoreProp("opacity", previous.opacity);
+    restoreProp("pointer-events", previous.pointerEvents);
   };
 
   hide();
   return {
     refresh: hide,
+    async waitUntilHidden() {
+      hide();
+      await waitForNextPaint();
+      hide();
+      await waitForCompositorSettle();
+      hide();
+      await waitForNextPaint();
+    },
     restore() {
+      screenshotCaptureDepth = Math.max(0, screenshotCaptureDepth - 1);
+      if (screenshotCaptureDepth === 0) {
+        document.documentElement.classList.remove("fbs-screenshot-capture");
+        document.body?.classList.remove("fbs-screenshot-capture");
+      }
       for (const [element, previous] of snapshots) {
-        if (!element.isConnected) continue;
-        if (previous.value) {
-          element.style.setProperty(
-            "visibility",
-            previous.value,
-            previous.priority,
-          );
-        } else {
-          element.style.removeProperty("visibility");
-        }
+        restoreOne(element, previous);
       }
     },
   };
 }
 
-async function captureXPostForStatusComposer(postElement) {
-  if (SITE !== "x" || !postElement) throw new Error("Không tìm thấy bài X để chụp");
-  // captureVisibleTab specifically requires activeTab or <all_urls>. A click
-  // on an injected content-script button does not grant activeTab, so request
-  // the optional host permission while this user gesture is still active.
-  const permission = await chrome.runtime.sendMessage({
-    action: "request-optional-permission",
-    origins: ["<all_urls>"],
-  });
-  if (!permission?.granted) {
-    throw new Error("Cần cấp quyền chụp tab để tạo screenshot");
-  }
+async function captureVisiblePost(postElement) {
+  if (!postElement) throw new Error("Không tìm thấy bài viết để chụp");
   const suppressedUi = suppressFeedWriterUiForScreenshot();
   try {
     postElement.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" });
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await waitForNextPaint();
     // Scrolling can cause observers to mount a fresh inline summary control.
-    // Sweep once more and let Chromium paint the hidden state before capture.
-    suppressedUi.refresh();
-    await new Promise((resolve) => requestAnimationFrame(resolve));
+    // Sweep until those nodes are hidden, then let Chromium paint before capture.
+    await suppressedUi.waitUntilHidden();
     const bounds = postElement.getBoundingClientRect();
     if (bounds.width <= 100 || bounds.height <= 100) {
       throw new Error("Kích thước bài viết không hợp lệ");
@@ -1998,6 +2053,21 @@ async function captureXPostForStatusComposer(postElement) {
   } finally {
     suppressedUi.restore();
   }
+}
+
+async function captureXPostForStatusComposer(postElement) {
+  if (SITE !== "x" || !postElement) throw new Error("Không tìm thấy bài X để chụp");
+  // captureVisibleTab specifically requires activeTab or <all_urls>. A click
+  // on an injected content-script button does not grant activeTab, so request
+  // the optional host permission while this user gesture is still active.
+  const permission = await chrome.runtime.sendMessage({
+    action: "request-optional-permission",
+    origins: ["<all_urls>"],
+  });
+  if (!permission?.granted) {
+    throw new Error("Cần cấp quyền chụp tab để tạo screenshot");
+  }
+  return captureVisiblePost(postElement);
 }
 
 async function handlePostStatus() {
@@ -2068,11 +2138,10 @@ async function handlePostStatus() {
       : extractedImages;
     let livePublishScreenshot = "";
     if (SITE === "x" && realPostImages.length === 0) {
-      const cachedScreenshot = lastSummarizeParams?._element === _element
-        ? lastSummarizeParams?.capturedImageUrl || ""
-        : "";
       try {
-        livePublishScreenshot = cachedScreenshot || await captureXPostForStatusComposer(_element);
+        // Always recapture at publish. The summarize-time screenshot was taken
+        // while the overlay was opening and can still contain FeedWriter UI.
+        livePublishScreenshot = await captureXPostForStatusComposer(_element);
         if (lastSummarizeParams) {
           lastSummarizeParams.capturedImageUrl = livePublishScreenshot;
         }
@@ -3259,35 +3328,11 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
   // rejected above), screenshot the post element as the illustration.
   if (SITE === "x" && !_imageUrl && _el) {
     try {
-      const bounds = _el.getBoundingClientRect();
-      if (bounds.width > 100 && bounds.height > 100) {
-        const screenshotResp = await new Promise((resolve) => {
-          chrome.runtime.sendMessage(
-            {
-              action: "capture-screenshot",
-              bounds: {
-                // captureVisibleTab uses viewport coordinates, not document
-                // coordinates. Adding scroll offsets crops the wrong region.
-                x: Math.round(bounds.x),
-                y: Math.round(bounds.y),
-                width: Math.round(bounds.width),
-                height: Math.round(bounds.height),
-              },
-              viewport: {
-                width: window.innerWidth,
-                height: window.innerHeight,
-              },
-            },
-            resolve,
-          );
-        });
-        if (screenshotResp?.base64) {
-          _imageUrl = screenshotResp.base64;
-          // Preserve the screenshot for the later "Đăng Facebook" action.
-          // Re-extracting from X's DOM would select the generic OG image again.
-          lastSummarizeParams.capturedImageUrl = _imageUrl;
-        }
-      }
+      _imageUrl = await captureVisiblePost(_el);
+      // Preserve the screenshot for later publish only as a fallback. Publish
+      // recaptures with the overlay hidden so a dirty summarize-time frame is
+      // not reused as the Facebook image.
+      lastSummarizeParams.capturedImageUrl = _imageUrl;
     } catch (_) {}
   }
   const _modelSelect = panel && panel.querySelector(".fbs-model-select");
@@ -3557,6 +3602,7 @@ chrome.runtime.onMessage.addListener((msg) => {
 
 // === INJECT BUTTON ===
 function inject(target, seeMoreClickable, textContainer, seeMoreOriginal) {
+  if (isFeedWriterScreenshotCaptureActive()) return;
   if (isFacebookPersonalProfileHome()) return;
 
   // A Chrome extension reload leaves previously injected DOM behind. Remove
@@ -4300,6 +4346,7 @@ function _purgeBrokenChips(scope) {
  * Host is isolated so FB flex/grid cannot stretch the button with the image.
  */
 function _mountPostChip(article) {
+  if (isFeedWriterScreenshotCaptureActive()) return;
   if (_isFacebookGroupSuggestion(article)) {
     _removeGroupSuggestionControls(article);
     return;
@@ -4406,6 +4453,7 @@ function _findFacebookStatusText(article) {
 }
 
 function _mountInlineStatusChip(post, textEl, minimumLength = 50) {
+  if (isFeedWriterScreenshotCaptureActive()) return;
   if (!post || !textEl) return;
   const currentControl = post.querySelector(
     `.fbs-summary-control[data-fbs-ui="v3"]` +

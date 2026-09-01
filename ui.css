@@ -66,6 +66,33 @@
   font-family: var(--fw-font) !important;
 }
 
+/* Hide every FeedWriter surface while captureVisibleTab is reading the tab.
+   JS also sets inline visibility, but this class covers nodes injected mid-capture. */
+html.fbs-screenshot-capture .fbs-panel,
+html.fbs-screenshot-capture .fbs-panel.fbs-visible,
+html.fbs-screenshot-capture .fbs-panel[data-fbs-ui],
+html.fbs-screenshot-capture .fbs-backdrop,
+html.fbs-screenshot-capture .fbs-backdrop.fbs-visible,
+html.fbs-screenshot-capture .fbs-wrap,
+html.fbs-screenshot-capture .fbs-chip-host,
+html.fbs-screenshot-capture .fbs-btn-inline,
+html.fbs-screenshot-capture .fbs-allpost-btn,
+html.fbs-screenshot-capture .fbs-comment-summary-btn,
+html.fbs-screenshot-capture .fbs-batch-checkbox,
+html.fbs-screenshot-capture .fbs-floating-toolbar,
+html.fbs-screenshot-capture .fbs-batch-bar,
+html.fbs-screenshot-capture .fbs-batch-progress,
+html.fbs-screenshot-capture .fbs-translate-tooltip,
+html.fbs-screenshot-capture .fbs-filter-indicator,
+html.fbs-screenshot-capture .fbs-mark-badge,
+html.fbs-screenshot-capture [data-fbs-ui],
+[data-fbs-screenshot-hidden="1"] {
+  animation: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
 /* ══════════════════════════════════════════════════════════
    FEED CHIP — fixed size, never stretch with images
    ══════════════════════════════════════════════════════════ */

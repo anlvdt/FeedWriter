@@ -513,28 +513,36 @@ describe("Composer source-card density", () => {
     assert.match(content, /what\(\?:'\|’\)\?s\\s\+happening/);
     assert.match(content, /function extractRealXPostImages\(postElement\)/);
     assert.match(content, /function suppressFeedWriterUiForScreenshot\(\)/);
+    assert.match(content, /function captureVisiblePost\(postElement\)/);
     assert.match(content, /async function captureXPostForStatusComposer\(postElement\)/);
     assert.match(content, /document\.querySelectorAll\(selector\)/);
     assert.match(content, /"\.fbs-panel"/);
     assert.match(content, /"\.fbs-backdrop"/);
     assert.match(content, /"\.fbs-wrap"/);
+    assert.match(content, /"\[data-fbs-ui\]"/);
+    assert.match(content, /fbs-screenshot-capture/);
     assert.match(content, /setProperty\("visibility", "hidden", "important"\)/);
+    assert.match(content, /waitUntilHidden\(\)/);
+    assert.match(content, /waitForCompositorSettle\(\)/);
     assert.match(content, /postElement\.scrollIntoView/);
     assert.match(content, /action: "capture-screenshot"/);
     assert.match(content, /origins: \["<all_urls>"\]/);
+    assert.match(css, /html\.fbs-screenshot-capture \.fbs-panel/);
+    assert.match(css, /\[data-fbs-screenshot-hidden="1"\]/);
     const captureHelper = content.slice(
-      content.indexOf("async function captureXPostForStatusComposer"),
+      content.indexOf("function isFeedWriterScreenshotCaptureActive"),
       content.indexOf("async function handlePostStatus"),
     );
     assert.ok(
       captureHelper.indexOf('action: "request-optional-permission"') <
-        captureHelper.indexOf('action: "capture-screenshot"'),
+        captureHelper.indexOf("return captureVisiblePost(postElement)"),
     );
     assert.ok(
-      captureHelper.indexOf("suppressedUi.refresh()") <
+      captureHelper.indexOf("await suppressedUi.waitUntilHidden()") <
         captureHelper.indexOf('action: "capture-screenshot"'),
     );
     assert.match(captureHelper, /finally\s*\{[\s\S]*?suppressedUi\.restore\(\)/);
+    assert.match(content, /if \(isFeedWriterScreenshotCaptureActive\(\)\) return;/);
     const postHandler = content.slice(
       content.indexOf("async function handlePostStatus"),
       content.indexOf("document.addEventListener", content.indexOf("async function handlePostStatus")),
@@ -544,6 +552,8 @@ describe("Composer source-card density", () => {
         postHandler.indexOf("captureXPostForStatusComposer(_element)"),
     );
     assert.match(postHandler, /SITE === "x" && realPostImages\.length === 0/);
+    assert.match(postHandler, /Always recapture at publish/);
+    assert.doesNotMatch(postHandler, /cachedScreenshot \|\| await captureXPostForStatusComposer/);
     assert.match(postHandler, /realPostImages\.length > 0\s*\? realPostImages/);
     assert.doesNotMatch(composer, /captureXPostAtPublish/);
   });
