@@ -547,12 +547,18 @@ describe("Composer source-card density", () => {
       content.indexOf("async function handlePostStatus"),
       content.indexOf("document.addEventListener", content.indexOf("async function handlePostStatus")),
     );
+    const summarizeFlow = content.slice(
+      content.indexOf("async function summarizeText"),
+      content.indexOf("currentPort.postMessage", content.indexOf("async function summarizeText")),
+    );
     assert.ok(
       postHandler.indexOf("extractRealXPostImages(_element)") <
         postHandler.indexOf("captureXPostForStatusComposer(_element)"),
     );
     assert.match(postHandler, /SITE === "x" && realPostImages\.length === 0/);
     assert.match(postHandler, /Always recapture at publish/);
+    assert.ok(postHandler.indexOf("captureXPostForStatusComposer(_element)") >= 0);
+    assert.doesNotMatch(summarizeFlow, /captureVisiblePost\(_el\)/);
     assert.doesNotMatch(postHandler, /cachedScreenshot \|\| await captureXPostForStatusComposer/);
     assert.match(postHandler, /realPostImages\.length > 0\s*\? realPostImages/);
     assert.doesNotMatch(composer, /captureXPostAtPublish/);

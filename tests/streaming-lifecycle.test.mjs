@@ -146,7 +146,7 @@ describe("streaming lifecycle", () => {
     assert.match(content, /\{ ok: true, summary: partial, partial: true \}/);
   });
 
-  it("replaces X's generic OpenGraph image with an exact tweet screenshot", () => {
+  it("defers a media-less X screenshot until the explicit publish action", () => {
     const content = readFileSync(path.join(root, "content.js"), "utf8");
     const background = readFileSync(path.join(root, "background.js"), "utf8");
 
@@ -165,8 +165,11 @@ describe("streaming lifecycle", () => {
     assert.match(background, /const scaleX = img\.width \/ viewportWidth/);
     assert.match(background, /const scaleY = img\.height \/ viewportHeight/);
     assert.match(background, /ctx\.drawImage\([\s\S]*?sourceX,[\s\S]*?sourceY/);
-    assert.match(content, /_imageUrl = await captureVisiblePost\(_el\)/);
-    assert.match(content, /lastSummarizeParams\.capturedImageUrl = _imageUrl/);
+    const summarizeFlow = content.slice(
+      content.indexOf("async function summarizeText"),
+      content.indexOf("currentPort.postMessage", content.indexOf("async function summarizeText")),
+    );
+    assert.doesNotMatch(summarizeFlow, /captureVisiblePost\(_el\)/);
     assert.match(content, /const imageUrl = realPostImages\[0\] \|\| capturedImageUrl \|\|/);
     assert.match(content, /SITE === "x" && realPostImages\.length === 0/);
     assert.match(content, /Always recapture at publish/);

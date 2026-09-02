@@ -3324,17 +3324,11 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
   );
   if (_xGenericImage) _imageUrl = "";
 
-  // On X: if there is no real tweet media (or the generic X placeholder was
-  // rejected above), screenshot the post element as the illustration.
-  if (SITE === "x" && !_imageUrl && _el) {
-    try {
-      _imageUrl = await captureVisiblePost(_el);
-      // Preserve the screenshot for later publish only as a fallback. Publish
-      // recaptures with the overlay hidden so a dirty summarize-time frame is
-      // not reused as the Facebook image.
-      lastSummarizeParams.capturedImageUrl = _imageUrl;
-    } catch (_) {}
-  }
+  // A rendered X-post screenshot is a publishing-only asset. Do not capture
+  // while this summary overlay is opening: captureVisibleTab would otherwise
+  // race the compositor and can bake this very overlay into the image. For
+  // media-less X posts, handlePostStatus captures once the user explicitly
+  // chooses “Đăng status”, with every FeedWriter surface suppressed.
   const _modelSelect = panel && panel.querySelector(".fbs-model-select");
   const _preferredProvider = _modelSelect ? _modelSelect.value : "";
   currentPort.postMessage({
