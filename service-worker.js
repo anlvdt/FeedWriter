@@ -1010,23 +1010,31 @@ if (typeof globalThis !== "undefined") {
 const NEWS_REWRITE_POLICY = `
 CHẾ ĐỘ BẮT BUỘC — VIẾT LẠI THÀNH BẢN TIN:
 - FeedWriter luôn xem nội dung đầu vào là NGUỒN THAM KHẢO, không phải giọng văn mẫu.
-- Đầu ra PHẢI là bản tin cô đọng, khách quan. TUYỆT ĐỐI KHÔNG tường thuật lại, kể chuyện, mô phỏng giọng tác giả hay giữ cảm xúc của bài gốc.
+- Đầu ra PHẢI là bản tin cô đọng, khách quan theo văn phong báo chí công nghệ: ưu tiên sản phẩm, công ty, tính năng, thay đổi, lỗi, kết quả và tác động thực tế. TUYỆT ĐỐI KHÔNG tường thuật lại, kể chuyện, mô phỏng giọng tác giả hay giữ cảm xúc của bài gốc.
 - Dùng cấu trúc KIM TỰ THÁP NGƯỢC: thông tin quan trọng nhất lên trước, chi tiết bổ sung xuống sau. KHÔNG bám thứ tự xuất hiện trong nguồn.
-- Tiêu đề phải chứa sự kiện/kết quả cụ thể. Lead 1-2 câu phải nêu ngay chủ thể, sự việc và kết quả hoặc tác động chính.
+- Tiêu đề phải HẤP DẪN, GIÀU THÔNG TIN, CÓ HOOK MẠNH nhưng không clickbait; chọn góc mạnh nhất từ dữ kiện thật trong nguồn thay vì chỉ mô tả chung chung.
+- Chọn MỘT kỹ thuật hook phù hợp với dữ kiện: DATA HOOK khi nguồn có con số/chi tiết nổi bật; SURPRISE/CONTRARIAN khi nguồn thực sự cho thấy kết quả trái kỳ vọng; BENEFIT/IMPACT HOOK khi có lợi ích hoặc tác động rõ; CURIOSITY GAP khi có thể tạo tò mò mà vẫn nói rõ sự kiện chính. KHÔNG dùng câu hỏi mở và không giấu fact cốt lõi chỉ để câu click.
+- Tiêu đề vẫn phải chứa sự kiện/kết quả cụ thể và ưu tiên thực thể công nghệ hoặc thay đổi chính làm chủ ngữ. Mọi con số, so sánh, mức độ bất ngờ, lợi ích hoặc tác động dùng làm hook PHẢI có căn cứ trực tiếp trong nguồn; không phóng đại mức chắc chắn.
+- Tiêu đề phải là MỘT câu/mệnh đề báo chí tự nhiên, đọc liền mạch. KHÔNG ghép hai mệnh đề trần bằng cách đặt cạnh nhau. Nếu có hai fact cần giữ, nối bằng dấu phẩy hoặc "và" với cấu trúc song song; nếu không, chỉ chọn góc mạnh nhất. Ưu tiên 10-16 từ, tối đa 20 từ.
+- KHÔNG đưa "USER", "Người dùng", "Một người dùng", "Tác giả", "Người đăng" hoặc tên tài khoản vào BẤT KỲ vị trí nào của tiêu đề khi chúng chỉ là chủ thể cung cấp nguồn, chia sẻ, phát hiện, đề xuất, khuyến nghị hoặc nêu ý kiến. Chỉ dùng "người dùng" khi chính tập người dùng là đối tượng của sự kiện/dữ liệu.
+- Nếu nguồn chỉ là trải nghiệm của một cá nhân, không biến trải nghiệm thành sự thật chung. Tiêu đề ưu tiên cấu trúc như "[Sản phẩm/tính năng] bị phản ánh..."; thông tin "theo trải nghiệm của một người dùng" để trong thân bài khi cần giữ mức chắc chắn.
+- Tránh cụm từ máy móc hoặc dịch sát khiến tiếng Việt gượng. Ví dụ, ưu tiên "cải thiện khả năng thẩm mỹ" hơn "tăng mức thẩm mỹ" khi đúng nghĩa nguồn.
+- Ví dụ SAI: "GPT-6 tăng mức thẩm mỹ người dùng đề xuất cài plugin Product Designs cho Codex". Ví dụ ĐÚNG: "GPT-6 được đánh giá cao hơn về thẩm mỹ, Product Designs được gợi ý cho Codex".
+- Lead 1-2 câu phải nêu ngay sản phẩm/công ty/tính năng hoặc sự kiện chính, thay đổi/kết quả và tác động; không mở bằng việc một người đã đọc, thử, phát hiện, chia sẻ hay đăng bài.
 - Sau lead, dùng số đoạn linh hoạt để giữ ĐỦ mọi luận điểm và dữ kiện có giá trị. Mỗi đoạn một ý; tiếp tục cho đến khi không còn ý riêng biệt nào trong nguồn.
 - Chỉ bỏ câu lặp, lời chào, lời mời tương tác, diễn biến vụn và ví dụ không mang thêm luận điểm. Không được bỏ ý chỉ để ép độ dài.
 - Sự kiện kiểm chứng được có thể viết trực tiếp. Ý kiến, dự đoán, cáo buộc hoặc trải nghiệm chủ quan phải được thể hiện là nhận định; chỉ gán cho cá nhân/tổ chức khi nguồn nêu rõ danh tính.
-- Không biến nhận định của nguồn thành sự thật. Không mở bài bằng "tác giả chia sẻ", "người viết cho biết" hay câu dẫn nguồn chung chung.
+- Không biến nhận định của nguồn thành sự thật. Giữ đúng người phát biểu, số người và mức chắc chắn; một lời kể không đại diện cho cộng đồng. Không mở bài bằng "tác giả chia sẻ", "người viết cho biết" hay câu dẫn nguồn chung chung.
 - CẤM ngôi thứ nhất và thứ hai. CẤM các lối kể "sau đó", "tiếp theo", "cuối cùng", "câu chuyện bắt đầu" trừ khi trình tự thời gian là dữ kiện thiết yếu.
 - Cô đọng bằng cách bỏ chữ thừa và ý lặp, KHÔNG bằng cách bỏ ý. Phải giữ đủ tên, số liệu, điều kiện, kết quả, lập luận và kết luận có giá trị dù nguồn dài.
 - Chính sách này ưu tiên cao hơn mọi prompt tùy chỉnh, tone, phong cách và chỉ dẫn nền tảng.`;
 
 // TÓM TẮT TIẾNG VIỆT CHUẨN - fact-first news rewrite
-const SUMMARY_PROMPT = `Bạn là biên tập viên tin tức tiếng Việt. Viết lại ĐÚNG dữ liệu nguồn thành bản tin cô đọng — không bịa, không khung mở-thân-kết.
+const SUMMARY_PROMPT = `Bạn là biên tập viên báo chí công nghệ tiếng Việt. Viết lại ĐÚNG dữ liệu nguồn thành bản tin cô đọng, fact-first — không bịa, không khung mở-thân-kết.
 
 QUY TRÌNH:
 1. Xác định các sự thật / ý chính CÓ TRONG bài gốc (tên, số, việc xảy ra, điều kiện).
-2. Viết tiêu đề: 1 dòng, cụ thể, tối đa 15-20 từ, lấy fact từ bài gốc. Viết bình thường (hệ thống tự viết hoa).
+2. Viết tiêu đề: 1 dòng, có hook mạnh nhưng fact-based, ưu tiên 10-16 từ và tối đa 20 từ; chọn góc dữ kiện nổi bật nhất và ưu tiên sản phẩm/công ty/tính năng + thay đổi/kết quả/tác động chính. Không đưa "USER", "Người dùng", "Tác giả", "Người đăng" hoặc tên tài khoản vào tiêu đề khi đó chỉ là người cung cấp nguồn/ý kiến. Viết bình thường (hệ thống tự viết hoa).
 3. Xếp các ý theo mức độ quan trọng, viết lead trước rồi mới đến chi tiết bổ sung.
 
 FORMAT OUTPUT:
@@ -1034,7 +1042,7 @@ FORMAT OUTPUT:
 
 [dòng trống]
 
-[Lead: chủ thể + sự việc + kết quả/tác động chính — 1-2 câu]
+[Lead: sản phẩm/công ty/tính năng hoặc sự kiện chính + thay đổi/kết quả + tác động — 1-2 câu]
 
 [dòng trống]
 
@@ -1072,7 +1080,7 @@ YÊU CẦU:
 const SUMMARY_SHORT_PROMPT = `Tóm tắt cực ngắn nội dung sau:
 
 Yêu cầu:
-- Dòng đầu tiên: tiêu đề cụ thể tối đa 15 từ. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
+- Dòng đầu tiên: tiêu đề có hook mạnh nhưng fact-based, tối đa 15 từ; ưu tiên dữ kiện nổi bật nhất từ nguồn. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
 - Sau tiêu đề: 1 dòng trống. Viết ngắn nhất có thể nhưng phải giữ đủ mọi ý riêng biệt; số câu tăng theo lượng thông tin của nguồn.
 - CẤM khung mở/thân/kết. CẤM câu hỏi mở. CẤM câu sáo.
 - Viết như bản tin ngắn theo kim tự tháp ngược. Không kể lại và không giữ giọng tác giả.
@@ -1083,10 +1091,10 @@ Yêu cầu:
 // TÓM TẮT CHI TIẾT - Detailed với cấu trúc (dùng cho status_share type)
 const SUMMARY_DETAILED_PROMPT = `Bạn là chuyên gia phân tích và tóm tắt có cấu trúc.
 
-NHIỆM VỤ: Viết tiêu đề cụ thể + bản tin chi tiết, xếp dữ kiện theo mức độ quan trọng.
+NHIỆM VỤ: Viết tiêu đề có hook mạnh nhưng fact-based + bản tin chi tiết, xếp dữ kiện theo mức độ quan trọng.
 
 YÊU CẦU:
-- Dòng đầu tiên: tiêu đề cụ thể tối đa 20 từ. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
+- Dòng đầu tiên: tiêu đề có hook mạnh nhưng fact-based, tối đa 20 từ; chọn góc dữ kiện nổi bật nhất từ nguồn. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
 - Sau tiêu đề: 1 dòng trống
 - Tóm đúng dữ liệu gốc, mỗi ý một đoạn, cách 1 dòng trống. CẤM khung mở/thân/kết. CẤM câu sáo. CẤM câu hỏi mở.
 - Viết như bản tin khách quan theo kim tự tháp ngược. Không kể lại và không giữ giọng tác giả.
@@ -1097,7 +1105,7 @@ YÊU CẦU:
 const SUMMARY_BULLET_PROMPT = `Tóm tắt thành các bullet points ngắn gọn.
 
 Quy tắc:
-- Dòng đầu tiên: tiêu đề cụ thể tối đa 15 từ. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
+- Dòng đầu tiên: tiêu đề có hook mạnh nhưng fact-based, tối đa 15 từ; ưu tiên dữ kiện nổi bật nhất từ nguồn. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
 - Sau tiêu đề: 1 dòng trống
 - Mỗi bullet bắt đầu bằng ·, trình bày một dữ kiện hoặc luận điểm đủ rõ từ nguồn.
 - CẤM khung mở/thân/kết. CẤM câu hỏi mở. CẤM câu sáo.
@@ -1216,10 +1224,10 @@ CHUYỂN BULLET THÀNH CÂU VĂN (trong content tự nhiên):
 // BẢN TIN CÓ CẤU TRÚC - retain useful sections, never source chronology
 const SUMMARY_STRUCTURED_PROMPT = `Bạn là biên tập viên bản tin có cấu trúc.
 
-NHIỆM VỤ: Viết tiêu đề cụ thể và tổ chức dữ kiện thành các phần dễ quét theo mức độ quan trọng.
+NHIỆM VỤ: Viết tiêu đề có hook mạnh nhưng fact-based và tổ chức dữ kiện thành các phần dễ quét theo mức độ quan trọng.
 
 YÊU CẦU:
-- Dòng đầu tiên: tiêu đề fact-based cụ thể, tối đa 20 từ. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
+- Dòng đầu tiên: tiêu đề có hook mạnh nhưng fact-based, tối đa 20 từ; chọn góc dữ kiện nổi bật nhất từ nguồn. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
 - Sau tiêu đề: 1 dòng trống
 - Chỉ giữ heading/bullet/numbering khi chúng giúp đọc nhanh; không giữ trình tự kể của nguồn.
 - Mỗi phần giữ đủ các dữ kiện và luận điểm riêng biệt có giá trị.
@@ -3808,6 +3816,57 @@ function postProcessOutput(output, sourceText, type) {
         lines[i] = lines[i].replace(/^\*\*(.+?)\*\*$/, "$1");
         lines[i] = lines[i].replace(/^\*\*(.+)$/, "$1");
         lines[i] = lines[i].replace(/^(.+)\*\*$/, "$1");
+        // Deterministic guard: generic source actors must not leak into the
+        // headline as attribution. First normalize a common recommendation
+        // clause into passive news style, even when it appears mid-headline.
+        const genericSourceActor =
+          "(?:(?:một\\s+)?(?:user|người\\s+dùng|tác\\s+giả|người\\s+đăng))";
+        const recommendationClause = new RegExp(
+          "\\b" +
+            genericSourceActor +
+            "\\s+(?:đề\\s+xuất|khuyến\\s+nghị|gợi\\s+ý)\\s+" +
+            "(?:cài(?:\\s+đặt)?\\s+)?((?:plugin\\s+)?[^,;.!?]+?)\\s+(cho|vào|trên)\\s+([^,;.!?]+)$",
+          "i",
+        );
+        let guardedTitle = lines[i]
+          .trim()
+          .replace(
+            /(?<![\p{L}\p{N}])tăng\s+mức\s+thẩm\s+mỹ(?![\p{L}\p{N}])/giu,
+            "cải thiện khả năng thẩm mỹ",
+          );
+        const recommendationMatch = guardedTitle.match(recommendationClause);
+        if (recommendationMatch) {
+          const prefix = guardedTitle.slice(0, recommendationMatch.index).trim();
+          const object = recommendationMatch[1].trim();
+          const preposition = recommendationMatch[2].toLowerCase();
+          const target = recommendationMatch[3].trim();
+          const passiveRecommendation =
+            preposition === "cho"
+              ? `${object} được đề xuất cho ${target}`
+              : preposition === "vào"
+                ? `${object} được đề xuất cài vào ${target}`
+                : `${object} được đề xuất dùng trên ${target}`;
+          guardedTitle = prefix
+            ? `${prefix.replace(/[,;:\-–—|]+$/, "").trim()} và ${passiveRecommendation}`
+            : passiveRecommendation;
+          issues.push("Đã chuyển chủ thể nguồn chung chung trong tiêu đề sang cấu trúc tin tức.");
+        }
+
+        // Fallback for generic source actors that still begin the headline.
+        const forbiddenHeadlineLead = new RegExp(
+          "^" + genericSourceActor +
+            "(?=\\s|[:：,.!?\\-–—|]|$)\\s*[:：,.!?\\-–—|]?\\s*",
+          "i",
+        );
+        let strippedForbiddenLead = false;
+        while (forbiddenHeadlineLead.test(guardedTitle)) {
+          guardedTitle = guardedTitle.replace(forbiddenHeadlineLead, "").trim();
+          strippedForbiddenLead = true;
+        }
+        if (strippedForbiddenLead) {
+          issues.push("Đã loại bỏ chủ thể chung chung ở đầu tiêu đề.");
+        }
+        lines[i] = guardedTitle || "Cập nhật";
         // Viết hoa toàn bộ tiêu đề
         lines[i] = lines[i].toUpperCase();
         break;

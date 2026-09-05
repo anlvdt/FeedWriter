@@ -1762,6 +1762,57 @@ function postProcessOutput(output, sourceText, type) {
         lines[i] = lines[i].replace(/^\*\*(.+?)\*\*$/, "$1");
         lines[i] = lines[i].replace(/^\*\*(.+)$/, "$1");
         lines[i] = lines[i].replace(/^(.+)\*\*$/, "$1");
+        // Deterministic guard: generic source actors must not leak into the
+        // headline as attribution. First normalize a common recommendation
+        // clause into passive news style, even when it appears mid-headline.
+        const genericSourceActor =
+          "(?:(?:một\\s+)?(?:user|người\\s+dùng|tác\\s+giả|người\\s+đăng))";
+        const recommendationClause = new RegExp(
+          "\\b" +
+            genericSourceActor +
+            "\\s+(?:đề\\s+xuất|khuyến\\s+nghị|gợi\\s+ý)\\s+" +
+            "(?:cài(?:\\s+đặt)?\\s+)?((?:plugin\\s+)?[^,;.!?]+?)\\s+(cho|vào|trên)\\s+([^,;.!?]+)$",
+          "i",
+        );
+        let guardedTitle = lines[i]
+          .trim()
+          .replace(
+            /(?<![\p{L}\p{N}])tăng\s+mức\s+thẩm\s+mỹ(?![\p{L}\p{N}])/giu,
+            "cải thiện khả năng thẩm mỹ",
+          );
+        const recommendationMatch = guardedTitle.match(recommendationClause);
+        if (recommendationMatch) {
+          const prefix = guardedTitle.slice(0, recommendationMatch.index).trim();
+          const object = recommendationMatch[1].trim();
+          const preposition = recommendationMatch[2].toLowerCase();
+          const target = recommendationMatch[3].trim();
+          const passiveRecommendation =
+            preposition === "cho"
+              ? `${object} được đề xuất cho ${target}`
+              : preposition === "vào"
+                ? `${object} được đề xuất cài vào ${target}`
+                : `${object} được đề xuất dùng trên ${target}`;
+          guardedTitle = prefix
+            ? `${prefix.replace(/[,;:\-–—|]+$/, "").trim()} và ${passiveRecommendation}`
+            : passiveRecommendation;
+          issues.push("Đã chuyển chủ thể nguồn chung chung trong tiêu đề sang cấu trúc tin tức.");
+        }
+
+        // Fallback for generic source actors that still begin the headline.
+        const forbiddenHeadlineLead = new RegExp(
+          "^" + genericSourceActor +
+            "(?=\\s|[:：,.!?\\-–—|]|$)\\s*[:：,.!?\\-–—|]?\\s*",
+          "i",
+        );
+        let strippedForbiddenLead = false;
+        while (forbiddenHeadlineLead.test(guardedTitle)) {
+          guardedTitle = guardedTitle.replace(forbiddenHeadlineLead, "").trim();
+          strippedForbiddenLead = true;
+        }
+        if (strippedForbiddenLead) {
+          issues.push("Đã loại bỏ chủ thể chung chung ở đầu tiêu đề.");
+        }
+        lines[i] = guardedTitle || "Cập nhật";
         // Viết hoa toàn bộ tiêu đề
         lines[i] = lines[i].toUpperCase();
         break;
