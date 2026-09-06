@@ -320,6 +320,14 @@ body {
   image-rendering: auto;
 }
 .header-titles { min-width: 0; }
+.brand-byline {
+  margin-top: 0;
+  font-size: 9px;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+}
 h1 {
   font-family: var(--font-display, var(--font));
   font-size: var(--text-lg);
@@ -1169,7 +1177,11 @@ a { color: var(--accent); }
   font-size: var(--text-xl);
   font-weight: 700;
   color: var(--text-heading);
+  margin-bottom: 1px;
+}
+.brand-byline-wizard {
   margin-bottom: var(--space-2);
+  font-size: 10px;
 }
 .wizard-subtitle,
 .wizard-step-description {
@@ -1735,6 +1747,21 @@ a { color: var(--accent); }
   text-decoration: none;
 }
 .about-link:hover { text-decoration: underline; }
+.about-inspiration-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-heading);
+  line-height: 1.3;
+}
+.about-inspiration-copy {
+  margin-top: 5px;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+.about-inspiration-copy .about-link {
+  margin-top: 0;
+}
 
 .about-shortcuts { padding: 6px 8px; }
 .about-shortcut {

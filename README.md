@@ -125,6 +125,13 @@ Sau mỗi lần sửa code trên EXTERNAL, chạy lại `./scripts/sync-local.sh
 - Nội dung gửi thẳng tới provider bạn chọn (Groq / Gemini / …)
 - Không thu thập analytics riêng
 
+## Inspiration / Credits
+
+Trải nghiệm **floating selection toolbar** của FeedWriter được lấy cảm hứng từ
+[OpenClip](https://github.com/ganeshmshetty/openclip) của **Ganesh M và OpenClip Contributors**:
+toolbar xuất hiện gần điểm nhả chuột, chỉ hiện action phù hợp với vùng chọn và tự né mép viewport.
+OpenClip được phát hành theo giấy phép MIT.
+
 ## License
 
 MIT

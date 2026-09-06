@@ -63,7 +63,11 @@ describe("streaming lifecycle", () => {
 
     assert.equal(result.summary, "Nội dung đã nhận");
     assert.equal(result.recoveredFromTimeout, true);
-    assert.equal(context.port.messages.at(-1).full, "Nội dung đã nhận");
+    assert.equal(
+      context.port.messages.map((message) => message.text || "").join(""),
+      "Nội dung đã nhận",
+    );
+    assert.ok(context.port.messages.every((message) => !("full" in message)));
   });
 
   it("does not publish a partial result after an explicit user stop", async () => {
@@ -105,6 +109,31 @@ describe("streaming lifecycle", () => {
     assert.match(background, /if \(result\.recoveredFromTimeout\)/);
   });
 
+  it("streams incremental chunks instead of repeatedly sending the full response", () => {
+    const api = readFileSync(path.join(root, "bg-api.js"), "utf8");
+    const content = readFileSync(path.join(root, "content.js"), "utf8");
+
+    assert.match(api, /port\.postMessage\(\{ action: "chunk", text \}\)/);
+    assert.doesNotMatch(api, /action: "chunk", text: token, full: fullText/);
+    assert.match(content, /streamBuffer \+= msg\.text/);
+  });
+
+  it("keeps screenshots out of history storage and migrates API keys before settings", () => {
+    const background = readFileSync(path.join(root, "background.js"), "utf8");
+    const manifest = JSON.parse(readFileSync(path.join(root, "manifest.json"), "utf8"));
+
+    assert.ok(manifest.permissions.includes("unlimitedStorage"));
+    assert.match(background, /function compactHistoryForStorage/);
+    assert.match(background, /function repairCooldownsAfterStorageQuotaFix/);
+    assert.match(background, /storageQuotaRepairVersion: REPAIR_VERSION/);
+    assert.match(background, /\^data:\/i\.test\(String\(imageUrl/);
+    assert.match(background, /chrome\.storage\.sync\.remove\(\["apiKeys", "apiKey"\]\)/);
+    assert.ok(
+      background.indexOf("await migrateApiKeysOutOfSync()") <
+        background.indexOf("await migrateSettingsIfNeeded()"),
+    );
+  });
+
   it("keeps the summary type in scope throughout the background stream", () => {
     const background = readFileSync(path.join(root, "background.js"), "utf8");
     assert.match(
@@ -117,6 +146,15 @@ describe("streaming lifecycle", () => {
     );
     assert.match(background, /postProcessOutput\(result\.summary, text, type\)/);
     assert.match(background, /saveHistory\([\s\S]*?site,\s*type,/);
+  });
+
+  it("uses the neutral news prompt as the default summary tone", () => {
+    const background = readFileSync(path.join(root, "background.js"), "utf8");
+    const content = readFileSync(path.join(root, "content.js"), "utf8");
+    assert.doesNotMatch(background, /if \(type === "summary" && !tone\) tone = "viral"/);
+    assert.doesNotMatch(content, /if \(type === "summary" && !tone\) tone = "viral"/);
+    assert.match(content, /data-tone="default"[^>]*>Bản tin · mặc định<\/button>/);
+    assert.match(content, /data-tone="viral"[^>]*>Viral<\/button>/);
   });
 
   it("rotates providers instead of publishing polite refusals", () => {

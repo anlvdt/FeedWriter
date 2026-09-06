@@ -580,7 +580,6 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
         }
 
         btn.innerHTML = '<div class="fbs-spinner" style="width:14px;height:14px;border-width:2px"></div> Đang mở Facebook...';
-
         let selectedUrls = [];
         const thumbCheckboxes = preview.querySelectorAll(".fbs-sp-thumb-cb");
         if (thumbCheckboxes.length > 0) {

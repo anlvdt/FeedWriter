@@ -286,8 +286,9 @@ button.fbs-allpost-btn {
 }
 
 .fbs-btn-inline[data-fbs-ui="v3"]:focus-visible {
-  outline: 2px solid #0866ff !important;
+  outline: 2px solid var(--fw-accent) !important;
   outline-offset: 2px !important;
+  box-shadow: 0 0 0 2px var(--fw-accent-soft) !important;
 }
 
 .fbs-btn-inline[data-fbs-ui="v3"][aria-busy="true"] {
@@ -439,6 +440,15 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
   font-weight: 700 !important;
   letter-spacing: -0.01em !important;
   line-height: 1.2 !important;
+}
+
+.fbs-panel[data-fbs-ui="v3"] .fbs-brand-byline,
+.fbs-panel.fbs-ui-v2 .fbs-brand-byline {
+  font-size: 9px !important;
+  font-weight: 600 !important;
+  color: var(--fw-text-3) !important;
+  line-height: 1.1 !important;
+  letter-spacing: 0.02em !important;
 }
 
 .fbs-panel[data-fbs-ui="v3"] .fbs-subtitle,
@@ -619,9 +629,9 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
   margin: 16px 0 10px !important;
   padding: 14px 16px !important;
   border-radius: 12px !important;
-  background: linear-gradient(135deg, var(--fw-surface) 0%, rgba(99, 102, 241, 0.03) 100%) !important;
+  background: linear-gradient(135deg, var(--fw-surface) 0%, var(--fw-accent-soft) 100%) !important;
   border: 1px solid var(--fw-border) !important;
-  border-left: 4px solid rgba(99, 102, 241, 0.5) !important;
+  border-left: 4px solid var(--fw-accent) !important;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02) !important;
 }
 .fbs-panel[data-fbs-ui="v3"] .fbs-result .fbs-glossary-heading,
@@ -633,7 +643,7 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
   font-weight: 700 !important;
   text-transform: uppercase !important;
   letter-spacing: 0.06em !important;
-  color: rgba(99, 102, 241, 0.9) !important;
+  color: var(--fw-accent) !important;
   margin: 0 0 10px !important;
 }
 .fbs-panel[data-fbs-ui="v3"] .fbs-result .fbs-glossary-icon,
@@ -659,7 +669,7 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
 }
 .fbs-panel[data-fbs-ui="v3"] .fbs-result .fbs-glossary-bullet,
 .fbs-panel.fbs-ui-v3 .fbs-result .fbs-glossary-bullet {
-  color: rgba(99, 102, 241, 0.6) !important;
+  color: var(--fw-accent) !important;
   flex-shrink: 0 !important;
   font-weight: 700 !important;
   font-size: 16px !important;
@@ -1010,6 +1020,28 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
 .fbs-panel[data-fbs-ui="v3"] .fbs-post-status-btn:hover,
 .fbs-panel.fbs-ui-v2 .fbs-post-status-btn:hover {
   background: var(--fw-accent-hover) !important;
+}
+
+/* Canonical keyboard focus across every interactive result-panel control. */
+.fbs-panel[data-fbs-ui="v3"] .fbs-icon-btn:focus-visible,
+.fbs-panel[data-fbs-ui="v3"] .fbs-tone-btn:focus-visible,
+.fbs-panel[data-fbs-ui="v3"] .fbs-tool-btn:focus-visible,
+.fbs-panel[data-fbs-ui="v3"] .fbs-model-select:focus-visible,
+.fbs-panel[data-fbs-ui="v3"] .fbs-btn-secondary:focus-visible,
+.fbs-panel[data-fbs-ui="v3"] .fbs-copy-btn:focus-visible,
+.fbs-panel[data-fbs-ui="v3"] .fbs-btn-primary:focus-visible,
+.fbs-panel[data-fbs-ui="v3"] .fbs-post-status-btn:focus-visible,
+.fbs-panel.fbs-ui-v2 .fbs-icon-btn:focus-visible,
+.fbs-panel.fbs-ui-v2 .fbs-tone-btn:focus-visible,
+.fbs-panel.fbs-ui-v2 .fbs-tool-btn:focus-visible,
+.fbs-panel.fbs-ui-v2 .fbs-model-select:focus-visible,
+.fbs-panel.fbs-ui-v2 .fbs-btn-secondary:focus-visible,
+.fbs-panel.fbs-ui-v2 .fbs-copy-btn:focus-visible,
+.fbs-panel.fbs-ui-v2 .fbs-btn-primary:focus-visible,
+.fbs-panel.fbs-ui-v2 .fbs-post-status-btn:focus-visible {
+  outline: 2px solid var(--fw-accent) !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 0 2px var(--fw-accent-soft) !important;
 }
 
 .fbs-panel[data-fbs-ui="v3"] .fbs-shortcuts-hint,
@@ -1573,10 +1605,10 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
    FLOATING TOOLBAR + BATCH
    ══════════════════════════════════════════════════════════ */
 .fbs-floating-toolbar {
-  position: absolute !important;
+  position: fixed !important;
   display: none;
   align-items: center !important;
-  flex-wrap: wrap !important;
+  flex-wrap: nowrap !important;
   gap: 2px !important;
   max-width: min(440px, calc(100vw - 24px)) !important;
   padding: 4px !important;
@@ -1586,6 +1618,9 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.42) !important;
   z-index: var(--fw-z-toolbar) !important;
   backdrop-filter: none !important;
+}
+.fbs-floating-toolbar::after {
+  left: var(--fbs-toolbar-caret-x, 50%) !important;
 }
 .fbs-floating-toolbar.fbs-visible {
   display: inline-flex !important;
@@ -1642,6 +1677,10 @@ body:has(:is(
   opacity: 0.35 !important;
   pointer-events: none !important;
 }
+.fbs-floating-btn[hidden],
+.fbs-floating-more[hidden] {
+  display: none !important;
+}
 .fbs-floating-btn img {
   width: 13px !important;
   height: 13px !important;
@@ -1670,6 +1709,10 @@ body:has(:is(
 }
 .fbs-floating-more-menu[hidden] {
   display: none !important;
+}
+.fbs-floating-toolbar.fbs-floating-menu-up .fbs-floating-more-menu {
+  top: auto !important;
+  bottom: calc(100% + 4px) !important;
 }
 .fbs-floating-more-menu .fbs-floating-btn {
   width: 100% !important;

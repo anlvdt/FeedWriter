@@ -137,7 +137,7 @@ function removePersonalProfileControls() {
       ".fbs-wrap, .fbs-chip-host, .fbs-btn-inline, .fbs-comment-summary-btn",
     )
     .forEach((element) => element.remove());
-  if (floatingToolbar) floatingToolbar.classList.remove("fbs-visible");
+  hideFloatingToolbar();
 }
 
 function _isFacebookGroupSuggestion(element) {
@@ -1379,6 +1379,7 @@ function ensureOverlay() {
         '<img class="fbs-brand-icon" src="' + ICON_BASE64 + '" width="18" height="18" alt="">' +
         '<div class="fbs-brand-text">' +
           '<span class="fbs-title-text" id="fbs-panel-title">FeedWriter</span>' +
+          '<span class="fbs-brand-byline">by Le An</span>' +
           '<span class="fbs-subtitle" data-role="panel-subtitle">Tóm tắt</span>' +
         '</div>' +
       '</div>' +
@@ -1395,11 +1396,11 @@ function ensureOverlay() {
     '<div class="fbs-tone-row" hidden>' +
       '<span class="fbs-tone-label">Viết lại với tone</span>' +
       '<div class="fbs-tone-chips" role="group" aria-label="Tone">' +
-        '<button type="button" class="fbs-tone-btn fbs-tone-default" data-tone="" title="Trở về tone mặc định">Mặc định</button>' +
+        '<button type="button" class="fbs-tone-btn fbs-tone-default" data-tone="default" title="Bản tin công nghệ mặc định của FeedWriter">Bản tin · mặc định</button>' +
+        '<button type="button" class="fbs-tone-btn" data-tone="viral">Viral</button>' +
         '<button type="button" class="fbs-tone-btn" data-tone="short">Ngắn hơn</button>' +
         '<button type="button" class="fbs-tone-btn" data-tone="reporter">Phóng viên</button>' +
         '<button type="button" class="fbs-tone-btn" data-tone="academic">Học thuật</button>' +
-        '<button type="button" class="fbs-tone-btn" data-tone="viral">Viral</button>' +
         '<button type="button" class="fbs-tone-btn" data-tone="bullet">Bullet</button>' +
       '</div>' +
     '</div>' +
@@ -1431,6 +1432,10 @@ function ensureOverlay() {
           '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>' +
           'Copy' +
         '</button>' +
+        '<button type="button" class="fbs-btn-secondary fbs-repo-radar-btn" title="Copy JSON cho Repo Radar (dtcn-v2)">' +
+          '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18"/></svg>' +
+          'Repo Radar' +
+        '</button>' +
         '<button type="button" class="fbs-btn-primary fbs-post-status-btn" title="Kiểm tra nguồn & đăng status">' +
           '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>' +
           'Đăng status' +
@@ -1442,6 +1447,9 @@ function ensureOverlay() {
   panel.querySelector(".fbs-close").addEventListener("click", closeOverlay);
   panel.querySelector(".fbs-min").addEventListener("click", toggleMinimize);
   panel.querySelector(".fbs-copy-btn").addEventListener("click", copyResult);
+  panel
+    .querySelector(".fbs-repo-radar-btn")
+    .addEventListener("click", copyForRepoRadar);
   panel
     .querySelector(".fbs-post-status-btn")
     .addEventListener("click", handlePostStatus);
@@ -1475,7 +1483,7 @@ function ensureOverlay() {
   panel.querySelectorAll(".fbs-tone-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (!lastSummarizeParams) return;
-      const tone = btn.dataset.tone || null;
+      const tone = btn.dataset.tone === "default" ? null : (btn.dataset.tone || null);
       panel.querySelectorAll(".fbs-tone-btn").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       const { text, type, _element } = lastSummarizeParams;
@@ -1724,9 +1732,10 @@ function openOverlay(html, streaming, type = "summary") {
     toneRow.hidden = !showTone;
     toneRow.classList.toggle("fbs-tone-visible", showTone);
   }
-  if (showTone && lastSummarizeParams && lastSummarizeParams.tone) {
+  if (showTone && lastSummarizeParams) {
+    const selectedTone = lastSummarizeParams.tone || "default";
     panel.querySelectorAll(".fbs-tone-btn").forEach((b) => {
-      b.classList.toggle("active", b.dataset.tone === lastSummarizeParams.tone);
+      b.classList.toggle("active", b.dataset.tone === selectedTone);
     });
   } else if (!showTone) {
     panel
@@ -1794,6 +1803,77 @@ function stopSummarize() {
       panelBody.innerHTML + '<div class="fbs-error">Đã dừng.</div>',
       false,
     );
+  }
+}
+
+function extractGithubRepoUrl(...texts) {
+  const re = /(?:https?:\/\/)?(?:www\.)?github\.com\/[\w.-]+\/[\w.-]+/i;
+  for (const text of texts) {
+    if (!text) continue;
+    const match = String(text).match(re);
+    if (!match) continue;
+    return match[0].replace(/\.git$/i, "").replace(/^http:\/\//i, "https://");
+  }
+  return "";
+}
+
+function getCurrentSummaryRawText() {
+  const textarea = panelBody?.querySelector(".fbs-edit-textarea");
+  if (textarea) return textarea.value;
+  if (lastPanelRawText) return lastPanelRawText;
+  if (panelBody?.dataset?.editedText) return panelBody.dataset.editedText;
+  const resultEl = panelBody?.querySelector(".fbs-result");
+  if (resultEl) return resultEl.innerText || resultEl.textContent || "";
+  return panelBody?.innerText || "";
+}
+
+function formatRepoRadarSourceLabel() {
+  const siteNames = {
+    facebook: "Facebook",
+    threads: "Threads",
+    x: "X (Twitter)",
+    linkedin: "LinkedIn",
+    reddit: "Reddit",
+  };
+  const siteName = siteNames[SITE] || SITE || "Web";
+  const el = lastSummarizeParams?._element;
+  const meta = el && typeof extractPostMeta === "function" ? extractPostMeta(el) : null;
+  const author = meta?.author || (el && typeof extractPostAuthor === "function" ? extractPostAuthor(el) : "");
+  return author ? `${author} (${siteName})` : siteName;
+}
+
+async function copyForRepoRadar() {
+  const summary = getCurrentSummaryRawText().trim();
+  if (!summary) return;
+  const el = lastSummarizeParams?._element;
+  const meta = el && typeof extractPostMeta === "function" ? extractPostMeta(el) : null;
+  const sourceUrl = meta?.permalink || (el && typeof extractPostPermalink === "function" ? extractPostPermalink(el) : "");
+  const payload = {
+    kind: "repo-radar-context",
+    repo_url: extractGithubRepoUrl(
+      globalCustomSourceLink,
+      lastSummarizeParams?.text,
+      summary,
+    ),
+    summary_vi: summary,
+    source: formatRepoRadarSourceLabel(),
+    source_url: sourceUrl || "",
+    original_text: lastSummarizeParams?.text || "",
+    exported_at: new Date().toISOString(),
+  };
+  try {
+    await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+    const btn = panel.querySelector(".fbs-repo-radar-btn");
+    if (btn) {
+      const orig = btn.innerHTML;
+      btn.innerHTML =
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Copied';
+      setTimeout(() => {
+        btn.innerHTML = orig;
+      }, 1500);
+    }
+  } catch (_) {
+    // Clipboard blocked — user can copy manually from panel.
   }
 }
 
@@ -2250,7 +2330,7 @@ async function handlePostStatus() {
 document.addEventListener("keydown", (e) => {
   // Close panel with Escape
   if (e.key === "Escape") {
-    if (floatingToolbar) floatingToolbar.classList.remove("fbs-visible");
+    hideFloatingToolbar();
     closeOverlay();
     return;
   }
@@ -3442,7 +3522,11 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
           true,
         );
       }
-      streamBuffer = msg.full;
+      // New workers send incremental, batched chunks to avoid exhausting
+      // Chromium's Port IPC byte quota. Keep full as a compatibility fallback
+      // for an older worker that may still be alive during an extension reload.
+      if (typeof msg.text === "string") streamBuffer += msg.text;
+      else if (typeof msg.full === "string") streamBuffer = msg.full;
       // Throttle DOM updates to 1 per animation frame
       if (!streamRafId) {
         streamRafId = requestAnimationFrame(renderStream);
@@ -3815,7 +3899,93 @@ function processSeeMore(sm) {
 }
 
 // === FLOATING TOOLBAR ===
+// Contextual interaction model inspired by OpenClip (MIT):
+// https://github.com/ganeshmshetty/openclip
 let floatingToolbar = null;
+let floatingSelectionSnapshot = null;
+let floatingSelectionGestureStart = null;
+let floatingSelectionReleasePoint = null;
+
+function hideFloatingToolbar() {
+  if (!floatingToolbar) return;
+  floatingToolbar.classList.remove(
+    "fbs-visible",
+    "fbs-below",
+    "fbs-floating-menu-up",
+  );
+  const menu = floatingToolbar.querySelector(".fbs-floating-more-menu");
+  const toggle = floatingToolbar.querySelector(".fbs-floating-more-toggle");
+  if (menu) menu.setAttribute("hidden", "");
+  if (toggle) toggle.setAttribute("aria-expanded", "false");
+  floatingSelectionSnapshot = null;
+}
+
+function positionFloatingToolbar(rect) {
+  if (!floatingToolbar || !rect) return;
+
+  const tbW = floatingToolbar.offsetWidth || 300;
+  const tbH = floatingToolbar.offsetHeight || 40;
+  const margin = 8;
+  const gap = 8;
+  const release = floatingSelectionReleasePoint;
+  const start = floatingSelectionGestureStart;
+  const anchorX = Number.isFinite(release?.x)
+    ? release.x
+    : rect.left + rect.width / 2;
+  const anchorY = Number.isFinite(release?.y)
+    ? release.y
+    : rect.top + rect.height / 2;
+
+  let left = anchorX - tbW / 2;
+  left = Math.max(margin, Math.min(left, window.innerWidth - tbW - margin));
+
+  const aboveTop = Math.min(rect.top, anchorY) - tbH - gap;
+  const belowTop = Math.max(rect.bottom, anchorY) + gap;
+  const aboveFits = aboveTop >= margin;
+  const belowFits = belowTop + tbH <= window.innerHeight - margin;
+  const draggedDown = Number.isFinite(start?.y) && Number.isFinite(release?.y)
+    ? release.y >= start.y
+    : false;
+  const preferBelow = release ? draggedDown : !aboveFits;
+
+  let below = preferBelow;
+  if (preferBelow && !belowFits && aboveFits) below = false;
+  if (!preferBelow && !aboveFits && belowFits) below = true;
+
+  let top = below ? belowTop : aboveTop;
+  top = Math.max(margin, Math.min(top, window.innerHeight - tbH - margin));
+
+  const caretX = Math.max(12, Math.min(anchorX - left, tbW - 12));
+  floatingToolbar.classList.toggle("fbs-below", below);
+  floatingToolbar.style.setProperty("--fbs-toolbar-caret-x", `${caretX}px`);
+  floatingToolbar.style.top = `${top}px`;
+  floatingToolbar.style.left = `${left}px`;
+}
+
+function updateFloatingToolbarActions(canSummary, canTranslate) {
+  if (!floatingToolbar) return;
+  floatingToolbar.querySelectorAll("[data-action]").forEach((btn) => {
+    const action = btn.getAttribute("data-action");
+    const available = action === "translate" ? canTranslate : canSummary;
+    btn.hidden = !available;
+    btn.disabled = false;
+    btn.style.removeProperty("opacity");
+    btn.style.removeProperty("pointer-events");
+  });
+
+  const more = floatingToolbar.querySelector(".fbs-floating-more");
+  const menu = floatingToolbar.querySelector(".fbs-floating-more-menu");
+  const toggle = floatingToolbar.querySelector(".fbs-floating-more-toggle");
+  const hasMenuAction = !!menu && Array.from(menu.querySelectorAll("[data-action]")).some(
+    (btn) => !btn.hidden,
+  );
+  if (more) more.hidden = !hasMenuAction;
+  if (!hasMenuAction) {
+    if (menu) menu.setAttribute("hidden", "");
+    if (toggle) toggle.setAttribute("aria-expanded", "false");
+  }
+}
+
 function createFloatingToolbar() {
   if (floatingToolbar) return;
   floatingToolbar = document.createElement("div");
@@ -3828,8 +3998,8 @@ function createFloatingToolbar() {
     '" width="13" height="13" alt=""> Tóm tắt</button>' +
     '<button class="fbs-floating-btn" data-action="translate" data-mode="auto" title="Dịch EN→VI">Dịch</button>' +
     '<div class="fbs-floating-more">' +
-    '<button type="button" class="fbs-floating-btn fbs-floating-more-toggle" aria-expanded="false" aria-haspopup="true" title="Thêm công cụ">···</button>' +
-    '<div class="fbs-floating-more-menu" hidden role="menu">' +
+    '<button type="button" class="fbs-floating-btn fbs-floating-more-toggle" aria-expanded="false" aria-haspopup="menu" aria-controls="fbs-floating-more-menu" title="Thêm công cụ">···</button>' +
+    '<div class="fbs-floating-more-menu" id="fbs-floating-more-menu" hidden role="menu">' +
     '<button class="fbs-floating-btn" role="menuitem" data-action="translate" data-mode="slang" title="Slang / thành ngữ">Slang</button>' +
     '<button class="fbs-floating-btn" role="menuitem" data-action="translate" data-mode="collocation" title="Collocations">Cụm từ</button>' +
     '<button class="fbs-floating-btn" role="menuitem" data-action="translate" data-mode="shadowing" title="Shadowing luyện nói">Shadow</button>' +
@@ -3839,33 +4009,63 @@ function createFloatingToolbar() {
     "</div></div>";
   document.body.appendChild(floatingToolbar);
 
+  const moreToggle = floatingToolbar.querySelector(".fbs-floating-more-toggle");
+  const moreMenu = floatingToolbar.querySelector(".fbs-floating-more-menu");
+  const visibleMenuItems = () =>
+    moreMenu
+      ? Array.from(moreMenu.querySelectorAll('[role="menuitem"]')).filter(
+          (item) => !item.hidden && !item.disabled,
+        )
+      : [];
+  const setMoreMenuOpen = (open, focusEdge = null) => {
+    if (!moreMenu || !moreToggle) return;
+    if (!open) {
+      moreMenu.setAttribute("hidden", "");
+      floatingToolbar.classList.remove("fbs-floating-menu-up");
+      moreToggle.setAttribute("aria-expanded", "false");
+      return;
+    }
+
+    moreMenu.removeAttribute("hidden");
+    floatingToolbar.classList.remove("fbs-floating-menu-up");
+    const toolbarRect = floatingToolbar.getBoundingClientRect();
+    const menuRect = moreMenu.getBoundingClientRect();
+    if (
+      menuRect.bottom > window.innerHeight - 8 &&
+      toolbarRect.top - menuRect.height - 4 >= 8
+    ) {
+      floatingToolbar.classList.add("fbs-floating-menu-up");
+    }
+    moreToggle.setAttribute("aria-expanded", "true");
+
+    const items = visibleMenuItems();
+    if (focusEdge === "first") items[0]?.focus();
+    if (focusEdge === "last") items[items.length - 1]?.focus();
+  };
+
   floatingToolbar.addEventListener("mousedown", (e) => e.preventDefault());
   floatingToolbar.addEventListener("click", (e) => {
     e.preventDefault();
-    const moreToggle = e.target.closest(".fbs-floating-more-toggle");
-    if (moreToggle) {
-      const menu = floatingToolbar.querySelector(".fbs-floating-more-menu");
-      const open = menu && menu.hasAttribute("hidden");
-      if (menu) {
-        if (open) menu.removeAttribute("hidden");
-        else menu.setAttribute("hidden", "");
-      }
-      moreToggle.setAttribute("aria-expanded", open ? "true" : "false");
+    const clickedMoreToggle = e.target.closest(".fbs-floating-more-toggle");
+    if (clickedMoreToggle) {
+      const open = moreMenu && moreMenu.hasAttribute("hidden");
+      setMoreMenuOpen(!!open, open ? "first" : null);
       return;
     }
     const btn = e.target.closest("[data-action]");
     if (!btn) return;
     const action = btn.getAttribute("data-action");
     if (action === "batch") {
-      floatingToolbar.classList.remove("fbs-visible");
+      hideFloatingToolbar();
       if (batchMode) exitBatchMode();
       else enterBatchMode();
       return;
     }
-    const sel = window.getSelection();
-    const text = sel.toString().trim();
+    const snapshot = floatingSelectionSnapshot;
+    const text = snapshot?.text || "";
+    const anchor = snapshot?.anchorElement || null;
     if (!text) return;
-    floatingToolbar.classList.remove("fbs-visible");
+    hideFloatingToolbar();
 
     if (action === "translate") {
       const mode = btn.getAttribute("data-mode") || "auto";
@@ -3877,20 +4077,40 @@ function createFloatingToolbar() {
       return;
     }
 
-    const anchor =
-      sel.rangeCount > 0 ? sel.getRangeAt(0).startContainer.parentElement : null;
     summarizeText(text, action === "summary" ? "summary" : action, anchor);
   });
 
-  const hideToolbar = () => {
-    if (floatingToolbar && floatingToolbar.classList.contains("fbs-visible")) {
-      floatingToolbar.classList.remove("fbs-visible");
-      const menu = floatingToolbar.querySelector(".fbs-floating-more-menu");
-      const toggle = floatingToolbar.querySelector(".fbs-floating-more-toggle");
-      if (menu) menu.setAttribute("hidden", "");
-      if (toggle) toggle.setAttribute("aria-expanded", "false");
+  floatingToolbar.addEventListener("keydown", (e) => {
+    if (!moreMenu || !moreToggle) return;
+
+    if (e.target === moreToggle && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      e.preventDefault();
+      setMoreMenuOpen(true, e.key === "ArrowDown" ? "first" : "last");
+      return;
     }
-  };
+
+    const menuItem = e.target.closest('[role="menuitem"]');
+    if (e.key === "Escape" && !moreMenu.hasAttribute("hidden")) {
+      e.preventDefault();
+      setMoreMenuOpen(false);
+      moreToggle.focus();
+      return;
+    }
+    if (!menuItem || !["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
+
+    const items = visibleMenuItems();
+    if (!items.length) return;
+    e.preventDefault();
+    const index = Math.max(0, items.indexOf(menuItem));
+    let nextIndex = index;
+    if (e.key === "ArrowDown") nextIndex = (index + 1) % items.length;
+    if (e.key === "ArrowUp") nextIndex = (index - 1 + items.length) % items.length;
+    if (e.key === "Home") nextIndex = 0;
+    if (e.key === "End") nextIndex = items.length - 1;
+    items[nextIndex]?.focus();
+  });
+
+  const hideToolbar = () => hideFloatingToolbar();
   document.addEventListener("scroll", hideToolbar, { capture: true, passive: true });
   listeners.push({ element: document, event: "scroll", handler: hideToolbar, options: { capture: true, passive: true } });
   window.addEventListener("resize", hideToolbar, { passive: true });
@@ -3917,19 +4137,19 @@ function handleSelection() {
   createFloatingToolbar();
   setTimeout(() => {
     if (isFacebookPersonalProfileHome()) {
-      floatingToolbar.classList.remove("fbs-visible");
+      hideFloatingToolbar();
       return;
     }
 
     if (isNativeComposerOpen()) {
-      floatingToolbar.classList.remove("fbs-visible");
+      hideFloatingToolbar();
       return;
     }
 
     const selection = window.getSelection();
     const text = selection.toString().trim();
     if (selection.rangeCount === 0) {
-      floatingToolbar.classList.remove("fbs-visible");
+      hideFloatingToolbar();
       return;
     }
     // Translate accepts short EN phrases; summary follows the shared semantic
@@ -3938,50 +4158,33 @@ function handleSelection() {
       text.length >= 2 && text.length <= 2000 && /[A-Za-z]/.test(text);
     const canSummary = getSummaryPolicyDecision(text, "summary").shouldSummarize;
     if (!canTranslate && !canSummary) {
-      floatingToolbar.classList.remove("fbs-visible");
+      hideFloatingToolbar();
       return;
     }
     const range = selection.getRangeAt(0);
     const rect = range.getBoundingClientRect();
     if (rect.width === 0 && rect.height === 0) {
-      floatingToolbar.classList.remove("fbs-visible");
+      hideFloatingToolbar();
       return;
     }
 
-    floatingToolbar.querySelectorAll("[data-action]").forEach((btn) => {
-      const action = btn.getAttribute("data-action");
-      if (action === "summary" || action === "batch") {
-        btn.disabled = !canSummary;
-        btn.style.opacity = canSummary ? "1" : "0.35";
-        btn.style.pointerEvents = canSummary ? "" : "none";
-      } else if (action === "translate") {
-        btn.disabled = !canTranslate;
-        btn.style.opacity = canTranslate ? "1" : "0.35";
-        btn.style.pointerEvents = canTranslate ? "" : "none";
-      }
-    });
+    const startContainer = range.startContainer;
+    const anchorElement = startContainer.nodeType === Node.ELEMENT_NODE
+      ? startContainer
+      : startContainer.parentElement;
+    floatingSelectionSnapshot = { text, anchorElement };
+    updateFloatingToolbarActions(canSummary, canTranslate);
 
     floatingToolbar.classList.add("fbs-visible");
-    const tbW = floatingToolbar.offsetWidth || 300;
-    const tbH = floatingToolbar.offsetHeight || 40;
-    const M = 8;
-    let left = rect.left + rect.width / 2 - tbW / 2;
-    left = Math.max(M, Math.min(left, window.innerWidth - tbW - M));
-    let below = false;
-    let top = rect.top - tbH - 8;
-    if (top < M) {
-      top = rect.bottom + 8;
-      below = true;
-    }
-    floatingToolbar.classList.toggle("fbs-below", below);
-    floatingToolbar.style.top = top + window.scrollY + "px";
-    floatingToolbar.style.left = left + window.scrollX + "px";
+    positionFloatingToolbar(rect);
   }, 0);
 }
 
 let _selectionTimer = null;
 const mouseupHandler = (e) => {
   if (floatingToolbar && floatingToolbar.contains(e.target)) return;
+  if (e.button !== 0) return;
+  floatingSelectionReleasePoint = { x: e.clientX, y: e.clientY };
   // Debounce — Facebook click/scroll storms must not run selection logic every time.
   clearTimeout(_selectionTimer);
   _selectionTimer = setTimeout(() => {
@@ -3995,7 +4198,10 @@ listeners.push({ element: document, event: "mouseup", handler: mouseupHandler })
 
 const mousedownHandler = (e) => {
   if (floatingToolbar && !floatingToolbar.contains(e.target)) {
-    floatingToolbar.classList.remove("fbs-visible");
+    hideFloatingToolbar();
+  }
+  if (e.button === 0 && (!floatingToolbar || !floatingToolbar.contains(e.target))) {
+    floatingSelectionGestureStart = { x: e.clientX, y: e.clientY };
   }
 };
 document.addEventListener("mousedown", mousedownHandler);

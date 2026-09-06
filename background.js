@@ -115,6 +115,52 @@ const localStorageAccessReady = (() => {
 })();
 
 // === STORAGE MIGRATION ===
+async function migrateApiKeysOutOfSync() {
+  if (!chrome?.storage?.sync || !chrome?.storage?.local) return;
+  const syncData = await chrome.storage.sync.get(["apiKey", "apiKeys", "provider"]);
+  if (!syncData.apiKey && !syncData.apiKeys) return;
+
+  const localData = await chrome.storage.local.get("apiKeys");
+  const providers = ["groq", "gemini", "cerebras", "sambanova", "openrouter"];
+  const merged = {};
+  for (const provider of providers) {
+    const localKeys = Array.isArray(localData.apiKeys?.[provider])
+      ? localData.apiKeys[provider]
+      : [];
+    const syncKeys = Array.isArray(syncData.apiKeys?.[provider])
+      ? syncData.apiKeys[provider]
+      : [];
+    merged[provider] = [...new Set([...localKeys, ...syncKeys])];
+  }
+  if (syncData.apiKey) {
+    const provider = providers.includes(syncData.provider) ? syncData.provider : "groq";
+    if (!merged[provider].includes(syncData.apiKey)) merged[provider].push(syncData.apiKey);
+  }
+
+  await chrome.storage.local.set({ apiKeys: merged, backupApiKeys: merged });
+  await chrome.storage.sync.remove(["apiKeys", "apiKey"]);
+  logger.info("Moved API keys out of quota-limited sync storage");
+}
+
+async function repairCooldownsAfterStorageQuotaFix() {
+  if (!chrome?.storage?.local) return;
+  const REPAIR_VERSION = 1;
+  const data = await chrome.storage.local.get(["storageQuotaRepairVersion", "keyStatus"]);
+  if ((data.storageQuotaRepairVersion || 0) >= REPAIR_VERSION) return;
+
+  const keyStatus = data.keyStatus || {};
+  for (const status of Object.values(keyStatus)) {
+    if (!status || typeof status !== "object") continue;
+    delete status.rateLimitedUntil;
+    status.lastError = null;
+  }
+  await chrome.storage.local.set({
+    keyStatus,
+    storageQuotaRepairVersion: REPAIR_VERSION,
+  });
+  logger.info("Cleared stale key cooldowns left by the storage quota failure");
+}
+
 async function migrateStorageIfNeeded() {
   if (!chrome?.storage?.local) return; // SW not ready
   const data = await chrome.storage.local.get(['storageVersion', 'history', 'apiKeys', 'templates']);
@@ -601,6 +647,9 @@ async function enrichRelatedSourceUrl(rawUrl) {
 if (chrome?.runtime?.onInstalled) {
 chrome.runtime.onInstalled.addListener(async () => {
   // Run all migrations and telemetry init
+  await migrateApiKeysOutOfSync().catch(e => logger.error('API key migration failed (onInstalled):', e));
+  await compactStoredHistory().catch(e => logger.error('History compaction failed (onInstalled):', e));
+  await repairCooldownsAfterStorageQuotaFix().catch(e => logger.error('Cooldown repair failed (onInstalled):', e));
   await migrateStorageIfNeeded().catch(e => logger.error('Storage migration failed (onInstalled):', e));
   await cleanupExpiredPendingPosts().catch(e => logger.error('Pending post cleanup failed (onInstalled):', e));
   await migrateSettingsIfNeeded().catch(e => logger.error('Settings migration failed (onInstalled):', e));
@@ -1657,6 +1706,39 @@ function detectRepetition(text) {
   return dupes / sentences.length;
 }
 
+// Normalize numeric evidence without conflating 56.9 with 569. This is a
+// warning heuristic, not verification of a number's meaning or attribution.
+function numericEvidenceTokens(text) {
+  const cleaned = String(text || "").normalize("NFKC")
+    .replace(/https?:\/\/\S+/gi, " ")
+    .replace(/^\s*(?:Bước\s+\d+\s*[:.)]|\d+[.)](?=\s))/gimu, "");
+  const scales = {
+    "nghìn": 1000, "ngàn": 1000, thousand: 1000, k: 1000,
+    "triệu": 1000000, million: 1000000,
+    "tỷ": 1000000000, "tỉ": 1000000000, billion: 1000000000,
+  };
+  const tokens = new Set();
+  for (const match of cleaned.matchAll(/\d+(?:[.,]\d+)*(?:\s*(?:nghìn|ngàn|triệu|tỷ|tỉ|thousand|million|billion|k)(?![\p{L}\p{N}]))?/giu)) {
+    const raw = match[0];
+    const number = raw.match(/^\d+(?:[.,]\d+)*/)[0];
+    const scale = scales[raw.slice(number.length).trim().toLowerCase()] || 1;
+    let canonical = number;
+    if (/^\d{1,3}([.,])\d{3}(?:\1\d{3})*$/.test(number)) {
+      canonical = number.replace(/[.,]/g, "");
+    } else if (number.includes(".") && number.includes(",")) {
+      const decimal = number.lastIndexOf(".") > number.lastIndexOf(",") ? "." : ",";
+      canonical = number.split(decimal === "." ? "," : ".").join("").replace(decimal, ".");
+    } else {
+      canonical = number.replace(",", ".");
+    }
+    // Preserve identifiers/versions with several dots rather than dropping
+    // separators and treating e.g. version 1.2.3 as a count of 123.
+    const value = Number(canonical);
+    tokens.add(Number.isFinite(value) ? String(value * scale) : number);
+  }
+  return tokens;
+}
+
 // Main post-processing function
 function postProcessOutput(output, sourceText, type) {
   const issues = [];
@@ -1883,7 +1965,7 @@ function postProcessOutput(output, sourceText, type) {
     processed = title + body;
   }
 
-  // 8. Fix VND long format → short format (44.990.000 đồng → gần 45 triệu đồng)
+  // 8. Shorten VND units without rounding away source precision.
   processed = processed.replace(
     /(\d{1,3})\.(\d{3})\.(\d{3})\s*(?:đồng|VND|vnđ|VNĐ)/gi,
     (match, a, b, c) => {
@@ -1891,13 +1973,13 @@ function postProcessOutput(output, sourceText, type) {
       if (num >= 1000000000) {
         const ty = num / 1000000000;
         return (
-          (ty % 1 === 0 ? ty.toString() : ty.toFixed(1).replace(".", ",")) +
+          ty.toString().replace(".", ",") +
           " tỷ đồng"
         );
       }
       const trieu = num / 1000000;
       if (trieu % 1 === 0) return trieu + " triệu đồng";
-      return trieu.toFixed(1).replace(".", ",") + " triệu đồng";
+      return trieu.toString().replace(".", ",") + " triệu đồng";
     },
   );
 
@@ -1917,19 +1999,10 @@ function postProcessOutput(output, sourceText, type) {
   }
 
   // 10. Hallucination detection: check if output contains numbers not in source
-  if (sourceText && sourceText.length > 50) {
-    const sourceNums = new Set(
-      (sourceText.match(/\d[\d.,]*\d|\d+/g) || []).map((n) =>
-        n.replace(/[.,]/g, ""),
-      ),
-    );
-    const outputNums = (processed.match(/\d[\d.,]*\d|\d+/g) || []).map((n) =>
-      n.replace(/[.,]/g, ""),
-    );
-    const fabricated = outputNums.filter(
-      (n) => n.length >= 2 && !sourceNums.has(n),
-    );
-    if (fabricated.length >= 2) {
+  if (typeof sourceText === "string") {
+    const sourceNums = numericEvidenceTokens(sourceText);
+    const fabricated = [...numericEvidenceTokens(processed)].filter((n) => !sourceNums.has(n));
+    if (fabricated.length > 0) {
       issues.push(
         "[!] Output có thể chứa số liệu bịa (" +
           fabricated.slice(0, 3).join(", ") +
@@ -2258,6 +2331,45 @@ async function handleStream(
   };
 }
 // === HISTORY ===
+const HISTORY_MAX_ITEMS = 200;
+const HISTORY_MAX_BYTES = 2 * 1024 * 1024;
+
+function compactHistoryForStorage(items) {
+  const compacted = [];
+  let bytes = 2;
+  for (const raw of Array.isArray(items) ? items : []) {
+    const entry = {
+      text: String(raw?.text || "").slice(0, 2000),
+      summary: String(raw?.summary || "").slice(0, 20000),
+      date: String(raw?.date || "").slice(0, 64),
+      site: String(raw?.site || "unknown").slice(0, 40),
+      type: String(raw?.type || "summary").slice(0, 40),
+      sourceUrl: String(raw?.sourceUrl || "").slice(0, 4096),
+      // Screenshots are transient publishing assets and may be several MB.
+      imageUrl: /^data:/i.test(String(raw?.imageUrl || ""))
+        ? ""
+        : String(raw?.imageUrl || "").slice(0, 4096),
+      author: String(raw?.author || "").slice(0, 300),
+      postTitle: String(raw?.postTitle || "").slice(0, 500),
+    };
+    const entryBytes = new TextEncoder().encode(JSON.stringify(entry)).length + 1;
+    if (compacted.length >= HISTORY_MAX_ITEMS || bytes + entryBytes > HISTORY_MAX_BYTES) break;
+    compacted.push(entry);
+    bytes += entryBytes;
+  }
+  return compacted;
+}
+
+async function compactStoredHistory() {
+  if (!chrome?.storage?.local) return;
+  const data = await chrome.storage.local.get("history");
+  if (!Array.isArray(data.history) || data.history.length === 0) return;
+  const compacted = compactHistoryForStorage(data.history);
+  if (JSON.stringify(compacted) !== JSON.stringify(data.history)) {
+    await chrome.storage.local.set({ history: compacted });
+  }
+}
+
 async function saveHistory(
   text,
   summary,
@@ -2275,7 +2387,9 @@ async function saveHistory(
     site: site || "unknown",
     type: type || "summary",
     sourceUrl: sourceUrl || "",
-    imageUrl: imageUrl || "",
+    imageUrl: /^data:/i.test(String(imageUrl || ""))
+      ? ""
+      : String(imageUrl || "").slice(0, 4096),
     author: author || "",
     postTitle: postTitle || "",
   };
@@ -2284,8 +2398,7 @@ async function saveHistory(
     const data = await chrome.storage.local.get("history");
     const history = data.history || [];
     history.unshift(entry);
-    if (history.length > 200) history.length = 200;
-    await chrome.storage.local.set({ history });
+    await chrome.storage.local.set({ history: compactHistoryForStorage(history) });
   });
   historyWriteQueue = write.catch((error) => {
     logger.warn("History write failed:", error?.message || error);
@@ -2477,6 +2590,9 @@ function formatSourceName(site, author) {
 // Re-register alarm on SW startup if previously enabled
 if (chrome?.runtime?.onStartup) {
 chrome.runtime.onStartup.addListener(async () => {
+  await migrateApiKeysOutOfSync().catch(e => logger.error('API key migration failed (onStartup):', e));
+  await compactStoredHistory().catch(e => logger.error('History compaction failed (onStartup):', e));
+  await repairCooldownsAfterStorageQuotaFix().catch(e => logger.error('Cooldown repair failed (onStartup):', e));
   await migrateStorageIfNeeded().catch(e => logger.error('Storage migration failed (onStartup):', e));
   await cleanupExpiredPendingPosts().catch(e => logger.error('Pending post cleanup failed (onStartup):', e));
   await migrateSettingsIfNeeded().catch(e => logger.error('Settings migration failed (onStartup):', e));

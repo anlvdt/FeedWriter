@@ -33,6 +33,48 @@ describe("Facebook composer panel layout", () => {
   });
 });
 
+describe("Floating selection toolbar", () => {
+  it("uses release-point positioning and hides irrelevant actions", () => {
+    const toolbarBlock = css.match(/\.fbs-floating-toolbar\s*\{([\s\S]*?)\n\}/);
+    assert.ok(toolbarBlock, "expected floating toolbar styles");
+    assert.match(toolbarBlock[1], /position:\s*fixed\s*!important/);
+    assert.match(toolbarBlock[1], /flex-wrap:\s*nowrap\s*!important/);
+    assert.match(content, /floatingSelectionReleasePoint\s*=\s*\{\s*x:\s*e\.clientX,\s*y:\s*e\.clientY\s*\}/);
+    assert.match(content, /floatingSelectionSnapshot\s*=\s*\{\s*text,\s*anchorElement\s*\}/);
+    assert.match(content, /btn\.hidden\s*=\s*!available/);
+    assert.match(content, /function positionFloatingToolbar\(rect\)/);
+  });
+});
+
+describe("FeedWriter branding and attribution", () => {
+  it("shows the Le An byline on every visible FeedWriter title surface", () => {
+    assert.match(
+      popup,
+      /<h1>FeedWriter<\/h1>\s*<div class="brand-byline">by Le An<\/div>/,
+    );
+    assert.match(
+      popup,
+      /<h1 class="wizard-title">FeedWriter<\/h1>\s*<div class="brand-byline brand-byline-wizard">by Le An<\/div>/,
+    );
+    assert.match(
+      content,
+      /id="fbs-panel-title">FeedWriter<\/span>' \+\s*'<span class="fbs-brand-byline">by Le An<\/span>/,
+    );
+    assert.match(css, /\.fbs-brand-byline/);
+  });
+
+  it("credits OpenClip inspiration inside About", () => {
+    assert.match(popup, /<div class="about-section-title">Cảm hứng<\/div>/);
+    assert.match(popup, /Floating toolbar · OpenClip/);
+    assert.match(
+      popup,
+      /href="https:\/\/github\.com\/ganeshmshetty\/openclip"/,
+    );
+    assert.match(popup, /Ganesh M và OpenClip Contributors/);
+    assert.match(popup, /OpenClip phát hành theo giấy phép MIT/);
+  });
+});
+
 describe("Facebook personal-profile exclusion", () => {
   it("suppresses summary controls and selection actions on personal profiles", () => {
     assert.match(content, /function isFacebookPersonalProfileHome\(\)/);
@@ -276,12 +318,34 @@ describe("Feed summary control density", () => {
     assert.match(content, /label\.textContent = "Đang tóm tắt…"/);
     assert.match(
       css,
-      /\.fbs-btn-inline\[data-fbs-ui="v3"\]:focus-visible[\s\S]*?outline:\s*2px solid #0866ff/,
+      /\.fbs-btn-inline\[data-fbs-ui="v3"\]:focus-visible[\s\S]*?outline:\s*2px solid var\(--fw-accent\)[\s\S]*?box-shadow:\s*0 0 0 2px var\(--fw-accent-soft\)/,
     );
     assert.match(
       css,
       /\.fbs-btn-inline\[data-fbs-ui="v3"\]\[aria-busy="true"\][\s\S]*?cursor:\s*progress/,
     );
+  });
+
+  it("keeps overlay accents and keyboard focus on the canonical teal system", () => {
+    assert.doesNotMatch(css, /rgba\(99,\s*102,\s*241/);
+    assert.match(
+      css,
+      /\.fbs-panel\[data-fbs-ui="v3"\] \.fbs-icon-btn:focus-visible[\s\S]*?outline:\s*2px solid var\(--fw-accent\)[\s\S]*?box-shadow:\s*0 0 0 2px var\(--fw-accent-soft\)/,
+    );
+    assert.match(
+      css,
+      /\.fbs-glossary-heading[\s\S]*?color:\s*var\(--fw-accent\)/,
+    );
+  });
+
+  it("supports keyboard navigation in the floating toolbar overflow menu", () => {
+    assert.match(content, /aria-haspopup="menu"/);
+    assert.match(content, /floatingToolbar\.addEventListener\("keydown"/);
+    assert.match(content, /e\.key === "Escape"/);
+    assert.match(content, /e\.key === "ArrowDown"/);
+    assert.match(content, /e\.key === "ArrowUp"/);
+    assert.match(content, /e\.key === "Home"/);
+    assert.match(content, /e\.key === "End"/);
   });
 
   it("does not mount inline summaries on short Facebook status bodies", () => {
