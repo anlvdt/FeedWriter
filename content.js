@@ -1867,7 +1867,7 @@ async function copyForRepoRadar() {
     if (btn) {
       const orig = btn.innerHTML;
       btn.innerHTML =
-        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Copied';
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Đã copy';
       setTimeout(() => {
         btn.innerHTML = orig;
       }, 1500);
@@ -1919,7 +1919,7 @@ function copyResult() {
     const btn = panel.querySelector(".fbs-copy-btn");
     const orig = btn.innerHTML;
     btn.innerHTML =
-      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Copied';
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Đã copy';
     setTimeout(() => {
       btn.innerHTML = orig;
     }, 1500);
@@ -1986,6 +1986,68 @@ function extractRealXPostImages(postElement) {
   return window.fbsExtractImages(postElement).filter(
     (imageUrl) => !isXPlaceholderImage(imageUrl, postElement),
   );
+}
+
+function getXPostIdentity(element) {
+  const post = element?.closest?.('article[data-testid="tweet"]') || element;
+  if (!post) return { statusId: "", text: "" };
+  const links = Array.from(post.querySelectorAll('a[href*="/status/"]')).filter(
+    (link) => link.closest('article[data-testid="tweet"]') === post,
+  );
+  // The timestamp is the tweet's own permalink. Other links may point to
+  // quoted tweets, so prefer it when preserving the source identity.
+  const permalink = links.find((link) => link.querySelector("time"));
+  let statusId = "";
+  if (permalink) {
+    try {
+      const url = new URL(permalink.href, location.href);
+      if (/(?:^|\.)(?:x\.com|twitter\.com)$/.test(url.hostname)) {
+        statusId = url.pathname.match(/\/status\/(\d+)(?:\/|$)/)?.[1] || "";
+      }
+    } catch (_) {}
+  }
+  const text = (post.querySelector('[data-testid="tweetText"]')?.textContent || "")
+    .replace(/\s+/g, " ").trim();
+  return { statusId, text };
+}
+
+function resolveXPostElement(element, identity = getXPostIdentity(element)) {
+  const matches = (post) => {
+    if (!post?.isConnected) return false;
+    const current = getXPostIdentity(post);
+    return identity.statusId
+      ? current.statusId === identity.statusId
+      : !!identity.text && current.text === identity.text;
+  };
+  const isRenderable = (post) => {
+    const rect = post.getBoundingClientRect();
+    return Number.isFinite(rect.width) && Number.isFinite(rect.height) &&
+      rect.width > 0 && rect.height > 0;
+  };
+  const original = element?.closest?.('article[data-testid="tweet"]') || element;
+  if (matches(original) && isRenderable(original)) return original;
+  const candidates = Array.from(document.querySelectorAll('article[data-testid="tweet"]'))
+    .filter(matches);
+  const rendered = candidates.filter(isRenderable);
+  if (identity.statusId) return rendered[0] || candidates[0] || null;
+  // Without a permalink, identical text is only safe when it identifies one
+  // tweet. Never silently substitute another author's identical post.
+  return (rendered.length === 1 ? rendered[0] : null) ||
+    (rendered.length === 0 && candidates.length === 1 ? candidates[0] : null);
+}
+
+function getVisiblePostBounds(rect, viewportWidth, viewportHeight) {
+  const values = [rect.x, rect.y, rect.width, rect.height, viewportWidth, viewportHeight];
+  if (values.some((value) => !Number.isFinite(value)) ||
+      rect.width <= 0 || rect.height <= 0 || viewportWidth <= 0 || viewportHeight <= 0) {
+    return null;
+  }
+  const left = Math.max(0, Math.floor(rect.x));
+  const top = Math.max(0, Math.floor(rect.y));
+  const right = Math.min(viewportWidth, Math.ceil(rect.x + rect.width));
+  const bottom = Math.min(viewportHeight, Math.ceil(rect.y + rect.height));
+  if (right <= left || bottom <= top) return null;
+  return { x: left, y: top, width: right - left, height: bottom - top };
 }
 
 function isFeedWriterScreenshotCaptureActive() {
@@ -2109,27 +2171,43 @@ async function captureVisiblePost(postElement) {
   if (!postElement) throw new Error("Không tìm thấy bài viết để chụp");
   const suppressedUi = suppressFeedWriterUiForScreenshot();
   try {
-    postElement.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" });
-    await waitForNextPaint();
-    // Scrolling can cause observers to mount a fresh inline summary control.
-    // Sweep until those nodes are hidden, then let Chromium paint before capture.
-    await suppressedUi.waitUntilHidden();
-    const bounds = postElement.getBoundingClientRect();
-    if (bounds.width <= 100 || bounds.height <= 100) {
-      throw new Error("Kích thước bài viết không hợp lệ");
+    const identity = SITE === "x"
+      ? lastSummarizeParams?.xPostIdentity || getXPostIdentity(postElement)
+      : null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const target = SITE === "x"
+        ? resolveXPostElement(postElement, identity)
+        : postElement;
+      if (!target) {
+        throw new Error("Bài X không còn hiển thị. Hãy mở lại bài viết và thử lại");
+      }
+      const initialRect = target.getBoundingClientRect();
+      target.scrollIntoView({
+        block: initialRect.height > window.innerHeight ? "start" : "center",
+        inline: "nearest",
+        behavior: "auto",
+      });
+      await waitForNextPaint();
+      // Scrolling can replace virtualized tweets or mount fresh controls.
+      await suppressedUi.waitUntilHidden();
+      const liveTarget = SITE === "x"
+        ? resolveXPostElement(target, identity)
+        : target;
+      if (!liveTarget || liveTarget !== target) continue;
+      const bounds = getVisiblePostBounds(
+        liveTarget.getBoundingClientRect(), window.innerWidth, window.innerHeight,
+      );
+      // A short tweet is valid. Only reject an empty or offscreen crop.
+      if (!bounds) continue;
+      const response = await chrome.runtime.sendMessage({
+        action: "capture-screenshot",
+        bounds,
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+      });
+      if (!response?.base64) throw new Error(response?.error || "Không chụp được bài viết");
+      return response.base64;
     }
-    const response = await chrome.runtime.sendMessage({
-      action: "capture-screenshot",
-      bounds: {
-        x: Math.round(bounds.x),
-        y: Math.round(bounds.y),
-        width: Math.round(bounds.width),
-        height: Math.round(bounds.height),
-      },
-      viewport: { width: window.innerWidth, height: window.innerHeight },
-    });
-    if (!response?.base64) throw new Error(response?.error || "Không chụp được bài viết");
-    return response.base64;
+    throw new Error("Không tìm thấy vùng bài viết đang hiển thị để chụp");
   } finally {
     suppressedUi.restore();
   }
@@ -2202,7 +2280,13 @@ async function handlePostStatus() {
     }
 
     // Lấy metadata từ DOM element (nếu có) — multi-strategy link + author
-    const _element = lastSummarizeParams?._element || null;
+    let _element = lastSummarizeParams?._element || null;
+    if (SITE === "x" && _element) {
+      _element = resolveXPostElement(
+        _element, lastSummarizeParams?.xPostIdentity || getXPostIdentity(_element),
+      );
+      if (_element && lastSummarizeParams) lastSummarizeParams._element = _element;
+    }
     let meta = _element && typeof window.fbsExtractMeta === "function"
       ? window.fbsExtractMeta(_element)
       : null;
@@ -3126,7 +3210,7 @@ function updateBatchProgress(current, total) {
   }
 
   if (status) {
-    status.textContent = `${current} / ${total}`;
+    status.textContent = `${formatVietnameseNumber(current)} / ${formatVietnameseNumber(total)}`;
   }
 }
 
@@ -3278,16 +3362,22 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
     hashText(settings.customSummaryPrompt || "") +
     (tone ? "_" + tone : "");
 
+  // Refresh the source even on a cache hit. X can replace timeline articles
+  // while the summary panel is open; keep the original tweet identity.
+  lastSummarizeParams = {
+    text, type, _element: contextElement, tone,
+    xPostIdentity: SITE === "x" ? getXPostIdentity(contextElement) : null,
+  };
   if (summaryCache.has(cacheKey)) {
+    lastPanelRawText = summaryCache.get(cacheKey);
     openOverlay(
-      '<div class="fbs-result">' + fmt(summaryCache.get(cacheKey)) + "</div>",
+      '<div class="fbs-result">' + fmt(lastPanelRawText) + "</div>",
       false,
       type,
     );
     return;
   }
 
-  lastSummarizeParams = { text, type, _element: contextElement, tone };
   isSummarizing = true;
   const title =
     type === "status_share"
@@ -4886,7 +4976,7 @@ function scanCommentSections() {
     commentBtnInjected.add(article);
     const btn = document.createElement("button");
     btn.className = "fbs-comment-summary-btn";
-    btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg> Tóm tắt ' + commentEntries.length + ' bình luận';
+    btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg> Tóm tắt ' + formatVietnameseNumber(commentEntries.length) + ' bình luận';
     btn.title = "Tóm tắt toàn bộ thread bình luận";
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -4923,7 +5013,7 @@ function createBatchBar() {
 
 function updateBatchBar() {
   if (!batchBar) return;
-  batchBar.querySelector(".fbs-batch-count").textContent = batchQueue.length + " bài đã chọn";
+  batchBar.querySelector(".fbs-batch-count").textContent = formatVietnameseNumber(batchQueue.length) + " bài đã chọn";
 }
 
 function enterBatchMode() {
@@ -4992,7 +5082,7 @@ async function runBatch() {
   progress.innerHTML =
     '<div class="fbs-batch-progress-label">Đang tóm tắt batch…</div>' +
     '<div class="fbs-batch-progress-track"><div class="fbs-batch-progress-fill"></div></div>' +
-    '<div class="fbs-batch-progress-meta">0 / ' + items.length + "</div>";
+    '<div class="fbs-batch-progress-meta">0 / ' + formatVietnameseNumber(items.length) + "</div>";
   document.body.appendChild(progress);
   const fill = progress.querySelector(".fbs-batch-progress-fill");
   const meta = progress.querySelector(".fbs-batch-progress-meta");
@@ -5001,12 +5091,12 @@ async function runBatch() {
     for (let i = 0; i < items.length; i++) {
       const { text, el } = items[i];
       if (fill) fill.style.width = Math.round(((i) / items.length) * 100) + "%";
-      if (meta) meta.textContent = i + " / " + items.length;
+      if (meta) meta.textContent = formatVietnameseNumber(i) + " / " + formatVietnameseNumber(items.length);
       await summarizeText(text, "summary", el);
       await new Promise((r) => setTimeout(r, 800));
     }
     if (fill) fill.style.width = "100%";
-    if (meta) meta.textContent = items.length + " / " + items.length;
+    if (meta) meta.textContent = formatVietnameseNumber(items.length) + " / " + formatVietnameseNumber(items.length);
   } finally {
     setTimeout(() => {
       try { progress.remove(); } catch (_) {}

@@ -185,7 +185,7 @@
       <div id="debugPanel" class="debug-panel">
         <h4>Test Mode Debug</h4>
         <button id="debugTestBtn" class="btn btn-secondary">Test kết nối</button>
-        <button id="clearCacheBtn" class="btn btn-secondary">Clear Cache</button>
+        <button id="clearCacheBtn" class="btn btn-secondary">Xóa cache</button>
         <div id="debugInfo"></div>
       </div>
 
@@ -223,7 +223,7 @@
         <div class="keys-empty-title">Chưa có API key</div>
         <p class="keys-empty-text">Dán key vào ô trên, hoặc <strong>Import</strong> file JSON đã export / recovery. Reload extension (ID mới) sẽ mất key nếu chưa backup.</p>
         <div class="keys-empty-actions">
-          <button type="button" class="btn btn-secondary btn-sm" id="emptyImportBtn">Import JSON</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="emptyImportBtn">Nhập file JSON</button>
         </div>
       </div>
 
@@ -231,35 +231,35 @@
         <div id="keyListGroq" class="key-list" style="display:none">
           <div class="key-list-header">
             <span class="key-list-name">Groq</span>
-            <span class="key-limit-badge">100K tok/ngày</span>
+            <span class="key-limit-badge">100.000 token/ngày</span>
           </div>
           <div id="keyListGroqItems" class="key-list-items"></div>
         </div>
         <div id="keyListGemini" class="key-list" style="display:none">
           <div class="key-list-header">
             <span class="key-list-name">Gemini</span>
-            <span class="key-limit-badge">1500 req/ngày</span>
+            <span class="key-limit-badge">1.500 yêu cầu/ngày</span>
           </div>
           <div id="keyListGeminiItems" class="key-list-items"></div>
         </div>
         <div id="keyListCerebras" class="key-list" style="display:none">
           <div class="key-list-header">
             <span class="key-list-name">Cerebras</span>
-            <span class="key-limit-badge">1M tok/ngày</span>
+            <span class="key-limit-badge">1 triệu token/ngày</span>
           </div>
           <div id="keyListCerebrasItems" class="key-list-items"></div>
         </div>
         <div id="keyListSambanova" class="key-list" style="display:none">
           <div class="key-list-header">
             <span class="key-list-name">SambaNova</span>
-            <span class="key-limit-badge">20M tok/ngày</span>
+            <span class="key-limit-badge">20 triệu token/ngày</span>
           </div>
           <div id="keyListSambanovaItems" class="key-list-items"></div>
         </div>
         <div id="keyListOpenrouter" class="key-list" style="display:none">
           <div class="key-list-header">
             <span class="key-list-name">OpenRouter</span>
-            <span class="key-limit-badge">50 req/ngày</span>
+            <span class="key-limit-badge">50 yêu cầu/ngày</span>
           </div>
           <div id="keyListOpenrouterItems" class="key-list-items"></div>
         </div>
@@ -268,8 +268,8 @@
       <div class="keys-actions">
         <button id="testBtn" class="btn btn-primary btn-block" type="button">Test kết nối</button>
         <div class="keys-io-row">
-          <button id="exportKeysBtn" class="btn btn-secondary keys-io-btn" type="button" title="Tải file backup keys">Export</button>
-          <button id="importKeysBtn" class="btn btn-secondary keys-io-btn" type="button" title="Khôi phục từ file JSON">Import</button>
+          <button id="exportKeysBtn" class="btn btn-secondary keys-io-btn" type="button" title="Tải file sao lưu khóa API">Xuất file</button>
+          <button id="importKeysBtn" class="btn btn-secondary keys-io-btn" type="button" title="Khôi phục khóa từ file JSON">Nhập file</button>
           <input type="file" id="importKeysFile" accept="application/json,.json" hidden>
         </div>
         <div id="keyStatus" class="status" role="status" aria-live="polite" hidden></div>
@@ -280,23 +280,23 @@
         <div class="provider-guide-body">
           <a class="guide-row" href="https://console.groq.com/keys" target="_blank" rel="noopener">
             <span class="guide-name">Groq</span>
-            <span class="guide-meta">gsk_… · 100K tok/ngày</span>
+            <span class="guide-meta">gsk_… · 100.000 token/ngày</span>
           </a>
           <a class="guide-row" href="https://cloud.cerebras.ai" target="_blank" rel="noopener">
             <span class="guide-name">Cerebras</span>
-            <span class="guide-meta">csk-… · 1M tok/ngày</span>
+            <span class="guide-meta">csk-… · 1 triệu token/ngày</span>
           </a>
           <a class="guide-row" href="https://cloud.sambanova.ai" target="_blank" rel="noopener">
             <span class="guide-name">SambaNova</span>
-            <span class="guide-meta">$5 free · 20M tok/ngày</span>
+            <span class="guide-meta">Miễn phí 5 USD · 20 triệu token/ngày</span>
           </a>
           <a class="guide-row" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">
             <span class="guide-name">Gemini</span>
-            <span class="guide-meta">AIza… · 1500 req/ngày</span>
+            <span class="guide-meta">AIza… · 1.500 yêu cầu/ngày</span>
           </a>
           <a class="guide-row" href="https://openrouter.ai/keys" target="_blank" rel="noopener">
             <span class="guide-name">OpenRouter</span>
-            <span class="guide-meta">sk-or-… · 50 req/ngày</span>
+            <span class="guide-meta">sk-or-… · 50 yêu cầu/ngày</span>
           </a>
         </div>
       </details>
@@ -334,12 +334,12 @@
         <button id="historyBack" class="btn btn-secondary" type="button" style="margin-bottom:6px">Quay lại</button>
         <div class="history-detail-date" id="historyDetailDate" role="heading" aria-level="2"></div>
         <div class="history-detail-body" id="historyDetailBody"></div>
-        <button id="historyDetailCopy" class="btn btn-secondary" type="button" style="margin-top:6px">Copy</button>
+        <button id="historyDetailCopy" class="btn btn-secondary" type="button" style="margin-top:6px">Sao chép</button>
       </div>
       <div id="historyActions">
         <button id="rescanBtn" class="btn btn-secondary" type="button">Quét lại feed</button>
-        <button id="exportBtn" class="btn btn-secondary" type="button">Export JSON</button>
-        <button id="exportMdBtn" class="btn btn-secondary" type="button">Export Markdown</button>
+        <button id="exportBtn" class="btn btn-secondary" type="button">Xuất JSON</button>
+        <button id="exportMdBtn" class="btn btn-secondary" type="button">Xuất Markdown</button>
         <button id="clearBtn" class="btn btn-danger" type="button">Xóa lịch sử</button>
       </div>
       <div id="historyStatus" class="status" role="status" aria-live="polite"></div>
@@ -473,11 +473,11 @@
 
       <div class="wizard-api-guide">
         <div class="wizard-api-guide-title">Lấy API Key miễn phí:</div>
-        <div class="wizard-api-guide-step">1. <a href="https://console.groq.com/keys" target="_blank" rel="noopener">Groq</a> — 100K token/ngày</div>
-        <div class="wizard-api-guide-step">2. <a href="https://cloud.cerebras.ai" target="_blank" rel="noopener">Cerebras</a> — 1M token/ngày</div>
-        <div class="wizard-api-guide-step">3. <a href="https://cloud.sambanova.ai" target="_blank" rel="noopener">SambaNova</a> — $5 free · 20M tok/ngày</div>
-        <div class="wizard-api-guide-step">4. <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Gemini</a> — 1500 req/ngày</div>
-        <div class="wizard-api-guide-step">5. <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">OpenRouter</a> — 50 req/ngày</div>
+        <div class="wizard-api-guide-step">1. <a href="https://console.groq.com/keys" target="_blank" rel="noopener">Groq</a> — 100.000 token/ngày</div>
+        <div class="wizard-api-guide-step">2. <a href="https://cloud.cerebras.ai" target="_blank" rel="noopener">Cerebras</a> — 1 triệu token/ngày</div>
+        <div class="wizard-api-guide-step">3. <a href="https://cloud.sambanova.ai" target="_blank" rel="noopener">SambaNova</a> — Miễn phí 5 USD · 20 triệu token/ngày</div>
+        <div class="wizard-api-guide-step">4. <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Gemini</a> — 1.500 yêu cầu/ngày</div>
+        <div class="wizard-api-guide-step">5. <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">OpenRouter</a> — 50 yêu cầu/ngày</div>
       </div>
 
       <div id="wizardKeyStatus" class="status wizard-key-status" role="status" aria-live="polite"></div>

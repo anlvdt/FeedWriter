@@ -314,7 +314,14 @@ function downloadFile(blob, filename) {
  * Format date consistently
  */
 function formatDate(date) {
-  return new Date(date).toLocaleString('vi');
+  return new Date(date).toLocaleString('vi-VN');
+}
+
+function formatVietnameseNumber(value, options) {
+  const number = Number(value);
+  return Number.isFinite(number)
+    ? new Intl.NumberFormat('vi-VN', options).format(number)
+    : String(value ?? '');
 }
 
 /**
@@ -757,19 +764,29 @@ if (typeof globalThis !== "undefined") {
   ]);
 
   const KNOWN_TECH_TERMS = [
-    "agentic ai", "context window", "fine-tuning", "fine tuning", "function calling",
-    "generative ai", "large language model", "machine learning", "multimodal",
-    "oauth", "quantization", "retrieval-augmented generation", "rag", "lora",
-    "webassembly", "webrtc", "zero-day", "zero day",
+    "agentic ai", "airdrop", "benchmark", "blockchain", "checkpoint", "ci/cd",
+    "closed-source", "closed source", "cold start", "context window", "cross-platform",
+    "end-to-end encryption", "exploit", "fine-tuning", "fine tuning", "firmware",
+    "foundry", "function calling", "generative ai", "hallucination", "inference",
+    "jailbreak", "large language model", "latency", "lora", "machine learning",
+    "microkernel", "multimodal", "oauth", "open-source", "open source", "ota update",
+    "parameter", "payload", "prompt injection", "quantization", "refresh rate",
+    "retrieval-augmented generation", "rag", "sandbox", "side-loading", "sideloading",
+    "smart contract", "soc", "system on chip", "telemetry", "thermal throttling",
+    "throughput", "tokenizer", "wafer", "webassembly", "webrtc", "weights",
+    "zero-day", "zero day", "zero-shot", "zero shot",
   ];
 
   // Acronyms worth explaining even when the source does not spell them out.
   // Do not treat arbitrary ALL-CAPS words as terminology: social posts often
   // capitalize ordinary English words such as LOT, NEW, BIG, or FREE.
   const KNOWN_TECH_ACRONYMS = new Set([
-    "agi", "asi", "cdn", "cli", "crm", "cuda", "dlss", "erp", "gan",
-    "gpt", "hdr", "llm", "mcp", "nlp", "npu", "ocr", "oled", "rag",
-    "saas", "sdk", "sso", "tpu", "ui", "ux", "vpn", "wasm",
+    "agi", "asi", "cdn", "cli", "crm", "cuda", "cve", "ddr", "dlss",
+    "ecc", "erp", "fov", "fps", "gan", "gpt", "hdr", "ide", "iot",
+    "isp", "json", "k8s", "llm", "mcp", "moe", "nlp", "npu", "nvme",
+    "ocr", "oled", "ota", "pcie", "pwa", "pwm", "rag", "rest", "rpc",
+    "rtx", "saas", "sdk", "sla", "soc", "sql", "ssh", "ssl", "sso",
+    "tdp", "tls", "tps", "tpu", "ui", "ux", "vpn", "vram", "wan", "wasm",
   ]);
 
   function normalizeText(value) {
@@ -948,7 +965,7 @@ if (typeof globalThis !== "undefined") {
     return [
       "QUYẾT ĐỊNH GIẢI THÍCH THUẬT NGỮ: INCLUDE.",
       "- Chỉ được giải thích các thuật ngữ sau: " + terms + ".",
-      "- Tối đa " + glossary.limit + " mục; mỗi mục đúng một dòng theo dạng · Thuật ngữ: Một câu dễ hiểu.",
+      "- Tối đa " + glossary.limit + " mục; mỗi mục đúng một dòng theo dạng · Thuật ngữ: Một câu dễ hiểu (nêu chức năng thực tế hoặc tác dụng, tránh định nghĩa sách vở phức tạp).",
       "- Đặt mục này ở cuối bài. Không thêm thuật ngữ khác dù có vẻ liên quan.",
     ].join("\n");
   }
@@ -1013,15 +1030,22 @@ CHẾ ĐỘ BẮT BUỘC — VIẾT LẠI THÀNH BẢN TIN:
 - Đầu ra PHẢI là bản tin cô đọng, khách quan theo văn phong báo chí công nghệ: ưu tiên sản phẩm, công ty, tính năng, thay đổi, lỗi, kết quả và tác động thực tế. TUYỆT ĐỐI KHÔNG tường thuật lại, kể chuyện, mô phỏng giọng tác giả hay giữ cảm xúc của bài gốc.
 - Dùng cấu trúc KIM TỰ THÁP NGƯỢC: thông tin quan trọng nhất lên trước, chi tiết bổ sung xuống sau. KHÔNG bám thứ tự xuất hiện trong nguồn.
 - Tiêu đề phải HẤP DẪN, GIÀU THÔNG TIN, CÓ HOOK MẠNH nhưng không clickbait; chọn góc mạnh nhất từ dữ kiện thật trong nguồn thay vì chỉ mô tả chung chung.
+- 5 từ đầu tiên của tiêu đề phải ưu tiên chứa ngay tên thương hiệu, sản phẩm hoặc công nghệ cốt lõi.
 - Chọn MỘT kỹ thuật hook phù hợp với dữ kiện: DATA HOOK khi nguồn có con số/chi tiết nổi bật; SURPRISE/CONTRARIAN khi nguồn thực sự cho thấy kết quả trái kỳ vọng; BENEFIT/IMPACT HOOK khi có lợi ích hoặc tác động rõ; CURIOSITY GAP khi có thể tạo tò mò mà vẫn nói rõ sự kiện chính. KHÔNG dùng câu hỏi mở và không giấu fact cốt lõi chỉ để câu click.
+- Áp dụng 1 trong 4 mô hình tiêu đề báo chí chuẩn: (1) [Thương hiệu/Sản phẩm] + [Động từ hành động] + [Số liệu/Kết quả nổi bật]; (2) [Sự cố/Lỗi/Cảnh báo] + [Đối tượng bị ảnh hưởng & Hệ quả thực tế]; (3) [Thay đổi giá/chính sách/tính năng] + [Tác động trực tiếp đến người dùng]; (4) [So sánh/Kiểm nghiệm thực tế] + [Dữ liệu đối chiếu rõ ràng].
+- TUYỆT ĐỐI CẤM từ ngữ giật gân, câu view, thổi phồng: "gây sốc", "chấn động", "không thể tin nổi", "toang", "cháy hàng", "bạn sẽ bất ngờ", "bí mật", "đây là lý do", "chính thức", "phiên bản nâng cấp của phần mềm", câu hỏi tu từ rỗng.
 - Tiêu đề vẫn phải chứa sự kiện/kết quả cụ thể và ưu tiên thực thể công nghệ hoặc thay đổi chính làm chủ ngữ. Mọi con số, so sánh, mức độ bất ngờ, lợi ích hoặc tác động dùng làm hook PHẢI có căn cứ trực tiếp trong nguồn; không phóng đại mức chắc chắn.
 - Tiêu đề phải là MỘT câu/mệnh đề báo chí tự nhiên, đọc liền mạch. KHÔNG ghép hai mệnh đề trần bằng cách đặt cạnh nhau. Nếu có hai fact cần giữ, nối bằng dấu phẩy hoặc "và" với cấu trúc song song; nếu không, chỉ chọn góc mạnh nhất. Ưu tiên 10-16 từ, tối đa 20 từ.
-- KHÔNG đưa "USER", "Người dùng", "Một người dùng", "Tác giả", "Người đăng" hoặc tên tài khoản vào BẤT KỲ vị trí nào của tiêu đề khi chúng chỉ là chủ thể cung cấp nguồn, chia sẻ, phát hiện, đề xuất, khuyến nghị hoặc nêu ý kiến. Chỉ dùng "người dùng" khi chính tập người dùng là đối tượng của sự kiện/dữ liệu.
+- KHÔNG đưa "USER", "Người dùng", "Một người dùng", "Tác giả", "Người đăng", tên tài khoản hoặc tên cơ quan báo chí/trang tin/leaker (như Vox, The Verge, Reuters, Bloomberg...) vào BẤT KỲ vị trí nào của tiêu đề khi chúng chỉ là chủ thể cung cấp nguồn, chia sẻ, phát hiện, đề xuất, khuyến nghị hoặc nêu ý kiến. TUYỆT ĐỐI KHÔNG mở đầu tiêu đề bằng câu dẫn nguồn ("Theo...", "...cho biết", "...tiết lộ", "...đưa tin"). Chỉ dùng "người dùng" khi chính tập người dùng là đối tượng của sự kiện/dữ liệu.
 - Nếu nguồn chỉ là trải nghiệm của một cá nhân, không biến trải nghiệm thành sự thật chung. Tiêu đề ưu tiên cấu trúc như "[Sản phẩm/tính năng] bị phản ánh..."; thông tin "theo trải nghiệm của một người dùng" để trong thân bài khi cần giữ mức chắc chắn.
 - Tránh cụm từ máy móc hoặc dịch sát khiến tiếng Việt gượng. Ví dụ, ưu tiên "cải thiện khả năng thẩm mỹ" hơn "tăng mức thẩm mỹ" khi đúng nghĩa nguồn.
 - Ví dụ SAI: "GPT-6 tăng mức thẩm mỹ người dùng đề xuất cài plugin Product Designs cho Codex". Ví dụ ĐÚNG: "GPT-6 được đánh giá cao hơn về thẩm mỹ, Product Designs được gợi ý cho Codex".
 - Lead 1-2 câu phải nêu ngay sản phẩm/công ty/tính năng hoặc sự kiện chính, thay đổi/kết quả và tác động; không mở bằng việc một người đã đọc, thử, phát hiện, chia sẻ hay đăng bài.
-- Sau lead, dùng số đoạn linh hoạt để giữ ĐỦ mọi luận điểm và dữ kiện có giá trị. Mỗi đoạn một ý; tiếp tục cho đến khi không còn ý riêng biệt nào trong nguồn.
+- Công thức Lead 3W siêu cô đọng: What (Sự việc gì?) + Who/Which (Sản phẩm/hãng nào?) + Why (Tại sao quan trọng/tác động gì?). Đi thẳng vào sự kiện, không mở bài bằng bối cảnh chung chung hay câu dẫn rỗng.
+- DÙNG TIẾNG VIỆT TỰ NHIÊN, CHỐNG DỊCH MÁY: Tránh dịch nguyên ngữ thô cứng từ tiếng Anh. Viết gãy gọn, chủ động: "hỗ trợ/cho phép" thay vì "cung cấp khả năng cho phép", "nhằm" thay vì "được thiết kế nhằm mục đích", "đối với" thay vì "trong trường hợp của", "gọi API" thay vì "thực hiện cuộc gọi API".
+- LỌC SẠCH NGÔN TỪ PR VÀ TÂNG BỐC: Loại bỏ hoàn toàn các tính từ phóng đại trong thông cáo báo chí hoặc bài PR (như "mang tính cách mạng", "đột phá lịch sử", "hoàn hảo", "siêu phẩm", "thần thánh"). Chỉ giữ lại thông số kỹ thuật, tính năng và kết quả kiểm nghiệm thực tế.
+- PHÂN BIỆT RÕ RÀNG GIỮA TIN ĐỒN VÀ DỮ KIỆN XÁC NHẬN: Mọi thông tin từ rò rỉ, bằng sáng chế, leaker hay suy đoán phải dùng đúng từ chỉ mức độ ("được đồn đoán", "theo nguồn tin rò rỉ", "đang thử nghiệm"), tuyệt đối không khẳng định như sự thật đã công bố chính thức.
+- Sau lead, dùng số đoạn linh hoạt để giữ ĐỦ mọi luận điểm và dữ kiện có giá trị. Mỗi đoạn một ý (khoảng 2-3 câu, 35-65 từ); tiếp tục cho đến khi không còn ý riêng biệt nào trong nguồn.
 - Chỉ bỏ câu lặp, lời chào, lời mời tương tác, diễn biến vụn và ví dụ không mang thêm luận điểm. Không được bỏ ý chỉ để ép độ dài.
 - Sự kiện kiểm chứng được có thể viết trực tiếp. Ý kiến, dự đoán, cáo buộc hoặc trải nghiệm chủ quan phải được thể hiện là nhận định; chỉ gán cho cá nhân/tổ chức khi nguồn nêu rõ danh tính.
 - Không biến nhận định của nguồn thành sự thật. Giữ đúng người phát biểu, số người và mức chắc chắn; một lời kể không đại diện cho cộng đồng. Không mở bài bằng "tác giả chia sẻ", "người viết cho biết" hay câu dẫn nguồn chung chung.
@@ -1070,6 +1094,8 @@ YÊU CẦU:
 - CẤM câu dẫn dắt rỗng: "Mình vừa đọc...", "Gần đây..."
 - CẤM lạm dụng sở hữu "của bạn", "của mình", "của chúng ta". Viết trực tiếp: "iPhone báo đầy bộ nhớ" thay vì "iPhone của bạn báo đầy bộ nhớ". Chỉ dùng khi thật sự cần phân biệt sở hữu.
 - Nhịp đoạn theo ý nghĩa: câu ngắn nêu việc, câu vừa giải thích. Không áp tỷ lệ hay độ dài đoạn cố định; mỗi đoạn bổ sung thông tin mới.
+- Diễn đạt tiếng Việt tự nhiên, gãy gọn; tránh dịch máy thô cứng từ tiếng Anh.
+- Lọc sạch từ ngữ PR, quảng cáo tâng bốc (cách mạng, hoàn hảo, siêu phẩm, đỉnh cao).
 - Trả lời bằng tiếng Việt`;
 
 // TÓM TẮT NGẮN - Quick overview
@@ -1103,7 +1129,7 @@ const SUMMARY_BULLET_PROMPT = `Tóm tắt thành các bullet points ngắn gọn
 Quy tắc:
 - Dòng đầu tiên: tiêu đề có hook mạnh nhưng fact-based, tối đa 15 từ; ưu tiên dữ kiện nổi bật nhất từ nguồn. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
 - Sau tiêu đề: 1 dòng trống
-- Mỗi bullet bắt đầu bằng ·, trình bày một dữ kiện hoặc luận điểm đủ rõ từ nguồn.
+- Mỗi bullet bắt đầu bằng ·, trình bày một dữ kiện hoặc luận điểm đủ rõ từ nguồn (ưu tiên cấu trúc · Khái niệm/Dữ kiện: Diễn giải kèm số liệu cụ thể).
 - CẤM khung mở/thân/kết. CẤM câu hỏi mở. CẤM câu sáo.
 - Ưu tiên thông tin có giá trị, dữ liệu, kết luận
 - Bỏ ví dụ không mang thêm luận điểm; giữ đầy đủ dữ kiện và kết quả.
@@ -1125,11 +1151,14 @@ QUY TẮC CHÍNH TẢ VÀ HÀNH VĂN BẮT BUỘC:
 - Chỉ viết hoa đầu câu và tên riêng; hệ thống xử lý cách hiển thị tiêu đề. Giữ nguyên tên sản phẩm, mã phiên bản, URL, identifier và trích dẫn; không sửa dấu nối bên trong tên.
 - Không trộn tiếng Anh khi có cách nói Việt rõ nghĩa. Giữ tên riêng và thuật ngữ phổ biến như AI, API, GPU. Chỉ giải thích thuật ngữ theo quyết định INCLUDE/OMIT của hệ thống.
 - Công nghệ: code/coding là lập trình hoặc code, không phải mã hóa; coder là lập trình viên; source code là mã nguồn.
-- Số liệu: dấu chấm phân nhóm hàng nghìn, dấu phẩy cho thập phân khi viết tiếng Việt; giữ định dạng gốc của phiên bản/identifier và đơn vị kỹ thuật khi cần tránh hiểu sai.
-- Dùng chữ số cho tuổi, số lượng, khoảng cách, phần trăm, tỷ lệ, nhiệt độ, giá và model. Giữ nguyên giá trị, đơn vị, điều kiện và phạm vi từ nguồn.
-- Tiền: dùng USD, euro, yên, đồng. Có thể viết triệu/tỷ nếu giữ chính xác giá trị; không tự làm tròn hoặc tự quy đổi ngoại tệ khi nguồn không có tỷ giá.
+- Số liệu theo chuẩn Việt Nam: dùng dấu chấm phân nhóm hàng nghìn và dấu phẩy cho phần thập phân (ví dụ 1.234,56). Không đổi dấu trong phiên bản, model, URL, mã định danh hoặc chuỗi kỹ thuật.
+- Dùng chữ số cho tuổi, số lượng, khoảng cách, phần trăm, tỷ lệ, nhiệt độ, giá và model. Giữ nguyên giá trị, điều kiện và phạm vi từ nguồn; viết đơn vị đo theo hệ mét và cách viết thông dụng tại Việt Nam. Chỉ quy đổi đơn vị khi phép quy đổi chính xác và không làm sai độ chính xác của nguồn; nếu không thì giữ nguyên đơn vị gốc.
+- Tiền tệ đặt sau số và viết rõ là USD, euro, yên, bảng Anh hoặc đồng (ví dụ 1.200 USD, 299.000 đồng), không dùng ký hiệu $/€/£ trong câu tiếng Việt. Có thể viết nghìn/triệu/tỷ nếu giữ chính xác giá trị; không tự làm tròn hoặc tự quy đổi ngoại tệ sang đồng khi nguồn không cung cấp tỷ giá.
 - Không viết tắt địa danh trong văn xuôi: Việt Nam, Hà Nội. Không thêm emoji hoặc icon; chữ tiếng Việt và ký hiệu đơn vị vẫn được giữ.
-- Không bịa tên, số, thông số, mức độ phổ biến hay phản ứng cộng đồng. Một lời kể chỉ đại diện người kể; không biến thành 'nhiều người dùng' hoặc cam kết của sản phẩm.`;
+- Không bịa tên, số, thông số, mức độ phổ biến hay phản ứng cộng đồng. Một lời kể chỉ đại diện người kể; không biến thành 'nhiều người dùng' hoặc cam kết của sản phẩm.
+- Diễn đạt gãy gọn, chuẩn tiếng Việt hiện đại. CẤM các cấu trúc dịch máy thô: không dùng 'cung cấp khả năng cho phép', 'được thiết kế nhằm mục đích', 'đóng vai trò như là', 'mang lại sự cải thiện', 'tiến hành thực hiện'. CẤM dịch thô từng chữ các cụm thành ngữ tiếng Anh: không dùng 'vào cuối ngày' (thay bằng 'xét cho cùng'), 'chơi một vai trò' (thay bằng 'đóng vai trò'), 'có ý nghĩa' khi dịch make sense (thay bằng 'hợp lý/dễ hiểu'). Dùng từ nối tự nhiên khi chuyển ý: 'Tuy nhiên', 'Ngoài ra', 'May thay', 'Đó là lý do'.
+- Độ dài câu hợp lý: ưu tiên câu 15-25 từ, tối đa 35 từ. Ngắt câu mạch lạc bằng dấu chấm, tránh câu ghép quá nhiều vế phụ rườm rà.
+- Giữ giọng điệu trung lập, khách quan: loại bỏ các từ ngữ tâng bốc PR (đột phá mang tính cách mạng, hoàn hảo, siêu phẩm, đỉnh cao, thần thánh).`;
 
 // BẢN TIN CÓ CẤU TRÚC - retain useful sections, never source chronology
 const SUMMARY_STRUCTURED_PROMPT = `Bạn là biên tập viên bản tin có cấu trúc.
@@ -1660,8 +1689,10 @@ async function getSystemPrompt(
         "- Bản tin phân tích khách quan, thuật ngữ chính xác.\n" +
         "- Mỗi luận điểm một đoạn, cách 1 dòng trống. Chỉ dùng dữ liệu có trong nguồn. CẤM câu sáo.",
       viral: "\n\nGHI ĐÈ — PHONG CÁCH VIRAL:\n" +
-        "- Tiêu đề gây tò mò nhưng cụ thể, không clickbait rỗng.\n" +
-        "- Nội dung vẫn là bản tin fact-first, mỗi ý một đoạn. CẤM kể chuyện, khung mở/thân/kết và câu hỏi mở.",
+        "- Tiêu đề gây tò mò nhưng cụ thể, không clickbait rỗng; tập trung vào lợi ích trực tiếp, sự cố hoặc dữ kiện có tác động lớn nhất.\n" +
+        "- Mở bài nêu ngay sự kiện nổi bật và lý do người đọc nên quan tâm.\n" +
+        "- Nội dung vẫn là bản tin fact-first, mỗi ý một đoạn. CẤM kể chuyện, khung mở/thân/kết và câu hỏi mở.\n" +
+        "- CẤM từ ngữ giật gân, phóng đại (gây sốc, chấn động, toang, không thể tin nổi).",
       bullet: "\n\nGHI ĐÈ — BULLET POINTS THUẦN:\n" +
         "- Tiêu đề + bullets (·) đúng dữ liệu gốc. Mỗi bullet: · Keyword: giải thích\n" +
         "- Xếp bullet theo mức độ quan trọng như bản tin. KHÔNG kể lại, không khung mở/thân/kết, không câu hỏi mở.",
@@ -2303,7 +2334,7 @@ async function restoreSettings(backupIndex = 0) {
 
   const backup = backupList[backupList.length - 1 - backupIndex]; // Most recent first
   await chrome.storage.sync.set(backup.settings);
-  logger.info(`Settings restored from backup (${new Date(backup.timestamp).toLocaleString()})`);
+  logger.info(`Settings restored from backup (${new Date(backup.timestamp).toLocaleString("vi-VN")})`);
 
   return true;
 }
@@ -3372,11 +3403,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       }
       const contentLength = Number(res.headers.get("content-length") || 0);
       if (contentLength > 12 * 1024 * 1024) {
-        throw new Error("Image too large (>12MB)");
+        throw new Error("Ảnh quá lớn (> 12 MB)");
       }
       const blob = await res.blob();
       if (!blob || blob.size < 100) throw new Error("Empty or invalid image");
-      if (blob.size > 12 * 1024 * 1024) throw new Error("Image too large (>12MB)");
+      if (blob.size > 12 * 1024 * 1024) throw new Error("Ảnh quá lớn (> 12 MB)");
       if (!(await hasValidImageSignature(blob, contentType))) {
         throw new Error("Image signature does not match content type");
       }
@@ -3581,7 +3612,7 @@ function resolveTranslateMode(text, mode) {
 async function translateText(text, mode = "auto") {
   const source = String(text || "").replace(/\s+/g, " ").trim();
   if (!source) return { error: "Không có văn bản để dịch." };
-  if (source.length > 2500) return { error: "Đoạn quá dài (tối đa ~2500 ký tự)." };
+  if (source.length > 2500) return { error: "Đoạn quá dài (tối đa khoảng 2.500 ký tự)." };
 
   const resolved = resolveTranslateMode(source, mode);
   const cacheKey =
@@ -3745,6 +3776,46 @@ function numericEvidenceTokens(text) {
   return tokens;
 }
 
+// Normalize common English-style numbers and currency symbols in Vietnamese
+// prose. Identifiers, versions and bare dot-separated numbers are left alone.
+function normalizeVietnameseNumericNotation(text) {
+  const normalizeEnglishNumber = (raw) => {
+    const value = String(raw);
+    if (value.includes(",") && value.includes(".")) {
+      return value.replace(/,/g, "").replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    }
+    if (/^\d{1,3}(?:,\d{3})+$/.test(value)) return value.replace(/,/g, ".");
+    if (/^\d+\.\d+$/.test(value)) {
+      const [integer, decimal] = value.split(".");
+      return integer.replace(/\B(?=(\d{3})+(?!\d))/g, ".") + "," + decimal;
+    }
+    if (/^\d{4,}$/.test(value)) return value.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    return value;
+  };
+
+  let normalized = String(text || "");
+  normalized = normalized
+    .replace(/(^|[^\p{L}\p{N}_])(?:US\$|\$)\s*(\d+(?:,\d{3})*(?:\.\d+)?)/gmu,
+      (_, prefix, number) => `${prefix}${normalizeEnglishNumber(number)} USD`)
+    .replace(/(^|[^\p{L}\p{N}_])€\s*(\d+(?:,\d{3})*(?:\.\d+)?)/gmu,
+      (_, prefix, number) => `${prefix}${normalizeEnglishNumber(number)} euro`)
+    .replace(/(^|[^\p{L}\p{N}_])£\s*(\d+(?:,\d{3})*(?:\.\d+)?)/gmu,
+      (_, prefix, number) => `${prefix}${normalizeEnglishNumber(number)} bảng Anh`)
+    .replace(/\b(\d+(?:,\d{3})*(?:\.\d+)?)\s*(US\$|\$)(?!\w)/gu,
+      (_, number) => `${normalizeEnglishNumber(number)} USD`)
+    .replace(/\b(\d+(?:,\d{3})*(?:\.\d+)?)\s*€(?!\w)/gu,
+      (_, number) => `${normalizeEnglishNumber(number)} euro`)
+    .replace(/\b(\d+(?:,\d{3})*(?:\.\d+)?)\s*£(?!\w)/gu,
+      (_, number) => `${normalizeEnglishNumber(number)} bảng Anh`)
+    .replace(/\b(\d{1,3}(?:,\d{3})+(?:\.\d+)?)\b/g, (number) => normalizeEnglishNumber(number))
+    .replace(/\b(\d+\.\d+)(\s*(?:USD|VND|VNĐ|euro|EUR|GBP|%|°[CF]|km|cm|mm|m|kg|g|mg|l|ml|kW|W|kWh|Hz|GHz|MHz|GB|MB|KB)\b|\s*%)/giu,
+      (_, number, unit) => normalizeEnglishNumber(number) + unit)
+    .replace(/\b(\d[\d.]*(?:,\d+)?)\s*(?:VND|VNĐ)\b/giu, "$1 đồng")
+    .replace(/\b(\d[\d.]*(?:,\d+)?)\s*(?:EUR)\b/giu, "$1 euro")
+    .replace(/\b(\d[\d.]*(?:,\d+)?)\s*(?:GBP)\b/giu, "$1 bảng Anh");
+  return normalized;
+}
+
 // Main post-processing function
 function postProcessOutput(output, sourceText, type) {
   const issues = [];
@@ -3840,6 +3911,7 @@ function postProcessOutput(output, sourceText, type) {
   processed = processed.replace(/^Đoạn\s*\d+\s*[:：]\s*/gim, "");
   // Normalize "*** Giải thích" → "**Giải thích" (old prompt format)
   processed = processed.replace(/^\*{3}\s*/gm, "**");
+  processed = normalizeVietnameseNumericNotation(processed);
 
   // Xử lý tiêu đề dòng đầu tiên
   if (type && type.startsWith("summary")) {
@@ -3854,7 +3926,7 @@ function postProcessOutput(output, sourceText, type) {
         // headline as attribution. First normalize a common recommendation
         // clause into passive news style, even when it appears mid-headline.
         const genericSourceActor =
-          "(?:(?:một\\s+)?(?:user|người\\s+dùng|tác\\s+giả|người\\s+đăng))";
+          "(?:(?:một\\s+)?(?:user|người\\s+dùng|tác\\s+giả|người\\s+đăng|leaker|chuyên\\s+gia|bài\\s+đăng|bài\\s+viết|trang\\s+tin|nguồn\\s+tin|tài\\s+khoản|thành\\s+viên\\s+reddit|giới\\s+thạo\\s+tin))";
         const recommendationClause = new RegExp(
           "\\b" +
             genericSourceActor +
@@ -3899,6 +3971,21 @@ function postProcessOutput(output, sourceText, type) {
         }
         if (strippedForbiddenLead) {
           issues.push("Đã loại bỏ chủ thể chung chung ở đầu tiêu đề.");
+        }
+
+        // Named publishers/accounts can also leak into the headline as an
+        // attribution (e.g. "Vox cho biết ...", "Theo Vox: ..."). Metadata may
+        // identify the source, but the headline must lead with the actual subject.
+        const namedAttributionLead =
+          /^(?:theo\s+)?(?:[A-Za-zÀ-ỹ][\p{L}\p{N}&.'’\-]*(?:\s+[A-Za-zÀ-ỹ][\p{L}\p{N}&.'’\-]*){0,4})\s+(?:cho\s+biết|cho\s+hay|cho\s+rằng|nói\s+rằng|tiết\s+lộ|đưa\s+tin)\s*[:：,]?\s*/iu;
+        const theoNamedLead =
+          /^theo\s+(?:[A-Za-zÀ-ỹ][\p{L}\p{N}&.'’\-]*(?:\s+[A-Za-zÀ-ỹ][\p{L}\p{N}&.'’\-]*){0,4})\s*[:：,]\s*/iu;
+        if (namedAttributionLead.test(guardedTitle)) {
+          guardedTitle = guardedTitle.replace(namedAttributionLead, "").trim();
+          issues.push("Đã loại bỏ tên nguồn ở đầu tiêu đề.");
+        } else if (theoNamedLead.test(guardedTitle)) {
+          guardedTitle = guardedTitle.replace(theoNamedLead, "").trim();
+          issues.push("Đã loại bỏ tên nguồn ở đầu tiêu đề.");
         }
         lines[i] = guardedTitle || "Cập nhật";
         // Viết hoa toàn bộ tiêu đề
@@ -3966,10 +4053,52 @@ function postProcessOutput(output, sourceText, type) {
       [/\bspotify\b/gi, "Spotify"],
       [/\bnetflix\b/gi, "Netflix"],
       [/\bamazon\b/gi, "Amazon"],
+      [/\bnvidia\b/gi, "Nvidia"],
+      [/\bqualcomm\b/gi, "Qualcomm"],
+      [/\bintel\b/gi, "Intel"],
+      [/\bamd\b/gi, "AMD"],
+      [/\bsamsung\b/gi, "Samsung"],
+      [/\bxiaomi\b/gi, "Xiaomi"],
+      [/\bhuawei\b/gi, "Huawei"],
+      [/\bsony\b/gi, "Sony"],
+      [/\basus\b/gi, "Asus"],
+      [/\bdell\b/gi, "Dell"],
+      [/\blenovo\b/gi, "Lenovo"],
+      [/\bgithub\b/gi, "GitHub"],
+      [/\bgitlab\b/gi, "GitLab"],
+      [/\bdocker\b/gi, "Docker"],
+      [/\bkubernetes\b/gi, "Kubernetes"],
+      [/\blinux\b/gi, "Linux"],
+      [/\bubuntu\b/gi, "Ubuntu"],
+      [/\bhugging\s*face\b/gi, "Hugging Face"],
+      [/\banthropic\b/gi, "Anthropic"],
+      [/\bmistral\b/gi, "Mistral"],
+      [/\bdeepseek\b/gi, "DeepSeek"],
+      [/\bmeta\b/gi, "Meta"],
+      [/\bbytedance\b/gi, "ByteDance"],
+      [/\btsmc\b/gi, "TSMC"],
+      [/\bxai\b/gi, "xAI"],
+      [/\bgrok\b/gi, "Grok"],
+      [/\bcopilot\b/gi, "Copilot"],
+      [/\bperplexity\b/gi, "Perplexity"],
+      [/\bcursor\b/gi, "Cursor"],
     ];
     for (const [re, fix] of brandFixes) body = body.replace(re, fix);
     processed = title + body;
   }
+
+  // 7b. Clean translationese and awkward mechanical phrasing in body
+  processed = processed
+    .replace(/(?<![\p{L}\p{N}])cho\s+phép\s+người\s+dùng\s+có\s+thể(?![\p{L}\p{N}])/giu, "cho phép người dùng")
+    .replace(/(?<![\p{L}\p{N}])cung\s+cấp\s+khả\s+năng\s+cho\s+phép(?![\p{L}\p{N}])/giu, "cho phép")
+    .replace(/(?<![\p{L}\p{N}])cung\s+cấp\s+khả\s+năng(?![\p{L}\p{N}])/giu, "hỗ trợ")
+    .replace(/(?<![\p{L}\p{N}])đóng\s+vai\s+trò\s+như\s+là\s+một(?![\p{L}\p{N}])/giu, "là")
+    .replace(/(?<![\p{L}\p{N}])đóng\s+vai\s+trò\s+như\s+là(?![\p{L}\p{N}])/giu, "đóng vai trò là")
+    .replace(/(?<![\p{L}\p{N}])trong\s+một\s+nỗ\s+lực\s+nhằm(?![\p{L}\p{N}])/giu, "nhằm")
+    .replace(/(?<![\p{L}\p{N}])mang\s+lại\s+sự\s+cải\s+thiện(?![\p{L}\p{N}])/giu, "cải thiện")
+    .replace(/(?<![\p{L}\p{N}])tiến\s+hành\s+thực\s+hiện(?![\p{L}\p{N}])/giu, "thực hiện")
+    .replace(/(?<![\p{L}\p{N}])được\s+thiết\s+kế\s+nhằm\s+mục\s+đích(?![\p{L}\p{N}])/giu, "nhằm")
+    .replace(/(?<![\p{L}\p{N}])tăng\s+mức(?: độ)?\s+thẩm\s+mỹ(?![\p{L}\p{N}])/giu, "cải thiện khả năng thẩm mỹ");
 
   // 8. Shorten VND units without rounding away source precision.
   processed = processed.replace(
@@ -3996,12 +4125,34 @@ function postProcessOutput(output, sourceText, type) {
     /^(?:như (?:chúng ta|mọi người|các bạn) (?:đã |đều )?biết)[,.]?\s*[^\n.!?]*[.!?]\s*/i,
     /^(?:hôm nay|hôm qua|sáng nay|tối qua)\s+(?:mình|tôi)\s+(?:đọc|xem|thấy|nghe)[^\n.!?]*[.!?]\s*/i,
   ];
-  for (const pat of leadInPatterns) {
-    if (pat.test(processed)) {
-      processed = processed.replace(pat, "").trim();
-      issues.push("Đã xóa câu dẫn dắt rỗng ở đầu bài.");
-      break;
+  const bodyStart = processed.indexOf("\n\n");
+  if (bodyStart > 0) {
+    const headPart = processed.slice(0, bodyStart + 2);
+    let bodyPart = processed.slice(bodyStart + 2);
+    for (const pat of leadInPatterns) {
+      if (pat.test(bodyPart)) {
+        bodyPart = bodyPart.replace(pat, "").trimStart();
+        issues.push("Đã xóa câu dẫn dắt rỗng ở đầu bài.");
+        break;
+      }
     }
+    bodyPart = bodyPart.replace(
+      /^(?:(?:được\s+biết|cụ\s+thể(?: là)?|theo\s+đó|đáng\s+chú\s+ý(?: là)?)[,:]\s*)/i,
+      "",
+    );
+    processed = headPart + bodyPart;
+  } else {
+    for (const pat of leadInPatterns) {
+      if (pat.test(processed)) {
+        processed = processed.replace(pat, "").trim();
+        issues.push("Đã xóa câu dẫn dắt rỗng ở đầu bài.");
+        break;
+      }
+    }
+    processed = processed.replace(
+      /^(?:(?:được\s+biết|cụ\s+thể(?: là)?|theo\s+đó|đáng\s+chú\s+ý(?: là)?)[,:]\s*)/i,
+      "",
+    );
   }
 
   // 10. Hallucination detection: check if output contains numbers not in source

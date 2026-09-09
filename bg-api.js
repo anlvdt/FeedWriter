@@ -422,8 +422,10 @@ async function getSystemPrompt(
         "- Bản tin phân tích khách quan, thuật ngữ chính xác.\n" +
         "- Mỗi luận điểm một đoạn, cách 1 dòng trống. Chỉ dùng dữ liệu có trong nguồn. CẤM câu sáo.",
       viral: "\n\nGHI ĐÈ — PHONG CÁCH VIRAL:\n" +
-        "- Tiêu đề gây tò mò nhưng cụ thể, không clickbait rỗng.\n" +
-        "- Nội dung vẫn là bản tin fact-first, mỗi ý một đoạn. CẤM kể chuyện, khung mở/thân/kết và câu hỏi mở.",
+        "- Tiêu đề gây tò mò nhưng cụ thể, không clickbait rỗng; tập trung vào lợi ích trực tiếp, sự cố hoặc dữ kiện có tác động lớn nhất.\n" +
+        "- Mở bài nêu ngay sự kiện nổi bật và lý do người đọc nên quan tâm.\n" +
+        "- Nội dung vẫn là bản tin fact-first, mỗi ý một đoạn. CẤM kể chuyện, khung mở/thân/kết và câu hỏi mở.\n" +
+        "- CẤM từ ngữ giật gân, phóng đại (gây sốc, chấn động, toang, không thể tin nổi).",
       bullet: "\n\nGHI ĐÈ — BULLET POINTS THUẦN:\n" +
         "- Tiêu đề + bullets (·) đúng dữ liệu gốc. Mỗi bullet: · Keyword: giải thích\n" +
         "- Xếp bullet theo mức độ quan trọng như bản tin. KHÔNG kể lại, không khung mở/thân/kết, không câu hỏi mở.",

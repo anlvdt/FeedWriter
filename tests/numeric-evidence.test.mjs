@@ -61,6 +61,24 @@ describe("production numeric evidence guardrail", () => {
     assert.equal(numericWarnings(result).length, 0);
   });
 
+  it("normalizes English currency notation to Vietnamese notation", () => {
+    const result = process("Giá Demo\n\nSản phẩm có giá $1,234.56, €49.90 hoặc $1234.56.",
+      "The product costs $1,234.56, €49.90 or $1234.56.");
+    assert.match(result.text, /1\.234,56 USD/);
+    assert.match(result.text, /49,90 euro/);
+    assert.equal(result.text.match(/1\.234,56 USD/g)?.length, 2);
+    assert.equal(numericWarnings(result).length, 0);
+  });
+
+  it("normalizes grouped numbers and unit decimals without touching versions", () => {
+    const result = process("Demo 1.2.3\n\nBản 1.2.3 có 1,234 người dùng và hiệu suất tăng 56.9%.",
+      "Version 1.2.3 has 1,234 users and performance increased 56.9%.");
+    assert.match(result.text, /Bản 1\.2\.3/);
+    assert.match(result.text, /1\.234 người dùng/);
+    assert.match(result.text, /56,9%/);
+    assert.equal(numericWarnings(result).length, 0);
+  });
+
   it("does not use digits in a source URL as factual evidence", () => {
     const result = process("Thông tin Demo\n\nDemo có 99999 người dùng.", "See the app at https://x.com/a/status/99999");
     assert.match(numericWarnings(result)[0], /99999/);

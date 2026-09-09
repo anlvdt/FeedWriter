@@ -73,4 +73,64 @@ describe("summary headline deterministic guard", () => {
     const result = process("USER\n\nNội dung bài viết đủ dài để xử lý.");
     assert.equal(result.text.split("\n")[0], "CẬP NHẬT");
   });
+  it("removes forbidden headline leads with expanded source actors (leaker, trang tin, chuyên gia)", () => {
+    for (const [input, expected] of [
+      ["Leaker: iPhone 17 sẽ mỏng hơn\n\nNội dung bài viết.", "IPHONE 17 SẼ MỎNG HƠN"],
+      ["Trang tin cho biết Nvidia tăng sản lượng chip\n\nNội dung bài viết.", "CHO BIẾT NVIDIA TĂNG SẢN LƯỢNG CHIP"],
+      ["Một bài đăng chia sẻ thủ thuật mới\n\nNội dung bài viết.", "CHIA SẺ THỦ THUẬT MỚI"],
+      ["Chuyên gia nhận định thị trường AI bùng nổ\n\nNội dung bài viết.", "NHẬN ĐỊNH THỊ TRƯỜNG AI BÙNG NỔ"],
+    ]) {
+      const result = process(input);
+      assert.equal(result.text.split("\n")[0], expected);
+      assert.match(result.issues.join("\n"), /chủ thể (?:nguồn )?chung chung/);
+    }
+  });
+
+  it("removes named publisher attribution from the headline across case and prefix variations", () => {
+    const cases = [
+      "Vox cho biết GPT-6 Pro có thể tạo bản mô tả công việc cho kỹ sư\n\nNội dung bài viết.",
+      "vox cho biết GPT-6 Pro có thể tạo bản mô tả công việc cho kỹ sư\n\nNội dung bài viết.",
+      "VOX CHO BIẾT GPT-6 Pro có thể tạo bản mô tả công việc cho kỹ sư\n\nNội dung bài viết.",
+      "Theo Vox cho biết GPT-6 Pro có thể tạo bản mô tả công việc cho kỹ sư\n\nNội dung bài viết.",
+      "Theo Vox: GPT-6 Pro có thể tạo bản mô tả công việc cho kỹ sư\n\nNội dung bài viết.",
+      "Theo Vox, GPT-6 Pro có thể tạo bản mô tả công việc cho kỹ sư\n\nNội dung bài viết.",
+      "The Verge đưa tin GPT-6 Pro có thể tạo bản mô tả công việc cho kỹ sư\n\nNội dung bài viết.",
+    ];
+    for (const input of cases) {
+      const result = process(input);
+      assert.equal(
+        result.text.split("\n")[0],
+        "GPT-6 PRO CÓ THỂ TẠO BẢN MÔ TẢ CÔNG VIỆC CHO KỸ SƯ",
+      );
+      assert.match(result.issues.join(" "), /tên nguồn/);
+    }
+  });
+
+  it("capitalizes expanded modern tech brand names in body", () => {
+    const input = "TIÊU ĐỀ BẢN TIN\n\nTrong thử nghiệm, nvidia, qualcomm, deepseek, anthropic và tsmc đạt hiệu năng cao.";
+    const result = process(input);
+    assert.match(result.text, /Nvidia/);
+    assert.match(result.text, /Qualcomm/);
+    assert.match(result.text, /DeepSeek/);
+    assert.match(result.text, /Anthropic/);
+    assert.match(result.text, /TSMC/);
+  });
+
+  it("cleans awkward translationese and mechanical phrasing in body", () => {
+    const input = "TIÊU ĐỀ BẢN TIN\n\nHệ thống cung cấp khả năng cho phép người dùng có thể kích hoạt tính năng mới được thiết kế nhằm mục đích tăng tốc độ.";
+    const result = process(input);
+    assert.doesNotMatch(result.text, /cung cấp khả năng cho phép/);
+    assert.doesNotMatch(result.text, /cho phép người dùng có thể/);
+    assert.doesNotMatch(result.text, /được thiết kế nhằm mục đích/);
+    assert.match(result.text, /cho phép người dùng/);
+    assert.match(result.text, /nhằm/);
+  });
+
+  it("strips empty journalistic filler prefix at start of body", () => {
+    const input = "TIÊU ĐỀ BẢN TIN\n\nĐược biết, Apple vừa phát hành bản cập nhật mới.";
+    const result = process(input);
+    const body = result.text.split("\n\n")[1];
+    assert.ok(!body.startsWith("Được biết,"));
+    assert.match(body, /Apple vừa phát hành bản cập nhật mới/);
+  });
 });

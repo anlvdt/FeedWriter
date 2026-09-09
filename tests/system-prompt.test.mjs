@@ -102,6 +102,13 @@ describe("getSystemPrompt", () => {
     assert.match(prompt, /PHẢI có căn cứ trực tiếp trong nguồn/);
     assert.match(prompt, /không phải giọng văn mẫu/i);
     assert.match(prompt, /Không được bỏ ý chỉ để ép độ dài/i);
+    assert.match(prompt, /5 từ đầu tiên của tiêu đề/);
+    assert.match(prompt, /Áp dụng 1 trong 4 mô hình tiêu đề báo chí chuẩn/);
+    assert.match(prompt, /TUYỆT ĐỐI CẤM từ ngữ giật gân, câu view/);
+    assert.match(prompt, /LỌC SẠCH NGÔN TỪ PR VÀ TÂNG BỐC/);
+    assert.match(prompt, /PHÂN BIỆT RÕ RÀNG GIỮA TIN ĐỒN VÀ DỮ KIỆN XÁC NHẬN/);
+    assert.match(prompt, /Công thức Lead 3W siêu cô đọng/);
+    assert.match(prompt, /DÙNG TIẾNG VIỆT TỰ NHIÊN, CHỐNG DỊCH MÁY/);
     assert.doesNotMatch(prompt, /Viết như TƯỜNG THUẬT|Giọng tường thuật/i);
     assert.doesNotMatch(prompt, /theo thứ tự thông tin trong nguồn/i);
     assert.doesNotMatch(prompt, /giữ cảm xúc và quan điểm/i);

@@ -1,3 +1,15 @@
+const VI_LOCALE = "vi-VN";
+const viNumberFormatter = new Intl.NumberFormat(VI_LOCALE);
+
+function formatViNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? viNumberFormatter.format(number) : String(value ?? "");
+}
+
+function formatViDateTime(value) {
+  return new Date(value).toLocaleString(VI_LOCALE);
+}
+
 // === THEME ===
 async function initTheme() {
   try {
@@ -462,7 +474,7 @@ if (saveBtn) saveBtn.addEventListener("click", () => {
   // Input validation
   const minLen = parseInt(minLengthInput?.value, 10);
   if (isNaN(minLen) || minLen < 100 || minLen > 5000) {
-    showStatus("Độ dài tối thiểu phải từ 100-5000 ký tự", "error");
+    showStatus("Độ dài tối thiểu phải từ 100–5.000 ký tự", "error");
     return;
   }
 
@@ -529,12 +541,12 @@ function updateDebugInfo() {
     const telemetry = data.telemetry || {};
     const now = Date.now();
     debugInfo.innerHTML = `
-      <div>History items: ${historyCount}</div>
-      <div>Sessions: ${telemetry.sessions || 0}</div>
-      <div>Summaries: ${telemetry.summaries || 0}</div>
-      <div>Errors: ${telemetry.errors || 0}</div>
-      <div>Test Mode: Enabled</div>
-      <div>Last active: ${new Date(now).toLocaleTimeString()}</div>
+      <div>Mục lịch sử: ${formatViNumber(historyCount)}</div>
+      <div>Phiên: ${formatViNumber(telemetry.sessions || 0)}</div>
+      <div>Lượt tóm tắt: ${formatViNumber(telemetry.summaries || 0)}</div>
+      <div>Lỗi: ${formatViNumber(telemetry.errors || 0)}</div>
+      <div>Chế độ thử nghiệm: Đang bật</div>
+      <div>Hoạt động gần nhất: ${new Date(now).toLocaleTimeString(VI_LOCALE)}</div>
     `;
   });
 }
@@ -713,7 +725,7 @@ function _updateKeysTabBadge(total) {
       badge.className = "tab-count";
       tab.appendChild(badge);
     }
-    badge.textContent = String(total);
+    badge.textContent = formatViNumber(total);
     badge.hidden = false;
   } else if (badge) {
     badge.hidden = true;
@@ -1075,7 +1087,7 @@ let historyData = [];
 let historyReturnFocus = null;
 
 function formatHm(ts) {
-  return new Date(ts).toLocaleTimeString("vi", { hour: "2-digit", minute: "2-digit" });
+  return new Date(ts).toLocaleTimeString(VI_LOCALE, { hour: "2-digit", minute: "2-digit" });
 }
 
 function renderPostTimeSuggestions(items) {
@@ -1178,7 +1190,7 @@ async function loadHistory() {
   list.innerHTML = historyData
     .map((h, i) => {
       const bt = h.type || "summary";
-      const dateStr = esc(new Date(h.date).toLocaleString("vi"));
+      const dateStr = esc(formatViDateTime(h.date));
       const siteStr = esc(formatSiteLabel(h.site));
       const badge = esc(typeBadgeLabel(bt));
       // Prefer AI summary as title; original text only if useful
@@ -1229,7 +1241,7 @@ function showHistoryDetail(idx) {
   document.getElementById("historyDetail").hidden = false;
   const siteLabel = formatSiteLabel(h.site);
   document.getElementById("historyDetailDate").textContent =
-    new Date(h.date).toLocaleString("vi") +
+    formatViDateTime(h.date) +
     (siteLabel ? " · " + siteLabel : "") +
     " · " +
     typeBadgeLabel(h.type || "summary");
@@ -1253,9 +1265,9 @@ document.getElementById("historyDetailCopy").addEventListener("click", () => {
     .writeText(document.getElementById("historyDetailBody").textContent)
     .then(() => {
       const btn = document.getElementById("historyDetailCopy");
-      btn.textContent = "Copied";
+      btn.textContent = "Đã copy";
       setTimeout(() => {
-        btn.textContent = "Copy";
+        btn.textContent = "Sao chép";
       }, 1500);
     });
 });
@@ -1278,7 +1290,7 @@ document.getElementById("exportMdBtn").addEventListener("click", async () => {
   const hist = data.history || [];
   let md = "# Lịch sử FeedWriter\n\n";
   hist.forEach((h) => {
-    md += `## ${new Date(h.date).toLocaleString("vi")} - ${h.site || ""}\n\n`;
+    md += `## ${formatViDateTime(h.date)} - ${h.site || ""}\n\n`;
     md += `> ${(h.text || "").replace(/\n/g, "\n> ").substring(0, 500)}...\n\n${h.summary}\n\n---\n\n`;
   });
   const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
@@ -1403,12 +1415,12 @@ async function loadAgentStats() {
       (telemetry.postsFlaggedAds || 0) +
       (telemetry.postsFlaggedCommentGate || 0);
 
-    document.getElementById("statPostsToday").textContent = hasAgentStats ? postsToday : (telemetry.postsScanned || 0);
-    document.getElementById("statPostsTotal").textContent = hasAgentStats ? postsTotal : flagged;
-    document.getElementById("statSkipped").textContent = hasAgentStats ? skippedToday : (telemetry.falsePositiveProxy || 0);
+    document.getElementById("statPostsToday").textContent = formatViNumber(hasAgentStats ? postsToday : (telemetry.postsScanned || 0));
+    document.getElementById("statPostsTotal").textContent = formatViNumber(hasAgentStats ? postsTotal : flagged);
+    document.getElementById("statSkipped").textContent = formatViNumber(hasAgentStats ? skippedToday : (telemetry.falsePositiveProxy || 0));
 
     if (hasAgentStats) {
-      const lastPost = stats && stats.lastPostTime ? new Date(stats.lastPostTime).toLocaleString("vi") : "–";
+      const lastPost = stats && stats.lastPostTime ? formatViDateTime(stats.lastPostTime) : "–";
       const lastEl = document.getElementById("statLastPost");
       lastEl.textContent = lastPost;
       lastEl.title = lastPost;

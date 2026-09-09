@@ -5,20 +5,20 @@ const ERROR_TYPES = {
   // API Key errors
   NO_API_KEY: {
     code: 'NO_API_KEY',
-    message: 'Chưa có API Key',
-    detail: 'Bạn cần thêm ít nhất 1 API key để sử dụng extension.',
-    action: 'Mở popup → tab "Keys" → Thêm key',
-    actionButton: 'Thêm Key',
+    message: 'Chưa có khóa API',
+    detail: 'Bạn cần thêm ít nhất một khóa API để bắt đầu sử dụng tiện ích.',
+    action: 'Mở tiện ích → chọn tab "Khóa API" → Thêm khóa',
+    actionButton: 'Thêm khóa',
     actionUrl: 'popup.html#apikeys',
     severity: 'error'
   },
 
   NO_AVAILABLE_KEY: {
     code: 'NO_AVAILABLE_KEY',
-    message: 'Không tìm được key khả dụng',
-    detail: 'Tất cả key đã bị rate limit hoặc hết quota.',
-    action: 'Thêm key mới hoặc chờ reset quota',
-    actionButton: 'Thêm Key',
+    message: 'Không tìm thấy khóa khả dụng',
+    detail: 'Tất cả các khóa API hiện tại đã hết hạn mức tạm thời hoặc đang chờ reset.',
+    action: 'Thêm khóa mới hoặc chờ hệ thống reset hạn mức',
+    actionButton: 'Thêm khóa',
     actionUrl: 'popup.html#apikeys',
     severity: 'warning'
   },
@@ -26,10 +26,10 @@ const ERROR_TYPES = {
   // Rate limit errors
   RATE_LIMITED: {
     code: 'RATE_LIMITED',
-    message: 'Rate limit',
-    detail: 'Key đã hết quota. Tự động thử key khác sau {countdown}s...',
-    action: 'Đợi hoặc thêm key mới',
-    actionButton: 'Thêm Key',
+    message: 'Hết hạn mức tạm thời (Rate limit)',
+    detail: 'Khóa API đã dùng hết hạn mức tạm thời. Đang tự động chuyển sang khóa khác sau {countdown}s...',
+    action: 'Đợi vài giây hoặc thêm khóa dự phòng',
+    actionButton: 'Thêm khóa',
     actionUrl: 'popup.html#apikeys',
     severity: 'warning',
     retryable: true
@@ -37,10 +37,10 @@ const ERROR_TYPES = {
 
   ALL_KEYS_RATE_LIMITED: {
     code: 'ALL_KEYS_RATE_LIMITED',
-    message: 'Tất cả key đều bị rate limit',
-    detail: 'Quota reset vào: {resetTime}',
-    action: 'Thêm key mới hoặc chờ reset',
-    actionButton: 'Thêm Key',
+    message: 'Tất cả khóa đều hết hạn mức',
+    detail: 'Hạn mức sẽ được làm mới vào: {resetTime}',
+    action: 'Thêm khóa mới hoặc quay lại sau',
+    actionButton: 'Thêm khóa',
     actionUrl: 'popup.html#apikeys',
     severity: 'error'
   },
@@ -58,8 +58,8 @@ const ERROR_TYPES = {
 
   TIMEOUT: {
     code: 'TIMEOUT',
-    message: 'Timeout',
-    detail: 'Request quá lâu (>30s). Server có thể đang quá tải.',
+    message: 'Quá thời gian chờ (Timeout)',
+    detail: 'Yêu cầu xử lý quá 30 giây. Máy chủ AI có thể đang bận.',
     action: 'Thử lại sau vài giây',
     actionButton: 'Thử lại',
     severity: 'warning',
@@ -94,17 +94,17 @@ const ERROR_TYPES = {
   // Provider errors
   INVALID_PROVIDER: {
     code: 'INVALID_PROVIDER',
-    message: 'Provider không hợp lệ',
-    detail: 'Provider "{provider}" không được hỗ trợ.',
-    action: 'Chọn provider khác (Auto/Groq/Gemini)',
+    message: 'Nhà cung cấp AI không hợp lệ',
+    detail: 'Dịch vụ AI "{provider}" hiện chưa được hỗ trợ.',
+    action: 'Chọn dịch vụ AI khác (Tự động/Groq/Gemini)',
     severity: 'error'
   },
 
   PROVIDER_ERROR: {
     code: 'PROVIDER_ERROR',
-    message: 'Lỗi từ provider',
+    message: 'Lỗi từ dịch vụ AI',
     detail: '{providerMessage}',
-    action: 'Thử provider khác hoặc thử lại sau',
+    action: 'Thử nhà cung cấp khác hoặc thử lại sau',
     actionButton: 'Thử lại',
     severity: 'error',
     retryable: true
@@ -130,10 +130,10 @@ const ERROR_TYPES = {
   // Context errors
   CONTEXT_INVALIDATED: {
     code: 'CONTEXT_INVALIDATED',
-    message: 'Extension đã reload',
-    detail: 'Extension vừa được cập nhật hoặc reload.',
-    action: 'Reload trang để tiếp tục',
-    actionButton: 'Reload',
+    message: 'Tiện ích vừa được tải lại',
+    detail: 'Tiện ích FeedWriter vừa được cập nhật hoặc reload.',
+    action: 'Tải lại trang web (F5) để tiếp tục sử dụng',
+    actionButton: 'Tải lại trang',
     severity: 'error'
   },
 

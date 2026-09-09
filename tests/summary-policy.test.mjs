@@ -92,6 +92,17 @@ describe("glossary policy", () => {
       ["MCP", "XYZ", "DDR5"],
     );
   });
+  it("detects expanded modern technical terms and acronyms", () => {
+    const candidates = policy.extractGlossaryCandidates(
+      "Bài viết nhắc tới benchmark, jailbreak và prompt injection, hỗ trợ NVME cùng RTX 4090.",
+    );
+    const terms = candidates.map((item) => item.term);
+    assert.ok(terms.includes("benchmark"));
+    assert.ok(terms.includes("jailbreak"));
+    assert.ok(terms.includes("prompt injection"));
+    assert.ok(terms.includes("NVME"));
+    assert.ok(terms.includes("RTX"));
+  });
 
   it("removes an unsolicited glossary when policy says omit", () => {
     const output =

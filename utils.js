@@ -307,7 +307,14 @@ function downloadFile(blob, filename) {
  * Format date consistently
  */
 function formatDate(date) {
-  return new Date(date).toLocaleString('vi');
+  return new Date(date).toLocaleString('vi-VN');
+}
+
+function formatVietnameseNumber(value, options) {
+  const number = Number(value);
+  return Number.isFinite(number)
+    ? new Intl.NumberFormat('vi-VN', options).format(number)
+    : String(value ?? '');
 }
 
 /**

@@ -195,8 +195,11 @@ describe("streaming lifecycle", () => {
     assert.match(content, /see\\s\+what/);
     assert.doesNotMatch(content, /SITE === "x" && !_xNativeMedia/);
     assert.match(content, /if \(_xGenericImage\) _imageUrl = ""/);
-    assert.match(content, /x: Math\.round\(bounds\.x\)/);
-    assert.match(content, /y: Math\.round\(bounds\.y\)/);
+    assert.match(content, /function getVisiblePostBounds\(/);
+    assert.match(content, /const left = Math\.max\(0, Math\.floor\(rect\.x\)\)/);
+    assert.match(content, /const top = Math\.max\(0, Math\.floor\(rect\.y\)\)/);
+    assert.match(content, /const right = Math\.min\(viewportWidth, Math\.ceil\(rect\.x \+ rect\.width\)\)/);
+    assert.match(content, /const bottom = Math\.min\(viewportHeight, Math\.ceil\(rect\.y \+ rect\.height\)\)/);
     assert.doesNotMatch(content, /bounds\.y \+ window\.scrollY/);
     assert.match(content, /viewport:[\s\S]*?width: window\.innerWidth/);
 

@@ -28,3 +28,6 @@ repomix-output.*
 
 # API keys — never commit
 env.js
+
+# Local agent artifacts
+.freebuff/

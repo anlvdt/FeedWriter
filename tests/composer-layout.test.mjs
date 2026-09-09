@@ -588,7 +588,7 @@ describe("Composer source-card density", () => {
     assert.match(content, /setProperty\("visibility", "hidden", "important"\)/);
     assert.match(content, /waitUntilHidden\(\)/);
     assert.match(content, /waitForCompositorSettle\(\)/);
-    assert.match(content, /postElement\.scrollIntoView/);
+    assert.match(content, /target\.scrollIntoView/);
     assert.match(content, /action: "capture-screenshot"/);
     assert.match(content, /origins: \["<all_urls>"\]/);
     assert.match(css, /html\.fbs-screenshot-capture \.fbs-panel/);

@@ -297,7 +297,7 @@ async function restoreSettings(backupIndex = 0) {
 
   const backup = backupList[backupList.length - 1 - backupIndex]; // Most recent first
   await chrome.storage.sync.set(backup.settings);
-  logger.info(`Settings restored from backup (${new Date(backup.timestamp).toLocaleString()})`);
+  logger.info(`Settings restored from backup (${new Date(backup.timestamp).toLocaleString("vi-VN")})`);
 
   return true;
 }
@@ -1366,11 +1366,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       }
       const contentLength = Number(res.headers.get("content-length") || 0);
       if (contentLength > 12 * 1024 * 1024) {
-        throw new Error("Image too large (>12MB)");
+        throw new Error("Ảnh quá lớn (> 12 MB)");
       }
       const blob = await res.blob();
       if (!blob || blob.size < 100) throw new Error("Empty or invalid image");
-      if (blob.size > 12 * 1024 * 1024) throw new Error("Image too large (>12MB)");
+      if (blob.size > 12 * 1024 * 1024) throw new Error("Ảnh quá lớn (> 12 MB)");
       if (!(await hasValidImageSignature(blob, contentType))) {
         throw new Error("Image signature does not match content type");
       }
@@ -1575,7 +1575,7 @@ function resolveTranslateMode(text, mode) {
 async function translateText(text, mode = "auto") {
   const source = String(text || "").replace(/\s+/g, " ").trim();
   if (!source) return { error: "Không có văn bản để dịch." };
-  if (source.length > 2500) return { error: "Đoạn quá dài (tối đa ~2500 ký tự)." };
+  if (source.length > 2500) return { error: "Đoạn quá dài (tối đa khoảng 2.500 ký tự)." };
 
   const resolved = resolveTranslateMode(source, mode);
   const cacheKey =
@@ -1739,6 +1739,46 @@ function numericEvidenceTokens(text) {
   return tokens;
 }
 
+// Normalize common English-style numbers and currency symbols in Vietnamese
+// prose. Identifiers, versions and bare dot-separated numbers are left alone.
+function normalizeVietnameseNumericNotation(text) {
+  const normalizeEnglishNumber = (raw) => {
+    const value = String(raw);
+    if (value.includes(",") && value.includes(".")) {
+      return value.replace(/,/g, "").replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    }
+    if (/^\d{1,3}(?:,\d{3})+$/.test(value)) return value.replace(/,/g, ".");
+    if (/^\d+\.\d+$/.test(value)) {
+      const [integer, decimal] = value.split(".");
+      return integer.replace(/\B(?=(\d{3})+(?!\d))/g, ".") + "," + decimal;
+    }
+    if (/^\d{4,}$/.test(value)) return value.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    return value;
+  };
+
+  let normalized = String(text || "");
+  normalized = normalized
+    .replace(/(^|[^\p{L}\p{N}_])(?:US\$|\$)\s*(\d+(?:,\d{3})*(?:\.\d+)?)/gmu,
+      (_, prefix, number) => `${prefix}${normalizeEnglishNumber(number)} USD`)
+    .replace(/(^|[^\p{L}\p{N}_])€\s*(\d+(?:,\d{3})*(?:\.\d+)?)/gmu,
+      (_, prefix, number) => `${prefix}${normalizeEnglishNumber(number)} euro`)
+    .replace(/(^|[^\p{L}\p{N}_])£\s*(\d+(?:,\d{3})*(?:\.\d+)?)/gmu,
+      (_, prefix, number) => `${prefix}${normalizeEnglishNumber(number)} bảng Anh`)
+    .replace(/\b(\d+(?:,\d{3})*(?:\.\d+)?)\s*(US\$|\$)(?!\w)/gu,
+      (_, number) => `${normalizeEnglishNumber(number)} USD`)
+    .replace(/\b(\d+(?:,\d{3})*(?:\.\d+)?)\s*€(?!\w)/gu,
+      (_, number) => `${normalizeEnglishNumber(number)} euro`)
+    .replace(/\b(\d+(?:,\d{3})*(?:\.\d+)?)\s*£(?!\w)/gu,
+      (_, number) => `${normalizeEnglishNumber(number)} bảng Anh`)
+    .replace(/\b(\d{1,3}(?:,\d{3})+(?:\.\d+)?)\b/g, (number) => normalizeEnglishNumber(number))
+    .replace(/\b(\d+\.\d+)(\s*(?:USD|VND|VNĐ|euro|EUR|GBP|%|°[CF]|km|cm|mm|m|kg|g|mg|l|ml|kW|W|kWh|Hz|GHz|MHz|GB|MB|KB)\b|\s*%)/giu,
+      (_, number, unit) => normalizeEnglishNumber(number) + unit)
+    .replace(/\b(\d[\d.]*(?:,\d+)?)\s*(?:VND|VNĐ)\b/giu, "$1 đồng")
+    .replace(/\b(\d[\d.]*(?:,\d+)?)\s*(?:EUR)\b/giu, "$1 euro")
+    .replace(/\b(\d[\d.]*(?:,\d+)?)\s*(?:GBP)\b/giu, "$1 bảng Anh");
+  return normalized;
+}
+
 // Main post-processing function
 function postProcessOutput(output, sourceText, type) {
   const issues = [];
@@ -1834,6 +1874,7 @@ function postProcessOutput(output, sourceText, type) {
   processed = processed.replace(/^Đoạn\s*\d+\s*[:：]\s*/gim, "");
   // Normalize "*** Giải thích" → "**Giải thích" (old prompt format)
   processed = processed.replace(/^\*{3}\s*/gm, "**");
+  processed = normalizeVietnameseNumericNotation(processed);
 
   // Xử lý tiêu đề dòng đầu tiên
   if (type && type.startsWith("summary")) {
@@ -1848,7 +1889,7 @@ function postProcessOutput(output, sourceText, type) {
         // headline as attribution. First normalize a common recommendation
         // clause into passive news style, even when it appears mid-headline.
         const genericSourceActor =
-          "(?:(?:một\\s+)?(?:user|người\\s+dùng|tác\\s+giả|người\\s+đăng))";
+          "(?:(?:một\\s+)?(?:user|người\\s+dùng|tác\\s+giả|người\\s+đăng|leaker|chuyên\\s+gia|bài\\s+đăng|bài\\s+viết|trang\\s+tin|nguồn\\s+tin|tài\\s+khoản|thành\\s+viên\\s+reddit|giới\\s+thạo\\s+tin))";
         const recommendationClause = new RegExp(
           "\\b" +
             genericSourceActor +
@@ -1893,6 +1934,21 @@ function postProcessOutput(output, sourceText, type) {
         }
         if (strippedForbiddenLead) {
           issues.push("Đã loại bỏ chủ thể chung chung ở đầu tiêu đề.");
+        }
+
+        // Named publishers/accounts can also leak into the headline as an
+        // attribution (e.g. "Vox cho biết ...", "Theo Vox: ..."). Metadata may
+        // identify the source, but the headline must lead with the actual subject.
+        const namedAttributionLead =
+          /^(?:theo\s+)?(?:[A-Za-zÀ-ỹ][\p{L}\p{N}&.'’\-]*(?:\s+[A-Za-zÀ-ỹ][\p{L}\p{N}&.'’\-]*){0,4})\s+(?:cho\s+biết|cho\s+hay|cho\s+rằng|nói\s+rằng|tiết\s+lộ|đưa\s+tin)\s*[:：,]?\s*/iu;
+        const theoNamedLead =
+          /^theo\s+(?:[A-Za-zÀ-ỹ][\p{L}\p{N}&.'’\-]*(?:\s+[A-Za-zÀ-ỹ][\p{L}\p{N}&.'’\-]*){0,4})\s*[:：,]\s*/iu;
+        if (namedAttributionLead.test(guardedTitle)) {
+          guardedTitle = guardedTitle.replace(namedAttributionLead, "").trim();
+          issues.push("Đã loại bỏ tên nguồn ở đầu tiêu đề.");
+        } else if (theoNamedLead.test(guardedTitle)) {
+          guardedTitle = guardedTitle.replace(theoNamedLead, "").trim();
+          issues.push("Đã loại bỏ tên nguồn ở đầu tiêu đề.");
         }
         lines[i] = guardedTitle || "Cập nhật";
         // Viết hoa toàn bộ tiêu đề
@@ -1960,10 +2016,52 @@ function postProcessOutput(output, sourceText, type) {
       [/\bspotify\b/gi, "Spotify"],
       [/\bnetflix\b/gi, "Netflix"],
       [/\bamazon\b/gi, "Amazon"],
+      [/\bnvidia\b/gi, "Nvidia"],
+      [/\bqualcomm\b/gi, "Qualcomm"],
+      [/\bintel\b/gi, "Intel"],
+      [/\bamd\b/gi, "AMD"],
+      [/\bsamsung\b/gi, "Samsung"],
+      [/\bxiaomi\b/gi, "Xiaomi"],
+      [/\bhuawei\b/gi, "Huawei"],
+      [/\bsony\b/gi, "Sony"],
+      [/\basus\b/gi, "Asus"],
+      [/\bdell\b/gi, "Dell"],
+      [/\blenovo\b/gi, "Lenovo"],
+      [/\bgithub\b/gi, "GitHub"],
+      [/\bgitlab\b/gi, "GitLab"],
+      [/\bdocker\b/gi, "Docker"],
+      [/\bkubernetes\b/gi, "Kubernetes"],
+      [/\blinux\b/gi, "Linux"],
+      [/\bubuntu\b/gi, "Ubuntu"],
+      [/\bhugging\s*face\b/gi, "Hugging Face"],
+      [/\banthropic\b/gi, "Anthropic"],
+      [/\bmistral\b/gi, "Mistral"],
+      [/\bdeepseek\b/gi, "DeepSeek"],
+      [/\bmeta\b/gi, "Meta"],
+      [/\bbytedance\b/gi, "ByteDance"],
+      [/\btsmc\b/gi, "TSMC"],
+      [/\bxai\b/gi, "xAI"],
+      [/\bgrok\b/gi, "Grok"],
+      [/\bcopilot\b/gi, "Copilot"],
+      [/\bperplexity\b/gi, "Perplexity"],
+      [/\bcursor\b/gi, "Cursor"],
     ];
     for (const [re, fix] of brandFixes) body = body.replace(re, fix);
     processed = title + body;
   }
+
+  // 7b. Clean translationese and awkward mechanical phrasing in body
+  processed = processed
+    .replace(/(?<![\p{L}\p{N}])cho\s+phép\s+người\s+dùng\s+có\s+thể(?![\p{L}\p{N}])/giu, "cho phép người dùng")
+    .replace(/(?<![\p{L}\p{N}])cung\s+cấp\s+khả\s+năng\s+cho\s+phép(?![\p{L}\p{N}])/giu, "cho phép")
+    .replace(/(?<![\p{L}\p{N}])cung\s+cấp\s+khả\s+năng(?![\p{L}\p{N}])/giu, "hỗ trợ")
+    .replace(/(?<![\p{L}\p{N}])đóng\s+vai\s+trò\s+như\s+là\s+một(?![\p{L}\p{N}])/giu, "là")
+    .replace(/(?<![\p{L}\p{N}])đóng\s+vai\s+trò\s+như\s+là(?![\p{L}\p{N}])/giu, "đóng vai trò là")
+    .replace(/(?<![\p{L}\p{N}])trong\s+một\s+nỗ\s+lực\s+nhằm(?![\p{L}\p{N}])/giu, "nhằm")
+    .replace(/(?<![\p{L}\p{N}])mang\s+lại\s+sự\s+cải\s+thiện(?![\p{L}\p{N}])/giu, "cải thiện")
+    .replace(/(?<![\p{L}\p{N}])tiến\s+hành\s+thực\s+hiện(?![\p{L}\p{N}])/giu, "thực hiện")
+    .replace(/(?<![\p{L}\p{N}])được\s+thiết\s+kế\s+nhằm\s+mục\s+đích(?![\p{L}\p{N}])/giu, "nhằm")
+    .replace(/(?<![\p{L}\p{N}])tăng\s+mức(?: độ)?\s+thẩm\s+mỹ(?![\p{L}\p{N}])/giu, "cải thiện khả năng thẩm mỹ");
 
   // 8. Shorten VND units without rounding away source precision.
   processed = processed.replace(
@@ -1990,12 +2088,34 @@ function postProcessOutput(output, sourceText, type) {
     /^(?:như (?:chúng ta|mọi người|các bạn) (?:đã |đều )?biết)[,.]?\s*[^\n.!?]*[.!?]\s*/i,
     /^(?:hôm nay|hôm qua|sáng nay|tối qua)\s+(?:mình|tôi)\s+(?:đọc|xem|thấy|nghe)[^\n.!?]*[.!?]\s*/i,
   ];
-  for (const pat of leadInPatterns) {
-    if (pat.test(processed)) {
-      processed = processed.replace(pat, "").trim();
-      issues.push("Đã xóa câu dẫn dắt rỗng ở đầu bài.");
-      break;
+  const bodyStart = processed.indexOf("\n\n");
+  if (bodyStart > 0) {
+    const headPart = processed.slice(0, bodyStart + 2);
+    let bodyPart = processed.slice(bodyStart + 2);
+    for (const pat of leadInPatterns) {
+      if (pat.test(bodyPart)) {
+        bodyPart = bodyPart.replace(pat, "").trimStart();
+        issues.push("Đã xóa câu dẫn dắt rỗng ở đầu bài.");
+        break;
+      }
     }
+    bodyPart = bodyPart.replace(
+      /^(?:(?:được\s+biết|cụ\s+thể(?: là)?|theo\s+đó|đáng\s+chú\s+ý(?: là)?)[,:]\s*)/i,
+      "",
+    );
+    processed = headPart + bodyPart;
+  } else {
+    for (const pat of leadInPatterns) {
+      if (pat.test(processed)) {
+        processed = processed.replace(pat, "").trim();
+        issues.push("Đã xóa câu dẫn dắt rỗng ở đầu bài.");
+        break;
+      }
+    }
+    processed = processed.replace(
+      /^(?:(?:được\s+biết|cụ\s+thể(?: là)?|theo\s+đó|đáng\s+chú\s+ý(?: là)?)[,:]\s*)/i,
+      "",
+    );
   }
 
   // 10. Hallucination detection: check if output contains numbers not in source
