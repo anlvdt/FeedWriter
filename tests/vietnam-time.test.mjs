@@ -152,6 +152,29 @@ describe("Vietnam Timezone & Smart Time Conversion System", () => {
       const warnings = result.issues.filter((i) => i.includes("số liệu bịa"));
       assert.equal(warnings.length, 0);
     });
+
+    it("intelligently handles currency formatting without corrupting non-currency words", () => {
+      const text = "TIÊU ĐỀ\n\nGiá bán 100 đô la hoặc 50 đô. Thiết kế máy khá đô con và bền bỉ.";
+      const result = process(text, "Source");
+      assert.match(result.text, /100 USD/);
+      assert.match(result.text, /50 USD/);
+      assert.match(result.text, /đô con/);
+      assert.doesNotMatch(result.text, /USD con/);
+    });
+
+    it("shortens VND in billions cleanly without rounding precision", () => {
+      const text = "TIÊU ĐỀ\n\nKhoản đầu tư trị giá 1.500.000.000 đồng và vòng gọi vốn 20.000.000.000 VND.";
+      const result = process(text, "Source");
+      assert.match(result.text, /1,5 tỷ đồng/);
+      assert.match(result.text, /20 tỷ đồng/);
+    });
+
+    it("replaces location abbreviation in geographic context while preserving tech Hacker News (HN)", () => {
+      const text = "TIÊU ĐỀ\n\nSự kiện tổ chức tại HN thu hút nhiều kỹ sư. Thảo luận trên HN nhận được 300 điểm.";
+      const result = process(text, "Source");
+      assert.match(result.text, /tại Hà Nội/);
+      assert.match(result.text, /trên HN/);
+    });
   });
 
   describe("exportDtcnJson Vietnam timezone format", () => {

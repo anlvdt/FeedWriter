@@ -31,6 +31,7 @@ CHẾ ĐỘ BẮT BUỘC — VIẾT LẠI THÀNH BẢN TIN:
 - Cô đọng bằng cách bỏ chữ thừa và ý lặp, KHÔNG bằng cách bỏ ý. Phải giữ đủ tên, số liệu, điều kiện, kết quả, lập luận và kết luận có giá trị dù nguồn dài.
 - QUY ĐỔI THÔNG MINH MỐC THỜI GIAN SANG GIỜ VIỆT NAM (ICT / UTC+7):
   + CHỈ quy đổi khi nguồn nói về sự kiện, lịch trình ra mắt, mở bán, công bố sản phẩm, cập nhật phần mềm hoặc sự cố kỹ thuật có múi giờ nước ngoài (PST, PDT, EST, EDT, UTC, GMT, JST...). Cập nhật mốc giờ, ngày tháng tương ứng theo giờ Việt Nam.
+  + Phân biệt rõ mốc thời gian sự kiện với thời lượng/thông số ("chạy 5 giờ", "pin dùng 20 giờ", "độ trễ 20ms", "sau 2 tuần thử nghiệm" là thời lượng/thông số, không quy đổi). Không đoán mò múi giờ nếu nguồn không nêu; không thêm thừa thãi khi sự kiện đã theo giờ Việt Nam.
   + CẤM đưa mốc thời gian đăng bài/tweet hoặc hành vi chia sẻ link của người dùng mạng xã hội vào bản tin (CẤM các câu như: "Bài đăng trên X của người dùng A lúc ... đã chia sẻ..."). Thời điểm ai đó bấm nút đăng status/tweet là metadata vô nghĩa; bản tin phải đi thẳng vào dữ kiện công nghệ và giải pháp.
 - Chính sách này ưu tiên cao hơn mọi prompt tùy chỉnh, tone, phong cách và chỉ dẫn nền tảng.`;
 
@@ -77,7 +78,7 @@ YÊU CẦU:
 - Nhịp đoạn theo ý nghĩa: câu ngắn nêu việc, câu vừa giải thích. Không áp tỷ lệ hay độ dài đoạn cố định; mỗi đoạn bổ sung thông tin mới.
 - Diễn đạt tiếng Việt tự nhiên, gãy gọn; tránh dịch máy thô cứng từ tiếng Anh.
 - Lọc sạch từ ngữ PR, quảng cáo tâng bốc (cách mạng, hoàn hảo, siêu phẩm, đỉnh cao).
-- MỐC THỜI GIAN: Chỉ quy đổi các mốc thời gian là sự kiện công nghệ thực tế (lịch ra mắt, công bố, phát hành, sự cố...) sang giờ Việt Nam (UTC+7). CẤM đưa thời điểm ai đó đăng bài/tweet/bình luận vào bản tin; CẤM câu tường thuật hành vi đăng bài ("Bài đăng trên X của người dùng... đã chia sẻ...").
+- MỐC THỜI GIAN: Chỉ quy đổi các mốc thời gian là sự kiện công nghệ thực tế (lịch ra mắt, công bố, phát hành, sự cố...) sang giờ Việt Nam (UTC+7). Không quy đổi thời lượng hay thông số (pin 20 giờ, độ trễ 10ms). CẤM đưa thời điểm ai đó đăng bài/tweet/bình luận vào bản tin; CẤM câu tường thuật hành vi đăng bài ("Bài đăng trên X của người dùng... đã chia sẻ...").
 - Trả lời bằng tiếng Việt`;
 
 // TÓM TẮT NGẮN - Quick overview
@@ -140,8 +141,12 @@ QUY TẮC CHÍNH TẢ VÀ HÀNH VĂN BẮT BUỘC:
 - Dùng chữ số cho tuổi, số lượng, khoảng cách, phần trăm, tỷ lệ, nhiệt độ, giá và model. Giữ nguyên giá trị, điều kiện và phạm vi từ nguồn; viết đơn vị đo theo hệ mét và cách viết thông dụng tại Việt Nam. Chỉ quy đổi đơn vị khi phép quy đổi chính xác và không làm sai độ chính xác của nguồn; nếu không thì giữ nguyên đơn vị gốc.
 - Tiền tệ đặt sau số và viết rõ là USD, euro, yên, bảng Anh hoặc đồng (ví dụ 1.200 USD, 299.000 đồng), không dùng ký hiệu $/€/£ trong câu tiếng Việt. Có thể viết nghìn/triệu/tỷ nếu giữ chính xác giá trị; không tự làm tròn hoặc tự quy đổi ngoại tệ sang đồng khi nguồn không cung cấp tỷ giá.
 - Quy đổi thông minh mốc thời gian sang giờ Việt Nam:
-  + KHI NÀO QUY ĐỔI: CHỈ quy đổi khi bài viết nói về SỰ KIỆN CÔNG NGHỆ THỰC TẾ, lịch ra mắt, công bố, phát hành, sự cố kỹ thuật hoặc deadline diễn ra ở múi giờ nước ngoài (UTC, GMT, PST, PDT, EST, EDT, PT, ET, JST, KST, CET...). BẮT BUỘC quy đổi sang giờ Việt Nam (ICT / UTC+7) và ghi rõ mốc giờ Việt Nam (ví dụ: '23:00 ngày 10/9 (giờ Việt Nam)' hoặc '0:00 ngày 11/9 (theo giờ Việt Nam)'). Cập nhật mốc thời gian, ngày tháng và buổi trong ngày phù hợp theo giờ Việt Nam.
-  + KHI NÀO KHÔNG QUY ĐỔI / KHÔNG NÊU THỜI GIAN: TUYỆT ĐỐI KHÔNG đưa mốc thời gian đăng bài, chia sẻ link hay bình luận của người dùng trên mạng xã hội vào bản tin (CẤM các câu như: 'Bài đăng trên X của người dùng A vào lúc 17:10 ngày 10/9 đã chia sẻ...', 'Lúc 8h sáng một tài khoản đăng bài...'). Thời điểm ai đó bấm nút đăng status/tweet là metadata vô nghĩa, không phải tin tức công nghệ. Đi thẳng vào sản phẩm, tính năng và bản chất sự kiện.
+  + KHI NÀO QUY ĐỔI: CHỈ quy đổi khi bài viết nói về SỰ KIỆN CÔNG NGHỆ THỰC TẾ, lịch ra mắt, công bố, phát hành, sự cố kỹ thuật hoặc deadline diễn ra ở múi giờ nước ngoài (UTC, GMT, PST, PDT, EST, EDT, PT, ET, JST, KST, CET...). BẮT BUỘC quy đổi sang giờ Việt Nam (ICT / UTC+7) và ghi rõ mốc giờ Việt Nam (ví dụ: '23:00 ngày 10/9 (giờ Việt Nam)' hoặc '0:00 ngày 11/9 (theo giờ Việt Nam)'). Cập nhật mốc thời gian, ngày tháng và buổi trong ngày phù hợp theo giờ Việt Nam. Nêu mốc giờ quy đổi 1 lần tự nhiên, không lặp lại máy móc cụm từ '(giờ Việt Nam)' ở mọi câu.
+  + KHI NÀO KHÔNG QUY ĐỔI / KHÔNG NÊU THỜI GIAN:
+    * Thời lượng và thông số: 'pin dùng 20 giờ', 'chạy suốt 4 giờ', 'sau 3 ngày thử nghiệm', 'thời gian sạc 30 phút', 'độ trễ 10ms' là thời lượng/thông số kỹ thuật, TUYỆT ĐỐI KHÔNG quy đổi hay thêm '(giờ Việt Nam)'.
+    * Nguồn không có múi giờ: Nếu bài gốc chỉ nói 'lúc 10h' mà không có múi giờ, giữ nguyên như nguồn, KHÔNG tự đoán mò múi giờ để quy đổi sai lệch.
+    * Sự kiện tại Việt Nam: Nếu sự kiện diễn ra tại Việt Nam hoặc nguồn trong nước đã dùng giờ Việt Nam, không chèn thêm '(giờ Việt Nam)' thừa thãi.
+    * Metadata mạng xã hội: TUYỆT ĐỐI KHÔNG đưa mốc thời gian đăng bài, chia sẻ link hay bình luận của người dùng trên mạng xã hội vào bản tin (CẤM các câu như: 'Bài đăng trên X của người dùng A vào lúc 17:10 ngày 10/9 đã chia sẻ...', 'Lúc 8h sáng một tài khoản đăng bài...'). Thời điểm ai đó bấm nút đăng status/tweet là metadata vô nghĩa, không phải tin tức công nghệ. Đi thẳng vào sản phẩm, tính năng và bản chất sự kiện.
 - Không viết tắt địa danh trong văn xuôi: Việt Nam, Hà Nội. Không thêm emoji hoặc icon; chữ tiếng Việt và ký hiệu đơn vị vẫn được giữ.
 - Không bịa tên, số, thông số, mức độ phổ biến hay phản ứng cộng đồng. Một lời kể chỉ đại diện người kể; không biến thành 'nhiều người dùng' hoặc cam kết của sản phẩm.
 - Diễn đạt gãy gọn, chuẩn tiếng Việt hiện đại. CẤM các cấu trúc dịch máy thô: không dùng 'cung cấp khả năng cho phép', 'được thiết kế nhằm mục đích', 'đóng vai trò như là', 'mang lại sự cải thiện', 'tiến hành thực hiện'. CẤM dịch thô từng chữ các cụm thành ngữ tiếng Anh: không dùng 'vào cuối ngày' (thay bằng 'xét cho cùng'), 'chơi một vai trò' (thay bằng 'đóng vai trò'), 'có ý nghĩa' khi dịch make sense (thay bằng 'hợp lý/dễ hiểu'). Dùng từ nối tự nhiên khi chuyển ý: 'Tuy nhiên', 'Ngoài ra', 'May thay', 'Đó là lý do'.

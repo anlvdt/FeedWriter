@@ -1784,8 +1784,8 @@ function normalizeVietnameseNumericNotation(text) {
       (_, number) => `${normalizeEnglishNumber(number)} euro`)
     .replace(/\b(\d+(?:,\d{3})*(?:\.\d+)?)\s*£(?!\w)/gu,
       (_, number) => `${normalizeEnglishNumber(number)} bảng Anh`)
-    .replace(/\b(\d{1,3}(?:,\d{3})+(?:\.\d+)?)\b/g, (number) => normalizeEnglishNumber(number))
-    .replace(/\b(\d+\.\d+)(\s*(?:USD|VND|VNĐ|euro|EUR|GBP|%|°[CF]|km|cm|mm|m|kg|g|mg|l|ml|kW|W|kWh|Hz|GHz|MHz|GB|MB|KB)\b|\s*%)/giu,
+    .replace(/(?<![\d.,])(\d{1,3}(?:,\d{3})+(?:\.\d+)?)(?![\d.,])/g, (number) => normalizeEnglishNumber(number))
+    .replace(/(?<![\d.])(\d+\.\d+)(?![\d.])(\s*(?:USD|VND|VNĐ|euro|EUR|GBP|%|°[CF]|km|cm|mm|m|kg|g|mg|l|ml|kW|W|kWh|Hz|GHz|MHz|GB|MB|KB)\b|\s*%)/giu,
       (_, number, unit) => normalizeEnglishNumber(number) + unit)
     .replace(/\b(\d[\d.]*(?:,\d+)?)\s*(?:VND|VNĐ)\b/giu, "$1 đồng")
     .replace(/\b(\d[\d.]*(?:,\d+)?)\s*(?:EUR)\b/giu, "$1 euro")
@@ -1976,14 +1976,15 @@ function postProcessOutput(output, sourceText, type) {
   }
 
   // 6. VnReview spelling rules auto-fix
-  // Fix common currency formatting
-  processed = processed.replace(/\bđô[ -]?la\b/gi, "USD");
-  processed = processed.replace(/\bđô\b(?!\s*C)/gi, "USD");
-  // Fix abbreviated place names
-  processed = processed.replace(/\bVN\b(?!\w)/g, "Việt Nam");
-  processed = processed.replace(/\bHN\b(?!\w)/g, "Hà Nội");
-  processed = processed.replace(/\bSG\b(?!\w)/g, "TP. HCM");
-  // Fix day names capitalization (thứ hai → thứ Hai)
+  // Fix common currency formatting (context-aware: avoids non-currency words like 'đô con', 'đô vật')
+  processed = processed
+    .replace(/(?<![\p{L}\p{N}])đô[ -]?la(?![\p{L}\p{N}])/giu, "USD")
+    .replace(/(?<=\d\s*|nghìn\s*|triệu\s*|tỷ\s*|tỉ\s*)đô(?!\s*[\p{L}\p{N}])/giu, "USD");
+  // Fix abbreviated place names in geographic contexts (avoid corrupting Hacker News "HN", etc.)
+  processed = processed
+    .replace(/\bVN\b(?!\w)/g, "Việt Nam")
+    .replace(/(?<=(?:ở|tại|TP\.?|thành\s+phố)\s+)HN(?!\w)/gi, "Hà Nội")
+    .replace(/(?<=(?:ở|tại|TP\.?|thành\s+phố)\s+)SG(?!\w)/gi, "TP. HCM");
   processed = processed.replace(
     /\bthứ (hai|ba|tư|năm|sáu|bảy)\b/gi,
     (m, d) => "thứ " + d.charAt(0).toUpperCase() + d.slice(1),
@@ -2068,7 +2069,7 @@ function postProcessOutput(output, sourceText, type) {
   processed = processed
     .replace(/(?<![\p{L}\p{N}])cho\s+phép\s+người\s+dùng\s+có\s+thể(?![\p{L}\p{N}])/giu, "cho phép người dùng")
     .replace(/(?<![\p{L}\p{N}])cung\s+cấp\s+khả\s+năng\s+cho\s+phép(?![\p{L}\p{N}])/giu, "cho phép")
-    .replace(/(?<![\p{L}\p{N}])cung\s+cấp\s+khả\s+năng(?![\p{L}\p{N}])/giu, "hỗ trợ")
+    .replace(/(?<![\p{L}\p{N}])cung\s+cấp\s+khả\s+năng\s+để(?![\p{L}\p{N}])/giu, "giúp")
     .replace(/(?<![\p{L}\p{N}])đóng\s+vai\s+trò\s+như\s+là\s+một(?![\p{L}\p{N}])/giu, "là")
     .replace(/(?<![\p{L}\p{N}])đóng\s+vai\s+trò\s+như\s+là(?![\p{L}\p{N}])/giu, "đóng vai trò là")
     .replace(/(?<![\p{L}\p{N}])trong\s+một\s+nỗ\s+lực\s+nhằm(?![\p{L}\p{N}])/giu, "nhằm")
@@ -2077,11 +2078,11 @@ function postProcessOutput(output, sourceText, type) {
     .replace(/(?<![\p{L}\p{N}])được\s+thiết\s+kế\s+nhằm\s+mục\s+đích(?![\p{L}\p{N}])/giu, "nhằm")
     .replace(/(?<![\p{L}\p{N}])tăng\s+mức(?: độ)?\s+thẩm\s+mỹ(?![\p{L}\p{N}])/giu, "cải thiện khả năng thẩm mỹ");
 
-  // 8. Shorten VND units without rounding away source precision.
+  // 8. Shorten VND units without rounding away source precision (supports millions and billions).
   processed = processed.replace(
-    /(\d{1,3})\.(\d{3})\.(\d{3})\s*(?:đồng|VND|vnđ|VNĐ)/gi,
-    (match, a, b, c) => {
-      const num = parseInt(a + b + c, 10);
+    /\b(\d{1,3}(?:\.\d{3}){2,4})\s*(?:đồng|VND|vnđ|VNĐ)/gi,
+    (match, fullNum) => {
+      const num = parseInt(fullNum.replace(/\./g, ""), 10);
       if (num >= 1000000000) {
         const ty = num / 1000000000;
         return (
