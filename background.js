@@ -2096,16 +2096,23 @@ function postProcessOutput(output, sourceText, type) {
   );
 
   // 9. Remove empty lead-in sentences at the beginning
+  const socialNarrationRe =
+    /(?:^|\n|[.!?]\s*)(?:trong\s+)?(?:một\s+)?(?:bài\s+(?:đăng|viết|chia\s+sẻ)|tweet|status)\s+(?:trên\s+[A-Za-z0-9_.\s]+)?(?:\s*của\s+[^\n.,!?]+?)?(?:\s*(?:vào\s+)?(?:lúc|ngày)\s+[^\n.,!?]+?)?\s+(?:đã\s+)?(?:chia\s+sẻ|cho\s+biết|đăng\s+tải|giới\s+thiệu|đề\s+cập|tiết\s+lộ|nói\s+về)[^\n.!?]*[.!?]/giu;
   const leadInPatterns = [
     /^[^\n.!?]*(?:mình|tôi|mình)\s+(?:vừa|mới|đã)\s+(?:đọc|xem|thấy|nghe|biết)\s+(?:được|thấy|về)?\s*[^\n.!?]*[.!?]\s*/i,
     /^(?:gần đây|mới đây|dạo gần đây|thời gian gần đây)[,.]?\s*[^\n.!?]*[.!?]\s*/i,
     /^(?:như (?:chúng ta|mọi người|các bạn) (?:đã |đều )?biết)[,.]?\s*[^\n.!?]*[.!?]\s*/i,
     /^(?:hôm nay|hôm qua|sáng nay|tối qua)\s+(?:mình|tôi)\s+(?:đọc|xem|thấy|nghe)[^\n.!?]*[.!?]\s*/i,
+    /^(?:tài\s+khoản|người\s+dùng|user)\s+[^\n.,!?]+\s+(?:trên\s+[A-Za-z0-9_.\s]+)?(?:\s*(?:vào\s+)?(?:lúc|ngày)\s+[^\n.,!?]+?)?\s+(?:đã\s+)?(?:chia\s+sẻ|đăng\s+tải|cho\s+biết|giới\s+thiệu|đăng)[^\n.!?]*[.!?]\s*/iu,
   ];
   const bodyStart = processed.indexOf("\n\n");
   if (bodyStart > 0) {
     const headPart = processed.slice(0, bodyStart + 2);
     let bodyPart = processed.slice(bodyStart + 2);
+    if (socialNarrationRe.test(bodyPart)) {
+      bodyPart = bodyPart.replace(socialNarrationRe, (m) => m.startsWith("\n") ? "\n" : (m.match(/^[.!?]/) ? ". " : "")).replace(/\.\s+/g, ". ").trimStart();
+      issues.push("Đã loại bỏ câu tường thuật thời điểm đăng bài trên mạng xã hội.");
+    }
     for (const pat of leadInPatterns) {
       if (pat.test(bodyPart)) {
         bodyPart = bodyPart.replace(pat, "").trimStart();
@@ -2119,6 +2126,10 @@ function postProcessOutput(output, sourceText, type) {
     );
     processed = headPart + bodyPart;
   } else {
+    if (socialNarrationRe.test(processed)) {
+      processed = processed.replace(socialNarrationRe, (m) => m.startsWith("\n") ? "\n" : (m.match(/^[.!?]/) ? ". " : "")).replace(/\.\s+/g, ". ").trimStart();
+      issues.push("Đã loại bỏ câu tường thuật thời điểm đăng bài trên mạng xã hội.");
+    }
     for (const pat of leadInPatterns) {
       if (pat.test(processed)) {
         processed = processed.replace(pat, "").trim();
@@ -2131,7 +2142,6 @@ function postProcessOutput(output, sourceText, type) {
       "",
     );
   }
-
   // 10. Hallucination detection: check if output contains numbers not in source
   if (typeof sourceText === "string") {
     const sourceNums = numericEvidenceTokens(sourceText);
