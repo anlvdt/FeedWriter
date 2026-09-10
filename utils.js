@@ -304,10 +304,33 @@ function downloadFile(blob, filename) {
 }
 
 /**
- * Format date consistently
+ * Format date consistently in Vietnam timezone (ICT / UTC+7)
  */
-function formatDate(date) {
-  return new Date(date).toLocaleString('vi-VN');
+function formatDate(date, options = {}) {
+  const d = date instanceof Date ? date : new Date(date);
+  if (!Number.isFinite(d.getTime())) return '';
+  return d.toLocaleString('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    ...options,
+  });
+}
+
+/**
+ * Format date and time explicitly in Vietnam timezone
+ */
+function formatVietnamDateTime(date, options = {}) {
+  return formatDate(date, options);
+}
+
+/**
+ * Format date into ISO 8601 with Vietnam timezone offset (+07:00)
+ */
+function formatVietnamIsoString(date) {
+  const d = date instanceof Date ? date : new Date(date);
+  if (!Number.isFinite(d.getTime())) return '';
+  const tzOffset = 7 * 60; // UTC+7 in minutes
+  const localTime = new Date(d.getTime() + tzOffset * 60 * 1000);
+  return localTime.toISOString().slice(0, 19) + '+07:00';
 }
 
 function formatVietnameseNumber(value, options) {
@@ -383,6 +406,8 @@ if (typeof module !== 'undefined' && module.exports) {
     EventListenerManager,
     downloadFile,
     formatDate,
+    formatVietnamDateTime,
+    formatVietnamIsoString,
     truncate,
     Logger,
     logger,

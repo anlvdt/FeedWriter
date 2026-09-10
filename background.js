@@ -16,7 +16,7 @@
 // Boot marker — if chrome://extensions shows "fetching the script", SW never got here
 try {
   console.info("[FeedWriter] service worker booted", {
-    at: new Date().toISOString(),
+    at: formatVietnamIsoString(new Date()),
   });
 } catch (_) {}
 
@@ -297,7 +297,7 @@ async function restoreSettings(backupIndex = 0) {
 
   const backup = backupList[backupList.length - 1 - backupIndex]; // Most recent first
   await chrome.storage.sync.set(backup.settings);
-  logger.info(`Settings restored from backup (${new Date(backup.timestamp).toLocaleString("vi-VN")})`);
+  logger.info(`Settings restored from backup (${formatDate(backup.timestamp)})`);
 
   return true;
 }
@@ -848,6 +848,8 @@ chrome.runtime.onConnect.addListener((port) => {
         msg.author,
         msg.postTitle,
         msg.postSource,
+        msg.postTime || null,
+        msg.postDate || null,
         msg.tone || null,
         msg.preferredProvider || null,
         msg.type || "summary",
@@ -1189,6 +1191,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       request.site || "unknown",
       fakePort,
       controller.signal,
+      request.sourceUrl || "",
+      request.imageUrl || "",
+      request.author || "",
+      request.postTitle || "",
+      request.postSource || "",
+      request.postTime || null,
+      request.postDate || null,
+      request.tone || null,
+      request.preferredProvider || null,
+      request.type || "summary",
     )
       .then((r) => sendResponse(r || { error: "Unknown error" }))
       .catch((e) => sendResponse({ error: e.message }));
@@ -1711,7 +1723,9 @@ function detectRepetition(text) {
 function numericEvidenceTokens(text) {
   const cleaned = String(text || "").normalize("NFKC")
     .replace(/https?:\/\/\S+/gi, " ")
-    .replace(/^\s*(?:Bước\s+\d+\s*[:.)]|\d+[.)](?=\s))/gimu, "");
+    .replace(/^\s*(?:Bước\s+\d+\s*[:.)]|\d+[.)](?=\s))/gimu, "")
+    .replace(/\b\d{1,2}(?::\d{2}|h\d{0,2})?\s*(?:ngày\s+\d{1,2}(?:[\/\-]\d{1,2})?)?\s*(?:\([^)]*giờ\s+(?:Việt\s+Nam|VN)[^)]*\)|(?:theo\s+)?giờ\s+(?:Việt\s+Nam|VN))/giu, " ")
+    .replace(/\b\d{1,2}:\d{2}\b/g, " ");
   const scales = {
     "nghìn": 1000, "ngàn": 1000, thousand: 1000, k: 1000,
     "triệu": 1000000, million: 1000000,
@@ -2210,6 +2224,8 @@ async function handleStream(
   author = "",
   postTitle = "",
   postSource = "",
+  postTime = null,
+  postDate = null,
   tone = null,
   preferredProvider = null,
   type = "summary",
@@ -2271,6 +2287,8 @@ async function handleStream(
     tone,
     type,
     summaryPolicy.glossary,
+    postTime,
+    postDate,
   );
 
   const streamFns = {
@@ -2435,6 +2453,7 @@ async function handleStream(
         imageUrl,
         author,
         postTitle,
+        postDate,
       );
     }
     return result;
@@ -2499,11 +2518,12 @@ async function saveHistory(
   imageUrl,
   author,
   postTitle,
+  postDate = null,
 ) {
   const entry = {
     text: text.substring(0, 2000),
     summary,
-    date: new Date().toISOString(),
+    date: postDate ? formatVietnamIsoString(new Date(postDate)) : formatVietnamIsoString(new Date()),
     site: site || "unknown",
     type: type || "summary",
     sourceUrl: sourceUrl || "",
@@ -2690,7 +2710,7 @@ function exportDtcnJson(items) {
     summary: item.summary || "",
     full_body: item.text || "",
     score: item.aiScore || 50,
-    pub_date: item.date || new Date().toISOString(),
+    pub_date: formatVietnamIsoString(item.date ? new Date(item.date) : new Date()),
   }));
 }
 

@@ -7,7 +7,9 @@ function formatViNumber(value) {
 }
 
 function formatViDateTime(value) {
-  return new Date(value).toLocaleString(VI_LOCALE);
+  const d = new Date(value);
+  if (!Number.isFinite(d.getTime())) return "";
+  return d.toLocaleString(VI_LOCALE, { timeZone: "Asia/Ho_Chi_Minh" });
 }
 
 // === THEME ===
@@ -1691,6 +1693,7 @@ async function loadBackupList() {
     backupList.innerHTML = backups.reverse().map((backup, index) => {
       const date = new Date(backup.timestamp);
       const dateStr = date.toLocaleString('vi-VN', {
+        timeZone: 'Asia/Ho_Chi_Minh',
         year: 'numeric',
         month: '2-digit',
         day: '2-digit',

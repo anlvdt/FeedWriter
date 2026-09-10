@@ -3452,7 +3452,8 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
   const _author = _meta?.author || extractPostAuthor(_el);
   const _title = extractPostTitle(_el);
   const _source = _meta?.source || extractPostSource(_el);
-
+  const _postTime = _meta?.postTime || (typeof extractPostTime === "function" ? extractPostTime(_el)?.formatted : "") || "";
+  const _postDate = _meta?.postDate || (typeof extractPostTime === "function" ? extractPostTime(_el)?.iso : "") || "";
   // X exposes a generic page-level OpenGraph image ("See what's happening")
   // when a tweet has no real media. Never attach that branding placeholder to
   // the summary; use the exact rendered tweet as the illustration instead.
@@ -3513,8 +3514,9 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
     author: _author,
     postTitle: _title,
     postSource: _source,
+    postTime: _postTime,
+    postDate: _postDate,
   });
-
   let first = true;
   let streamBuffer = "";
   let streamRafId = null;

@@ -1489,11 +1489,105 @@ function extractPostPermalink(element) {
 }
 
 /**
- * Rich metadata for composer UI: permalink quality + author + source.
+ * Format a Date into Vietnam ISO string (+07:00).
+ */
+function _toVietnamIsoString(date) {
+  const d = date instanceof Date ? date : new Date(date);
+  if (!Number.isFinite(d.getTime())) return "";
+  const tzOffset = 7 * 60; // UTC+7 in minutes
+  const localTime = new Date(d.getTime() + tzOffset * 60 * 1000);
+  return localTime.toISOString().slice(0, 19) + "+07:00";
+}
+
+/**
+ * Format a Date into Vietnam localized date-time string.
+ */
+function _toVietnamDateTimeString(date) {
+  const d = date instanceof Date ? date : new Date(date);
+  if (!Number.isFinite(d.getTime())) return "";
+  try {
+    return d.toLocaleString("vi-VN", {
+      timeZone: "Asia/Ho_Chi_Minh",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }) + " (giờ Việt Nam)";
+  } catch (_) {
+    return _toVietnamIsoString(d);
+  }
+}
+
+/**
+ * Extract timestamp from a post element (Facebook, X, Reddit, Threads, LinkedIn...)
+ * and convert it to Vietnam Time (ICT / UTC+7).
+ */
+function extractPostTime(element) {
+  if (!element) return null;
+  const container = (typeof _findPostContainer === "function" ? _findPostContainer(element) : null) || element;
+
+  // 1. Check time[datetime] (common on X, Reddit, Threads, modern Facebook)
+  const timeEls = container.querySelectorAll("time[datetime]");
+  for (let i = 0; i < Math.min(timeEls.length, 5); i++) {
+    const dt = timeEls[i].getAttribute("datetime");
+    if (dt) {
+      const d = new Date(dt);
+      if (Number.isFinite(d.getTime())) {
+        return {
+          iso: _toVietnamIsoString(d),
+          formatted: _toVietnamDateTimeString(d),
+          raw: dt,
+        };
+      }
+    }
+  }
+
+  // 2. Check abbr[data-utime] (classic Facebook epoch timestamp in seconds)
+  const abbrUtims = container.querySelectorAll("abbr[data-utime]");
+  for (let i = 0; i < Math.min(abbrUtims.length, 5); i++) {
+    const utime = abbrUtims[i].getAttribute("data-utime");
+    if (utime) {
+      const sec = Number(utime);
+      if (Number.isFinite(sec) && sec > 0) {
+        const d = new Date(sec * 1000);
+        if (Number.isFinite(d.getTime())) {
+          return {
+            iso: _toVietnamIsoString(d),
+            formatted: _toVietnamDateTimeString(d),
+            raw: utime,
+          };
+        }
+      }
+    }
+  }
+
+  // 3. Check abbr[title]
+  const abbrTitles = container.querySelectorAll("abbr[title]");
+  for (let i = 0; i < Math.min(abbrTitles.length, 5); i++) {
+    const title = abbrTitles[i].getAttribute("title");
+    if (title && title.length < 50) {
+      const d = new Date(title);
+      if (Number.isFinite(d.getTime())) {
+        return {
+          iso: _toVietnamIsoString(d),
+          formatted: _toVietnamDateTimeString(d),
+          raw: title,
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Rich metadata for composer UI: permalink quality + author + source + post time.
  * quality: exact | constructed | shell | ""
  */
 function extractPostMeta(element) {
-  const empty = { permalink: "", author: "", source: "", quality: "", reason: "" };
+  const empty = { permalink: "", author: "", source: "", quality: "", reason: "", postTime: "", postDate: "" };
   if (!element) return empty;
 
   const postContainer = _findPostContainer(element) || element;
@@ -1505,6 +1599,8 @@ function extractPostMeta(element) {
       source: cached.source,
       quality: cached.quality,
       reason: cached.reason,
+      postTime: cached.postTime || "",
+      postDate: cached.postDate || "",
     };
   }
 
@@ -1541,8 +1637,11 @@ function extractPostMeta(element) {
 
   const author = extractPostAuthor(element);
   const source = extractPostSource(element);
+  const timeInfo = extractPostTime(element);
+  const postTime = timeInfo ? timeInfo.formatted : "";
+  const postDate = timeInfo ? timeInfo.iso : "";
 
-  const result = { permalink, author, source, quality, reason };
+  const result = { permalink, author, source, quality, reason, postTime, postDate };
   _metaCache.set(postContainer, { ...result, timestamp: Date.now() });
   return result;
 }
@@ -3598,6 +3697,7 @@ window.fbsExtractPermalink = extractPostPermalink;
 window.fbsExtractAuthor = extractPostAuthor;
 window.fbsExtractSource = extractPostSource;
 window.fbsExtractMeta = extractPostMeta;
+window.fbsExtractPostTime = extractPostTime;
 window.fbsIsStrongFbPermalink = _isStrongFbPermalink;
 window.fbsIsWeakFbShellUrl = _isWeakFbShellUrl;
 window.fbsIsBareFbPhotoShell = _isBareFbPhotoShell;
