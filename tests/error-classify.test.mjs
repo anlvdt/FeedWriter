@@ -79,4 +79,21 @@ describe("classifyProviderError — no fake quota lockout", () => {
     assert.equal(r.kind, "server");
     assert.equal(r.cooldownMs, 90_000);
   });
+
+  it("classifies 402 / payment-required as billing (6h, not generic 2min)", () => {
+    const r = classify("Payment required to access this resource. Visit your billing tab.", 402);
+    assert.equal(r.kind, "billing");
+    assert.equal(r.cooldownMs, 6 * 60 * 60 * 1000);
+    // Message-only variant (some providers omit the status)
+    assert.equal(
+      classify("insufficient balance for this request", 400).kind,
+      "billing",
+    );
+  });
+
+  it("billing errors are not classified as invalid or rate", () => {
+    const r = classify("402 Payment Required", 402);
+    assert.notEqual(r.kind, "invalid");
+    assert.notEqual(r.kind, "rate");
+  });
 });

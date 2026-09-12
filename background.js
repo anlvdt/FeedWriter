@@ -2518,11 +2518,13 @@ async function handleStream(
         // key briefly still lets other providers/keys try.
         await markKeyCooldown(keyInfo.key, cls.cooldownMs, result.error);
         await markProviderFailureStats(keyInfo.provider);
-        attemptErrors.push(`${keyInfo.provider}: nội dung vượt giới hạn model`);
+        attemptErrors.push(
+          `${keyInfo.provider}: nội dung vượt giới hạn free tier — thử lại sau ~1 phút hoặc rút ngắn bài`,
+        );
         try {
           port.postMessage({
             action: "status",
-            message: `${keyInfo.provider}: nội dung quá dài cho model — thử provider khác...`,
+            message: `${keyInfo.provider}: bài quá lớn cho free tier — thử provider khác...`,
           });
         } catch (_) {}
         continue;
@@ -2540,7 +2542,9 @@ async function handleStream(
       const statusMsg =
         cls.kind === "invalid"
           ? `${keyInfo.provider}: key không hợp lệ — thử key khác...`
-          : cls.kind === "model"
+          : cls.kind === "billing"
+            ? `${keyInfo.provider}: tài khoản cần thanh toán — thử key khác...`
+            : cls.kind === "model"
             ? `${keyInfo.provider}: model không hỗ trợ — thử model mặc định...`
             : cls.kind === "timeout"
               ? `${keyInfo.provider} chậm — thử provider khác...`

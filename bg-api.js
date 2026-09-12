@@ -488,6 +488,14 @@ function classifyProviderError(errMsg = "", status = 0) {
   if (isContextError(errMsg, status)) {
     return { kind: "context", cooldownMs: 30 * 1000 };
   }
+  // Billing/payment errors: the key stays dead until the user upgrades or
+  // tops up — a short generic cooldown would retry a dead key every 2 min.
+  if (
+    status === 402 ||
+    /payment required|billing|insufficient.{0,15}(balance|credit|quota)|credit balance|exceeded.{0,20}current.{0,10}quota|plan.{0,20}(limit|upgrade)/i.test(m)
+  ) {
+    return { kind: "billing", cooldownMs: 6 * 60 * 60 * 1000 }; // 6h
+  }
   if (
     status === 401 ||
     status === 403 ||
