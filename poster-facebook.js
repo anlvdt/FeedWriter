@@ -143,6 +143,19 @@ const PosterFacebook = {
       const urls = postData.images.map(img => img.url);
       if (typeof fetchImageBlobs === "function") {
         imgFiles = await fetchImageBlobs(urls, this.maxImages);
+        // Permission revoked → all fetches silently failed. Offer a re-grant
+        // (banner click is a user gesture) and retry once.
+        if (
+          imgFiles.length === 0 &&
+          typeof didLastImageFetchLackPermission === "function" &&
+          didLastImageFetchLackPermission() &&
+          typeof showImagePermissionBanner === "function"
+        ) {
+          const granted = await showImagePermissionBanner();
+          if (granted) {
+            imgFiles = await fetchImageBlobs(urls, this.maxImages);
+          }
+        }
       }
     }
 

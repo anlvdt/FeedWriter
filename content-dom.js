@@ -2198,6 +2198,68 @@ function extractPostImage(element) {
   return images.length > 0 ? images[0] : "";
 }
 
+// Set when a fetch-image relay was refused for missing host permission, so
+// callers can offer a re-grant prompt instead of silently posting without
+// media. Reset at the start of each fetchImageBlobs() batch.
+let lastImageFetchPermissionDenied = false;
+
+function didLastImageFetchLackPermission() {
+  return lastImageFetchPermissionDenied;
+}
+
+// Floating re-grant prompt for revoked host permission. The grant button
+// click is a user gesture, so chrome.permissions.request succeeds here.
+// Resolves true when permission was granted.
+function showImagePermissionBanner() {
+  return new Promise((resolve) => {
+    const bar = document.createElement("div");
+    bar.setAttribute("data-fbs-ui", "v3");
+    bar.style.cssText =
+      "position:fixed;bottom:20px;left:50%;transform:translateX(-50%);" +
+      "z-index:2147483647;background:#1a2229;color:#eef2f5;padding:10px 16px;" +
+      "border-radius:10px;display:flex;gap:12px;align-items:center;" +
+      "box-shadow:0 12px 32px rgba(0,0,0,.45);font:500 13px/1.4 sans-serif";
+    const label = document.createElement("span");
+    label.textContent = "Không tải được ảnh — extension cần quyền truy cập site";
+    const grant = document.createElement("button");
+    grant.type = "button";
+    grant.textContent = "Cấp quyền";
+    grant.style.cssText =
+      "background:#2dd4bf;color:#0f1518;border:none;border-radius:6px;" +
+      "padding:5px 12px;font:inherit;cursor:pointer";
+    const skip = document.createElement("button");
+    skip.type = "button";
+    skip.textContent = "Bỏ qua";
+    skip.style.cssText =
+      "background:none;color:#9aa7b3;border:1px solid #3a4652;border-radius:6px;" +
+      "padding:5px 12px;font:inherit;cursor:pointer";
+    let settled = false;
+    const finish = (granted) => {
+      if (settled) return;
+      settled = true;
+      try { bar.remove(); } catch (_) {}
+      resolve(granted);
+    };
+    grant.addEventListener("click", async () => {
+      try {
+        const res = await chrome.runtime.sendMessage({
+          action: "request-optional-permission",
+          origins: ["<all_urls>", "https://*/*"],
+        });
+        finish(!!res?.granted);
+      } catch (_) {
+        finish(false);
+      }
+    });
+    skip.addEventListener("click", () => finish(false));
+    bar.appendChild(label);
+    bar.appendChild(grant);
+    bar.appendChild(skip);
+    document.documentElement.appendChild(bar);
+    setTimeout(() => finish(false), 15000);
+  });
+}
+
 async function fetchImageBlob(imgSrc, filename = "image.png") {
   if (!imgSrc) return null;
 
@@ -2282,12 +2344,16 @@ async function fetchImageBlob(imgSrc, filename = "image.png") {
         return new File([blob], filename.replace(/\.\w+$/, "." + ext), { type: blob.type || "image/jpeg" });
       }
     }
+    if (resp && /missing_host_permission/i.test(resp.error || "")) {
+      lastImageFetchPermissionDenied = true;
+    }
   } catch (_) {}
 
   return null;
 }
 
 async function fetchImageBlobs(imgSrcs, maxCount = 10) {
+  lastImageFetchPermissionDenied = false;
   if (!imgSrcs || imgSrcs.length === 0) return [];
   // Facebook limit 10 ảnh/post; giới hạn maxCount
   const targets = imgSrcs.slice(0, maxCount);

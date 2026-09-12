@@ -844,6 +844,18 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
         if (selectedUrls.length > 0) {
           setStatus("Tải " + selectedUrls.length + " ảnh...");
           imgFiles = await fetchImageBlobs(selectedUrls, 10);
+          if (
+            imgFiles.length === 0 &&
+            typeof didLastImageFetchLackPermission === "function" &&
+            didLastImageFetchLackPermission() &&
+            typeof showImagePermissionBanner === "function"
+          ) {
+            setStatus("Cần quyền tải ảnh...");
+            const granted = await showImagePermissionBanner();
+            if (granted) {
+              imgFiles = await fetchImageBlobs(selectedUrls, 10);
+            }
+          }
           console.log("[Manual Post] Fetched", imgFiles.length, "/", selectedUrls.length, "images");
         }
 

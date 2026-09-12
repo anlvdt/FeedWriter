@@ -264,6 +264,7 @@ function selectAvailableKey(opts) {
     provider: null,
     allLimited: true,
     waitMinutes,
+    retryInMs: Math.max(0, soonestTime - now),
     total: totalKeys,
   };
 }
@@ -413,6 +414,7 @@ async function selectAvailableKeyForRequest(preferredProvider = null) {
     provider: null,
     allLimited: true,
     waitMinutes: result.waitMinutes,
+    retryInMs: result.retryInMs,
     total: result.total,
   };
 }

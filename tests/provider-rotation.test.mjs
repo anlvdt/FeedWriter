@@ -228,6 +228,7 @@ describe("selectAvailableKey — all keys limited", () => {
     assert.equal(result.allLimited, true);
     assert.equal(result.total, 2);
     assert.equal(result.waitMinutes, 3); // ceil(2.5)
+    assert.equal(result.retryInMs, 2.5 * 60_000); // exact soonest-unlock ms
     assert.equal(result.key, null);
   });
 
@@ -243,6 +244,7 @@ describe("selectAvailableKey — all keys limited", () => {
     });
     assert.equal(result.allLimited, true);
     assert.equal(result.waitMinutes, 1);
+    assert.equal(result.retryInMs, 100);
   });
 });
 
