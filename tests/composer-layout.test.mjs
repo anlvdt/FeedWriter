@@ -647,6 +647,47 @@ describe("Composer source-card density", () => {
     assert.match(collector, /_expandedXAnchorUrls\(anchor, label\)/);
     assert.match(collector, /"x-expanded-link"/);
   });
+
+  it("rejects raw t.co and shortener links from reference links", () => {
+    assert.match(contentDom, /"t\.co"/);
+    assert.match(contentDom, /shortenerHosts/);
+    const context = vm.createContext({
+      location: { href: "https://x.com/home", hostname: "x.com" },
+      URL,
+      window: {},
+    });
+    vm.runInContext(contentDom, context);
+    const classify = context.window.fbsClassifyRelatedUrl;
+    assert.ok(typeof classify === "function", "fbsClassifyRelatedUrl must be exposed");
+    assert.equal(classify("https://t.co/0EJUnYEgfz"), null);
+    assert.equal(classify("http://t.co/xyz123"), null);
+    assert.equal(classify("https://bit.ly/3xyz"), null);
+    assert.ok(classify("https://github.com/openai/whisper"));
+    assert.ok(classify("https://openai.com/index/voice-api"));
+  });
+
+  it("expands website and service URLs from X anchors while filtering t.co", () => {
+    const context = vm.createContext({
+      location: { href: "https://x.com/home", hostname: "x.com" },
+      URL,
+      window: {},
+    });
+    vm.runInContext(contentDom, context);
+    const expand = context.window.fbsExpandedXAnchorUrls;
+    // Anchor with title pointing to real website
+    const anchorWebsite = {
+      getAttribute: (k) => k === "title" ? "https://openai.com/index/voice-api" : (k === "href" ? "https://t.co/0EJUnYEgfz" : null),
+    };
+    const resultWeb = [...expand(anchorWebsite, "openai.com/index/voice-ap…")];
+    assert.deepEqual(resultWeb, ["https://openai.com/index/voice-api"]);
+
+    // Anchor with pure t.co and no real external destination
+    const anchorShort = {
+      getAttribute: (k) => k === "title" ? "https://t.co/0EJUnYEgfz" : (k === "href" ? "https://t.co/0EJUnYEgfz" : null),
+    };
+    const resultShort = [...expand(anchorShort, "https://t.co/0EJUnYEgfz")];
+    assert.deepEqual(resultShort, []);
+  });
 });
 
 describe("No autonomous Facebook publishing", () => {

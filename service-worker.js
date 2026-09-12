@@ -1,8 +1,205 @@
 /* ==========================================================================
  * FeedWriter service-worker.js (GENERATED — do not edit by hand)
- * Bundle of: utils.js + lib/message-schema.js + bg-prompts.js + bg-api.js + background.js
+ * Bundle of: lib/error-boundary.js + utils.js + lib/message-schema.js + lib/summary-policy.js + lib/model-registry.js + bg-prompts.js + bg-api.js + background.js
  * Rebuild: python3 scripts/build-sw.py
  * ========================================================================== */
+
+/* ===== BEGIN lib/error-boundary.js ===== */
+/**
+ * FeedWriter error boundary + circuit breaker.
+ *
+ * Dependency-free and side-effect-free on load: nothing here registers global
+ * listeners or touches storage by itself. Callers construct what they need.
+ *
+ * Note on storage: background.js restricts chrome.storage.local to
+ * TRUSTED_CONTEXTS, so a content script must NOT write there. Content scripts
+ * report errors through the service worker message bridge instead.
+ */
+"use strict";
+
+(function initErrorBoundary(root) {
+  const SEVERITY = {
+    CRITICAL: "critical",
+    HIGH: "high",
+    MEDIUM: "medium",
+    LOW: "low",
+  };
+
+  const CATEGORY = {
+    NETWORK: "network",
+    API: "api",
+    DOM: "dom",
+    STORAGE: "storage",
+    VALIDATION: "validation",
+    UNKNOWN: "unknown",
+  };
+
+  /** Error carrying classification + user-facing recovery hints. */
+  class FeedWriterError extends Error {
+    constructor(message, options = {}) {
+      super(message);
+      this.name = "FeedWriterError";
+      this.code = options.code || "UNKNOWN_ERROR";
+      this.severity = options.severity || SEVERITY.MEDIUM;
+      this.category = options.category || CATEGORY.UNKNOWN;
+      this.context = options.context || {};
+      this.timestamp = Date.now();
+      this.userMessage = options.userMessage || message;
+      this.retryable = options.retryable === true;
+    }
+
+    toJSON() {
+      return {
+        message: this.message,
+        code: this.code,
+        severity: this.severity,
+        category: this.category,
+        timestamp: this.timestamp,
+        userMessage: this.userMessage,
+        retryable: this.retryable,
+      };
+    }
+  }
+
+  const NETWORK_PATTERN = /network|fetch|econn|enotfound|failed to fetch/i;
+  const TIMEOUT_PATTERN = /timeout|aborted|quá chậm/i;
+  const RATE_PATTERN = /rate limit|quota|too many requests|resource.?exhausted/i;
+  const STORAGE_PATTERN = /storage|quota_bytes|chrome\.storage/i;
+  const DOM_PATTERN = /element|selector|node|dom/i;
+
+  function classify(message) {
+    if (RATE_PATTERN.test(message)) return { category: CATEGORY.API, retryable: true };
+    if (TIMEOUT_PATTERN.test(message)) return { category: CATEGORY.NETWORK, retryable: true };
+    if (NETWORK_PATTERN.test(message)) return { category: CATEGORY.NETWORK, retryable: true };
+    if (STORAGE_PATTERN.test(message)) return { category: CATEGORY.STORAGE, retryable: false };
+    if (DOM_PATTERN.test(message)) return { category: CATEGORY.DOM, retryable: false };
+    return { category: CATEGORY.UNKNOWN, retryable: false };
+  }
+
+  /**
+   * Collects and classifies errors for one execution context.
+   * Keeps a bounded in-memory ring; persistence is the caller's choice.
+   */
+  class ErrorBoundary {
+    constructor(options = {}) {
+      this.name = options.name || "ErrorBoundary";
+      this.onError = typeof options.onError === "function" ? options.onError : null;
+      this.maxLogSize = options.maxLogSize || 50;
+      this.errorLog = [];
+    }
+
+    handleError(error, context = {}) {
+      const enriched = this.enrich(error, context);
+      this.errorLog.push(enriched);
+      if (this.errorLog.length > this.maxLogSize) {
+        this.errorLog = this.errorLog.slice(-this.maxLogSize);
+      }
+      console.error(`[FeedWriter ${this.name}]`, enriched.code, enriched.message);
+      if (this.onError) {
+        try {
+          this.onError(enriched);
+        } catch (handlerError) {
+          console.warn(`[FeedWriter ${this.name}] onError threw:`, handlerError);
+        }
+      }
+      return enriched;
+    }
+
+    enrich(error, context) {
+      if (error instanceof FeedWriterError) {
+        error.context = { ...error.context, ...context };
+        return error;
+      }
+      const message = error?.message || String(error);
+      const { category, retryable } = classify(message);
+      return new FeedWriterError(message, {
+        code: error?.code || "UNCAUGHT",
+        category,
+        retryable,
+        context: { ...context, stack: error?.stack },
+      });
+    }
+
+    getStats() {
+      const byCategory = {};
+      for (const error of this.errorLog) {
+        byCategory[error.category] = (byCategory[error.category] || 0) + 1;
+      }
+      return { total: this.errorLog.length, byCategory, recent: this.errorLog.slice(-10) };
+    }
+
+    clear() {
+      this.errorLog = [];
+    }
+  }
+
+  /**
+   * Circuit breaker: stops hammering a provider that keeps failing.
+   * closed → (threshold failures) → open → (after timeout) → half-open → closed
+   */
+  class CircuitBreaker {
+    constructor(options = {}) {
+      this.name = options.name || "CircuitBreaker";
+      this.threshold = options.threshold || 5;
+      this.timeout = options.timeout || 60_000;
+      this.state = "closed";
+      this.failureCount = 0;
+      this.lastFailureTime = 0;
+    }
+
+    async execute(fn) {
+      if (this.state === "open") {
+        if (Date.now() - this.lastFailureTime <= this.timeout) {
+          throw new FeedWriterError(`${this.name} is unavailable`, {
+            code: "CIRCUIT_OPEN",
+            severity: SEVERITY.HIGH,
+            category: CATEGORY.NETWORK,
+            retryable: true,
+          });
+        }
+        this.state = "half-open";
+      }
+
+      try {
+        const result = await fn();
+        this.failureCount = 0;
+        this.state = "closed";
+        return result;
+      } catch (error) {
+        this.failureCount++;
+        this.lastFailureTime = Date.now();
+        if (this.failureCount >= this.threshold) this.state = "open";
+        throw error;
+      }
+    }
+
+    getState() {
+      return {
+        state: this.state,
+        failureCount: this.failureCount,
+        lastFailureTime: this.lastFailureTime,
+      };
+    }
+
+    reset() {
+      this.state = "closed";
+      this.failureCount = 0;
+      this.lastFailureTime = 0;
+    }
+  }
+
+  const api = {
+    FeedWriterError,
+    ErrorBoundary,
+    CircuitBreaker,
+    SEVERITY,
+    CATEGORY,
+  };
+
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  root.FeedWriterErrorBoundary = api;
+})(typeof globalThis !== "undefined" ? globalThis : this);
+/* ===== END lib/error-boundary.js ===== */
 
 /* ===== BEGIN utils.js ===== */
 // FeedWriter — Utility functions and helpers
@@ -788,13 +985,14 @@ if (typeof globalThis !== "undefined") {
 
 (function initSummaryPolicy(root) {
   const COMMON_TERMS = new Set([
-    "ai", "amd", "api", "app", "addon", "android", "apple", "aws", "camera",
+    "agent", "ai", "amd", "api", "app", "addon", "android", "apple", "aws", "camera",
     "ceo", "chatgpt", "chrome", "comment", "cpu", "css", "facebook", "fb",
     "feed", "firefox", "gb", "google", "gpu", "hcm", "html", "http", "https",
-    "ibm", "iphone", "internet", "link", "nasa", "openai", "plugin", "post",
-    "prompt", "ram", "share", "smartphone", "ssd", "tb", "tiktok", "token",
-    "tp", "update", "url", "usb", "usd", "vnd", "vn", "website", "wifi",
-    "windows", "youtube",
+    "ibm", "iphone", "internet", "link", "local", "low-code", "nasa", "no-code", "node",
+    "openai", "pc", "pipeline", "plugin", "post", "prompt", "ram", "sdk", "share",
+    "smartphone", "ssd", "tb", "tiktok", "token", "tp", "ui", "update", "url",
+    "usb", "usd", "ux", "vnd", "vn", "website", "wifi", "windows", "workflow",
+    "youtube",
   ]);
 
   const KNOWN_TECH_TERMS = [
@@ -1053,6 +1251,159 @@ if (typeof globalThis !== "undefined") {
 })(typeof globalThis !== "undefined" ? globalThis : this);
 /* ===== END lib/summary-policy.js ===== */
 
+/* ===== BEGIN lib/model-registry.js ===== */
+/**
+ * FeedWriter model registry.
+ *
+ * Single source of truth for which models each provider can run. The service
+ * worker bundle includes this file (see scripts/build-sw.py) and the popup
+ * loads it via <script>; tests require() it. Keep dependency-free.
+ *
+ * Custom model IDs are allowed — the registry lists known-good options but
+ * resolveModel() accepts any sane non-empty string so users can adopt new
+ * provider models without waiting for an extension update.
+ */
+"use strict";
+
+(function initModelRegistry(root) {
+  const DEFAULT_MODELS = {
+    groq: "openai/gpt-oss-120b",
+    cerebras: "gpt-oss-120b",
+    sambanova: "Meta-Llama-3.3-70B-Instruct",
+    gemini: "gemini-3.1-flash-lite",
+    openrouter: "openai/gpt-oss-120b",
+  };
+
+  // Known-good models per provider, offered as datalist suggestions in the
+  // popup. Order: default first, then sensible alternatives. Verified against
+  // provider model catalogs 2026-09 — e.g. gemini-2.0-flash shut down
+  // 2026-06-01, Cerebras/SambaNova dropped the small Llama 8B/3.1 models.
+  const MODEL_REGISTRY = {
+    groq: [
+      { id: "openai/gpt-oss-120b", label: "GPT OSS 120B (mặc định)" },
+      { id: "llama-3.3-70b-versatile", label: "Llama 3.3 70B Versatile" },
+      { id: "meta-llama/llama-4-scout-17b-16e-instruct", label: "Llama 4 Scout 17B" },
+      { id: "qwen/qwen3-32b", label: "Qwen3 32B" },
+      { id: "openai/gpt-oss-20b", label: "GPT OSS 20B (nhẹ, nhanh)" },
+    ],
+    cerebras: [
+      { id: "gpt-oss-120b", label: "GPT OSS 120B (mặc định)" },
+      { id: "zai-glm-4.7", label: "GLM 4.7" },
+    ],
+    sambanova: [
+      { id: "Meta-Llama-3.3-70B-Instruct", label: "Llama 3.3 70B (mặc định)" },
+      { id: "gpt-oss-120b", label: "GPT OSS 120B" },
+      { id: "DeepSeek-V3.1", label: "DeepSeek V3.1" },
+      { id: "MiniMax-M2.7", label: "MiniMax M2.7" },
+    ],
+    gemini: [
+      { id: "gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite (mặc định, free tier)" },
+      { id: "gemini-3-flash-preview", label: "Gemini 3 Flash (preview, free tier)" },
+      { id: "gemini-3.5-flash", label: "Gemini 3.5 Flash" },
+      { id: "gemini-3.6-flash", label: "Gemini 3.6 Flash" },
+      { id: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro (trả phí)" },
+      { id: "gemini-flash-latest", label: "Flash mới nhất (auto hot-swap)" },
+    ],
+    openrouter: [
+      { id: "openai/gpt-oss-120b", label: "GPT OSS 120B (mặc định)" },
+      { id: "openai/gpt-oss-20b", label: "GPT OSS 20B (nhẹ)" },
+      { id: "meta-llama/llama-3.3-70b-instruct", label: "Llama 3.3 70B Instruct" },
+      { id: "qwen/qwen3-32b", label: "Qwen3 32B" },
+      { id: "google/gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite (qua OR)" },
+    ],
+  };
+
+  const PROVIDER_LABELS = {
+    groq: "Groq",
+    cerebras: "Cerebras",
+    sambanova: "SambaNova",
+    gemini: "Gemini",
+    openrouter: "OpenRouter",
+  };
+
+  // Lighter/cheaper models for low-stakes tasks (translate, test-connection).
+  // Summaries keep the default model for quality; these calls just need speed.
+  const FAST_MODELS = {
+    groq: "openai/gpt-oss-20b",
+    // Cerebras has no smaller public model — gpt-oss-120b is already ~3k tok/s.
+    cerebras: "gpt-oss-120b",
+    // SambaNova removed Meta-Llama-3.1-8B-Instruct 2026-04-14.
+    sambanova: "gpt-oss-120b",
+    gemini: "gemini-3.1-flash-lite",
+    openrouter: "openai/gpt-oss-20b",
+  };
+
+  // Tasks that may use the fast tier. Anything not listed uses the default.
+  const FAST_TASKS = new Set(["translate", "test"]);
+
+  // Model IDs are provider-defined slugs: letters, digits, dots, dashes,
+  // slashes, colons (OpenRouter :free suffix), underscores.
+  const MODEL_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._\-/:]{0,119}$/;
+
+  function isValidModelId(id) {
+    return typeof id === "string" && MODEL_ID_RE.test(id);
+  }
+
+  function listModels(provider) {
+    return MODEL_REGISTRY[provider] || [];
+  }
+
+  function defaultModel(provider) {
+    return DEFAULT_MODELS[provider] || "";
+  }
+
+  function fastModel(provider) {
+    return FAST_MODELS[provider] || defaultModel(provider);
+  }
+
+  /**
+   * Resolve which model a provider should run.
+   * @param {string} provider
+   * @param {object} [overrides] - { [provider]: modelId } from storage
+   * @param {string} [task] - "translate" | "test" route to the fast tier
+   * @returns {string} model id — override if valid, else tier-appropriate default
+   */
+  function resolveModel(provider, overrides, task) {
+    const custom = overrides && overrides[provider];
+    if (isValidModelId(custom)) return custom.trim();
+    if (task && FAST_TASKS.has(task)) return fastModel(provider);
+    return defaultModel(provider);
+  }
+
+  /**
+   * Sanitize a raw overrides map from storage: drop unknown providers and
+   * malformed ids so a corrupt/crafted storage value can't inject a bad URL
+   * segment (Gemini embeds the model in the request path).
+   */
+  function sanitizeOverrides(raw) {
+    const clean = {};
+    if (!raw || typeof raw !== "object") return clean;
+    for (const provider of Object.keys(DEFAULT_MODELS)) {
+      const v = raw[provider];
+      if (isValidModelId(v)) clean[provider] = v.trim();
+    }
+    return clean;
+  }
+
+  const api = {
+    MODEL_REGISTRY,
+    DEFAULT_MODELS,
+    FAST_MODELS,
+    FAST_TASKS,
+    PROVIDER_LABELS,
+    isValidModelId,
+    listModels,
+    defaultModel,
+    fastModel,
+    resolveModel,
+    sanitizeOverrides,
+  };
+
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  root.FeedWriterModelRegistry = api;
+})(typeof globalThis !== "undefined" ? globalThis : this);
+/* ===== END lib/model-registry.js ===== */
+
 /* ===== BEGIN bg-prompts.js ===== */
 // === IMPROVED PROMPTS based on Vietnamese NLP research ===
 // References: VietAI ViT5, Underthesea, Vietnamese summarization best practices
@@ -1074,21 +1425,31 @@ CHẾ ĐỘ BẮT BUỘC — VIẾT LẠI THÀNH BẢN TIN:
 - Nếu nguồn chỉ là trải nghiệm của một cá nhân, không biến trải nghiệm thành sự thật chung. Tiêu đề ưu tiên cấu trúc như "[Sản phẩm/tính năng] bị phản ánh..."; thông tin "theo trải nghiệm của một người dùng" để trong thân bài khi cần giữ mức chắc chắn.
 - Tránh cụm từ máy móc hoặc dịch sát khiến tiếng Việt gượng. Ví dụ, ưu tiên "cải thiện khả năng thẩm mỹ" hơn "tăng mức thẩm mỹ" khi đúng nghĩa nguồn.
 - Ví dụ SAI: "GPT-6 tăng mức thẩm mỹ người dùng đề xuất cài plugin Product Designs cho Codex". Ví dụ ĐÚNG: "GPT-6 được đánh giá cao hơn về thẩm mỹ, Product Designs được gợi ý cho Codex".
+- Tiêu đề công nghệ: Giữ nguyên các thuật ngữ phổ biến (no-code, prompt, model, AI agent, PC, local...). CẤM dịch thô làm tiêu đề tối nghĩa (Ví dụ SAI: "CÔNG CỤ AI KHÔNG MÃ KÉO-THẢ TRÊN MÁY TÍNH CÁ NHÂN"; Ví dụ ĐÚNG: "CÔNG CỤ AI NO-CODE KÉO THẢ TRÊN PC").
 - Lead 1-2 câu phải nêu ngay sản phẩm/công ty/tính năng hoặc sự kiện chính, thay đổi/kết quả và tác động; không mở bằng việc một người đã đọc, thử, phát hiện, chia sẻ hay đăng bài.
 - Công thức Lead 3W siêu cô đọng: What (Sự việc gì?) + Who/Which (Sản phẩm/hãng nào?) + Why (Tại sao quan trọng/tác động gì?). Đi thẳng vào sự kiện, không mở bài bằng bối cảnh chung chung hay câu dẫn rỗng.
 - DÙNG TIẾNG VIỆT TỰ NHIÊN, CHỐNG DỊCH MÁY: Tránh dịch nguyên ngữ thô cứng từ tiếng Anh. Viết gãy gọn, chủ động: "hỗ trợ/cho phép" thay vì "cung cấp khả năng cho phép", "nhằm" thay vì "được thiết kế nhằm mục đích", "đối với" thay vì "trong trường hợp của", "gọi API" thay vì "thực hiện cuộc gọi API".
+- QUY TẮC THUẬT NGỮ CNTT VÀ AI:
+  + Giữ nguyên các thuật ngữ tiếng Anh phổ biến mà giới công nghệ Việt Nam sử dụng hàng ngày: no-code, low-code, prompt, token, model, pipeline, workflow, framework, runtime, benchmark, fine-tune / fine-tuning, inference, AI agent, repo / repository, commit, pull request, plugin, UI/UX, client/server, backend/frontend, container, Docker image, dataset, render, cache, build, deploy, cloud, PC, local.
+  + TUYỆT ĐỐI CẤM dịch máy thô cứng từng chữ: CẤM dịch "no-code" thành "không mã", CẤM "mã thấp" cho low-code, CẤM "không mã kéo-thả" (dùng "no-code kéo thả" hoặc "kéo thả không cần code"), CẤM "máy tính cá nhân" khi nói về PC/local (dùng "trên PC" hoặc "chạy local / trên máy"), CẤM "đường ống" cho pipeline, CẤM "đại lý AI" cho AI agent, CẤM "thời gian chạy" cho runtime, CẤM "khách hàng" cho client trong hệ thống client-server.
+  + Dùng từ tiếng Việt tự nhiên, chuẩn xác khi đã có thuật ngữ tương đương phổ biến: mã nguồn mở (open-source), lập trình viên / kỹ sư (developer/coder), mã nguồn (source code — CẤM dịch code/coding là mã hóa; mã hóa là encrypt/encode), giao diện (UI), tính năng (feature — không dùng đặc trưng cho phần mềm), bản cập nhật (update), bản vá (patch), độ trễ (latency), băng thông (throughput), mô hình (model), huấn luyện (training), suy luận (inference).
 - LỌC SẠCH NGÔN TỪ PR VÀ TÂNG BỐC: Loại bỏ hoàn toàn các tính từ phóng đại trong thông cáo báo chí hoặc bài PR (như "mang tính cách mạng", "đột phá lịch sử", "hoàn hảo", "siêu phẩm", "thần thánh"). Chỉ giữ lại thông số kỹ thuật, tính năng và kết quả kiểm nghiệm thực tế.
 - PHÂN BIỆT RÕ RÀNG GIỮA TIN ĐỒN VÀ DỮ KIỆN XÁC NHẬN: Mọi thông tin từ rò rỉ, bằng sáng chế, leaker hay suy đoán phải dùng đúng từ chỉ mức độ ("được đồn đoán", "theo nguồn tin rò rỉ", "đang thử nghiệm"), tuyệt đối không khẳng định như sự thật đã công bố chính thức.
 - Sau lead, dùng số đoạn linh hoạt để giữ ĐỦ mọi luận điểm và dữ kiện có giá trị. Mỗi đoạn một ý (khoảng 2-3 câu, 35-65 từ); tiếp tục cho đến khi không còn ý riêng biệt nào trong nguồn.
 - Chỉ bỏ câu lặp, lời chào, lời mời tương tác, diễn biến vụn và ví dụ không mang thêm luận điểm. Không được bỏ ý chỉ để ép độ dài.
 - Sự kiện kiểm chứng được có thể viết trực tiếp. Ý kiến, dự đoán, cáo buộc hoặc trải nghiệm chủ quan phải được thể hiện là nhận định; chỉ gán cho cá nhân/tổ chức khi nguồn nêu rõ danh tính.
 - Không biến nhận định của nguồn thành sự thật. Giữ đúng người phát biểu, số người và mức chắc chắn; một lời kể không đại diện cho cộng đồng. Không mở bài bằng "tác giả chia sẻ", "người viết cho biết" hay câu dẫn nguồn chung chung.
-- CẤM ngôi thứ nhất và thứ hai. CẤM các lối kể "sau đó", "tiếp theo", "cuối cùng", "câu chuyện bắt đầu" trừ khi trình tự thời gian là dữ kiện thiết yếu.
+- ĐƯA TIN TỪ NGÔI THỨ NHẤT (VỊ THẾ NGƯỜI ĐƯA TIN TRỰC TIẾP):
+  + Người viết đóng vai trò là chủ thể trực tiếp đưa tin (ngôi thứ nhất) tới bạn đọc, tự tin, chủ động và mang lại cảm giác tin tức nóng hổi, chân thực. Có thể xưng hô và hướng tới độc giả ("bạn") một cách tự nhiên, thân thiện (ví dụ: "Nếu bạn quan tâm đến...", "Bạn có thể trải nghiệm...").
+  + TUYỆT ĐỐI CẤM CÁC CÂU TỰ XƯNG MÁY MÓC / META-TALK: Cấm mở đầu câu hoặc bài viết bằng các cụm từ tự giới thiệu bản thân như: "Tôi đưa tin về...", "Tôi xin chia sẻ về...", "Hôm nay tôi đưa tin...", "Tôi sẽ tóm tắt...", "Tôi giới thiệu về...". Bản tin PHẢI đi thẳng vào tên sản phẩm, công nghệ hoặc sự kiện chính!
+  + TUYỆT ĐỐI CẤM KIỂU THUẬT LẠI GIÁN TIẾP: Cấm mở đầu câu hoặc dẫn dắt bằng các cụm từ thuật lại như "[Hãng/Công ty] cho biết / cho hay / tuyên bố / thông báo...", "Theo một bài đăng trên X / Facebook / mạng xã hội...", "Theo bài viết...", "Tác giả chia sẻ rằng...", "Một người dùng phản ánh...".
+  + Hãy chuyển toàn bộ sang câu khẳng định sự kiện/hành động trực tiếp: Thay vì "OpenAI cho biết hệ thống giọng nói đã được triển khai...", PHẢI viết: "OpenAI vừa chính thức mở API giọng nói cho các nhà phát triển sau khi hệ thống này đạt hơn 1 tỷ người dùng ChatGPT...".
+  + CẤM các lối kể rườm rà "sau đó", "tiếp theo", "cuối cùng", "câu chuyện bắt đầu" trừ khi trình tự thời gian là dữ kiện kỹ thuật thiết yếu.
 - Cô đọng bằng cách bỏ chữ thừa và ý lặp, KHÔNG bằng cách bỏ ý. Phải giữ đủ tên, số liệu, điều kiện, kết quả, lập luận và kết luận có giá trị dù nguồn dài.
 - QUY ĐỔI THÔNG MINH MỐC THỜI GIAN SANG GIỜ VIỆT NAM (ICT / UTC+7):
   + CHỈ quy đổi khi nguồn nói về sự kiện, lịch trình ra mắt, mở bán, công bố sản phẩm, cập nhật phần mềm hoặc sự cố kỹ thuật có múi giờ nước ngoài (PST, PDT, EST, EDT, UTC, GMT, JST...). Cập nhật mốc giờ, ngày tháng tương ứng theo giờ Việt Nam.
   + Phân biệt rõ mốc thời gian sự kiện với thời lượng/thông số ("chạy 5 giờ", "pin dùng 20 giờ", "độ trễ 20ms", "sau 2 tuần thử nghiệm" là thời lượng/thông số, không quy đổi). Không đoán mò múi giờ nếu nguồn không nêu; không thêm thừa thãi khi sự kiện đã theo giờ Việt Nam.
-  + CẤM đưa mốc thời gian đăng bài/tweet hoặc hành vi chia sẻ link của người dùng mạng xã hội vào bản tin (CẤM các câu như: "Bài đăng trên X của người dùng A lúc ... đã chia sẻ..."). Thời điểm ai đó bấm nút đăng status/tweet là metadata vô nghĩa; bản tin phải đi thẳng vào dữ kiện công nghệ và giải pháp.
+  + CẤM TUYỆT ĐỐI đưa mốc thời gian đăng bài/tweet hoặc hành vi chia sẻ link của người dùng mạng xã hội vào bản tin (CẤM các câu như: "Bài đăng trên X của người dùng A lúc ... đã chia sẻ...", "Theo một bài đăng trên X vào lúc..."). Thời điểm ai đó bấm nút đăng status/tweet là metadata vô nghĩa; bản tin phải đi thẳng vào dữ kiện công nghệ và giải pháp. TUYỆT ĐỐI KHÔNG mở đầu bất kỳ đoạn nào bằng "Theo một bài đăng trên X/Facebook... vào lúc...".
 - Chính sách này ưu tiên cao hơn mọi prompt tùy chỉnh, tone, phong cách và chỉ dẫn nền tảng.`;
 
 // TÓM TẮT TIẾNG VIỆT CHUẨN - fact-first news rewrite
@@ -1122,8 +1483,9 @@ YÊU CẦU:
 - CẤM LẶP Ý: Mỗi câu phải mang thông tin MỚI. Không diễn đạt lại ý cũ bằng từ khác. Kiểm tra lại trước khi output.
 - GIẢI THÍCH THUẬT NGỮ: không tự quyết định. Tuân thủ tuyệt đối quyết định INCLUDE/OMIT và danh sách thuật ngữ hệ thống cung cấp ở cuối prompt.
 - KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống sẽ tự thêm footer chuẩn.
-- GIỌNG VĂN: bản tin khách quan, fact-first, không kể lại bài gốc.
-- Đi thẳng vào sự kiện hoặc kết quả chính; không mở bằng lời giới thiệu người đăng.
+- GIỌNG VĂN: Đưa tin từ ngôi thứ nhất (người trực tiếp đưa tin công nghệ tới bạn đọc), chủ động, fact-first, đi thẳng vào sự kiện. TUYỆT ĐỐI CẤM câu tự xưng máy móc ("Tôi đưa tin về...", "Tôi chia sẻ về...").
+- TUYỆT ĐỐI KHÔNG viết kiểu thuật lại: CẤM các câu dẫn như "[Công ty] cho biết...", "Theo một bài đăng trên X vào lúc...", "Theo chia sẻ từ...".
+- Đi thẳng vào sự kiện hoặc kết quả chính; không mở bằng lời giới thiệu người đăng hay hành vi đăng bài.
 - Giọng tự nhiên, dễ hiểu, chính xác và cô đọng.
 - Giữ TOÀN BỘ thông tin có giá trị thực, dữ liệu, kết luận
 - Bỏ ví dụ dài không cần thiết, nhưng GIỮ các thông tin quan trọng
@@ -1133,6 +1495,7 @@ YÊU CẦU:
 - CẤM lạm dụng sở hữu "của bạn", "của mình", "của chúng ta". Viết trực tiếp: "iPhone báo đầy bộ nhớ" thay vì "iPhone của bạn báo đầy bộ nhớ". Chỉ dùng khi thật sự cần phân biệt sở hữu.
 - Nhịp đoạn theo ý nghĩa: câu ngắn nêu việc, câu vừa giải thích. Không áp tỷ lệ hay độ dài đoạn cố định; mỗi đoạn bổ sung thông tin mới.
 - Diễn đạt tiếng Việt tự nhiên, gãy gọn; tránh dịch máy thô cứng từ tiếng Anh.
+- Giữ nguyên các thuật ngữ CNTT/AI quen thuộc (no-code, prompt, model, token, pipeline, benchmark, AI agent, kéo thả, PC, local); CẤM dịch thô máy móc kiểu "không mã kéo-thả", "máy tính cá nhân", "đường ống", "đại lý AI".
 - Lọc sạch từ ngữ PR, quảng cáo tâng bốc (cách mạng, hoàn hảo, siêu phẩm, đỉnh cao).
 - MỐC THỜI GIAN: Chỉ quy đổi các mốc thời gian là sự kiện công nghệ thực tế (lịch ra mắt, công bố, phát hành, sự cố...) sang giờ Việt Nam (UTC+7). Không quy đổi thời lượng hay thông số (pin 20 giờ, độ trễ 10ms). CẤM đưa thời điểm ai đó đăng bài/tweet/bình luận vào bản tin; CẤM câu tường thuật hành vi đăng bài ("Bài đăng trên X của người dùng... đã chia sẻ...").
 - Trả lời bằng tiếng Việt`;
@@ -1145,7 +1508,7 @@ Yêu cầu:
 - Sau tiêu đề: 1 dòng trống. Viết ngắn nhất có thể nhưng phải giữ đủ mọi ý riêng biệt; số câu tăng theo lượng thông tin của nguồn.
 - CẤM khung mở/thân/kết. CẤM câu hỏi mở. CẤM câu sáo.
 - Viết như bản tin ngắn theo kim tự tháp ngược. Không kể lại và không giữ giọng tác giả.
-- Giọng tự nhiên
+- Giọng tự nhiên, đi thẳng vào sự kiện; CẤM câu tự xưng ("Tôi đưa tin về..."). Giữ nguyên thuật ngữ CNTT phổ biến (no-code, prompt, model, token, PC, local...).
 - Mốc thời gian: Chỉ quy đổi mốc thời gian của sự kiện công nghệ thực tế sang giờ Việt Nam (UTC+7), không đưa thời điểm đăng bài mạng xã hội vào bản tin.
 - GIẢI THÍCH THUẬT NGỮ: tuân thủ quyết định INCLUDE/OMIT và danh sách do hệ thống cung cấp.
 - KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống tự thêm`;
@@ -1159,7 +1522,7 @@ YÊU CẦU:
 - Dòng đầu tiên: tiêu đề có hook mạnh nhưng fact-based, tối đa 20 từ; chọn góc dữ kiện nổi bật nhất từ nguồn. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
 - Sau tiêu đề: 1 dòng trống
 - Tóm đúng dữ liệu gốc, mỗi ý một đoạn, cách 1 dòng trống. CẤM khung mở/thân/kết. CẤM câu sáo. CẤM câu hỏi mở.
-- Viết như bản tin khách quan theo kim tự tháp ngược. Không kể lại và không giữ giọng tác giả.
+- Viết như bản tin khách quan theo kim tự tháp ngược. Không kể lại và không giữ giọng tác giả; CẤM câu tự xưng ("Tôi đưa tin về..."). Giữ nguyên thuật ngữ CNTT phổ biến (no-code, prompt, model, token, pipeline, AI agent, PC, local...).
 - Mốc thời gian: Chỉ quy đổi mốc thời gian của sự kiện công nghệ thực tế sang giờ Việt Nam (UTC+7), không đưa thời điểm đăng bài mạng xã hội vào bản tin.
 - GIẢI THÍCH THUẬT NGỮ: tuân thủ quyết định INCLUDE/OMIT và danh sách do hệ thống cung cấp.
 - KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống tự thêm`;
@@ -1174,7 +1537,7 @@ Quy tắc:
 - CẤM khung mở/thân/kết. CẤM câu hỏi mở. CẤM câu sáo.
 - Ưu tiên thông tin có giá trị, dữ liệu, kết luận
 - Bỏ ví dụ không mang thêm luận điểm; giữ đầy đủ dữ kiện và kết quả.
-- Mỗi bullet là một dữ kiện báo chí độc lập, xếp từ quan trọng đến bổ sung. Không kể lại nguồn.
+- Mỗi bullet là một dữ kiện báo chí độc lập, xếp từ quan trọng đến bổ sung. Không kể lại nguồn; CẤM câu tự xưng ("Tôi đưa tin về..."). Giữ nguyên thuật ngữ CNTT phổ biến (no-code, drag-and-drop / kéo thả, prompt, model, token, PC...).
 - Không giới hạn cứng số bullet; giữ một bullet cho mỗi dữ kiện/luận điểm riêng biệt có giá trị.
 - Mốc thời gian: Chỉ quy đổi mốc thời gian của sự kiện công nghệ thực tế sang giờ Việt Nam (UTC+7), không đưa thời điểm đăng bài mạng xã hội vào bản tin.
 - GIẢI THÍCH THUẬT NGỮ: tuân thủ quyết định INCLUDE/OMIT và danh sách do hệ thống cung cấp.
@@ -1191,8 +1554,12 @@ QUY TẮC CHÍNH TẢ VÀ HÀNH VĂN BẮT BUỘC:
 - Dấu câu sát từ phía trước, cách từ phía sau; bên trong ngoặc không có khoảng trắng thừa. Không thêm dấu phẩy trước 'và' trong phép liệt kê.
 - Không dùng gạch ngang dài. Dấu hai chấm dành cho giờ, trích dẫn, liệt kê, nhãn bullet hoặc glossary theo schema; không ép thêm vào tiêu đề và câu văn.
 - Chỉ viết hoa đầu câu và tên riêng; hệ thống xử lý cách hiển thị tiêu đề. Giữ nguyên tên sản phẩm, mã phiên bản, URL, identifier và trích dẫn; không sửa dấu nối bên trong tên.
-- Không trộn tiếng Anh khi có cách nói Việt rõ nghĩa. Giữ tên riêng và thuật ngữ phổ biến như AI, API, GPU. Chỉ giải thích thuật ngữ theo quyết định INCLUDE/OMIT của hệ thống.
-- Công nghệ: code/coding là lập trình hoặc code, không phải mã hóa; coder là lập trình viên; source code là mã nguồn.
+- Thuật ngữ chuyên ngành CNTT và AI:
+  + Giữ nguyên các thuật ngữ tiếng Anh phổ biến mà giới công nghệ Việt Nam sử dụng hàng ngày: no-code, low-code, prompt, token, model, pipeline, workflow, framework, runtime, benchmark, fine-tune / fine-tuning, inference, AI agent, repo / repository, commit, pull request, plugin, UI/UX, client/server, backend/frontend, full-stack, container, Docker image, dataset, render, cache, build, deploy, cloud, PC (dùng "trên PC" hoặc "trên máy tính", tránh cồng kềnh "trên máy tính cá nhân" ở tiêu đề), local (chạy local / trực tiếp trên máy).
+  + Cụm kỹ thuật như "no-code drag-and-drop" dịch tự nhiên, dễ hiểu: "công cụ no-code kéo thả" hoặc "kéo thả không cần code", TUYỆT ĐỐI TRÁNH dịch thô như "không mã kéo-thả".
+  + CẤM dịch máy thô cứng, ngô nghê: CẤM "không mã" (thay bằng "no-code"), CẤM "mã thấp" (thay bằng "low-code"), CẤM "đường ống" cho pipeline, CẤM "đại lý AI" cho AI agent, CẤM "thời gian chạy" cho runtime, CẤM "khách hàng" cho client trong hệ thống client-server, CẤM "hình ảnh" cho Docker image.
+  + Công nghệ: code/coding là lập trình hoặc code, không phải mã hóa; coder là lập trình viên; source code là mã nguồn. Dùng từ chuẩn xác: mã nguồn mở (open-source), tính năng (feature), giao diện (UI), bản cập nhật (update), bản vá (patch), độ trễ (latency), băng thông (throughput).
+  + Không trộn tiếng Anh khi có cách nói Việt rõ nghĩa. Giữ tên riêng và thuật ngữ phổ biến như AI, API, GPU. Chỉ giải thích thuật ngữ theo quyết định INCLUDE/OMIT của hệ thống.
 - Số liệu theo chuẩn Việt Nam: dùng dấu chấm phân nhóm hàng nghìn và dấu phẩy cho phần thập phân (ví dụ 1.234,56). Không đổi dấu trong phiên bản, model, URL, mã định danh hoặc chuỗi kỹ thuật.
 - Dùng chữ số cho tuổi, số lượng, khoảng cách, phần trăm, tỷ lệ, nhiệt độ, giá và model. Giữ nguyên giá trị, điều kiện và phạm vi từ nguồn; viết đơn vị đo theo hệ mét và cách viết thông dụng tại Việt Nam. Chỉ quy đổi đơn vị khi phép quy đổi chính xác và không làm sai độ chính xác của nguồn; nếu không thì giữ nguyên đơn vị gốc.
 - Tiền tệ đặt sau số và viết rõ là USD, euro, yên, bảng Anh hoặc đồng (ví dụ 1.200 USD, 299.000 đồng), không dùng ký hiệu $/€/£ trong câu tiếng Việt. Có thể viết nghìn/triệu/tỷ nếu giữ chính xác giá trị; không tự làm tròn hoặc tự quy đổi ngoại tệ sang đồng khi nguồn không cung cấp tỷ giá.
@@ -1202,12 +1569,18 @@ QUY TẮC CHÍNH TẢ VÀ HÀNH VĂN BẮT BUỘC:
     * Thời lượng và thông số: 'pin dùng 20 giờ', 'chạy suốt 4 giờ', 'sau 3 ngày thử nghiệm', 'thời gian sạc 30 phút', 'độ trễ 10ms' là thời lượng/thông số kỹ thuật, TUYỆT ĐỐI KHÔNG quy đổi hay thêm '(giờ Việt Nam)'.
     * Nguồn không có múi giờ: Nếu bài gốc chỉ nói 'lúc 10h' mà không có múi giờ, giữ nguyên như nguồn, KHÔNG tự đoán mò múi giờ để quy đổi sai lệch.
     * Sự kiện tại Việt Nam: Nếu sự kiện diễn ra tại Việt Nam hoặc nguồn trong nước đã dùng giờ Việt Nam, không chèn thêm '(giờ Việt Nam)' thừa thãi.
-    * Metadata mạng xã hội: TUYỆT ĐỐI KHÔNG đưa mốc thời gian đăng bài, chia sẻ link hay bình luận của người dùng trên mạng xã hội vào bản tin (CẤM các câu như: 'Bài đăng trên X của người dùng A vào lúc 17:10 ngày 10/9 đã chia sẻ...', 'Lúc 8h sáng một tài khoản đăng bài...'). Thời điểm ai đó bấm nút đăng status/tweet là metadata vô nghĩa, không phải tin tức công nghệ. Đi thẳng vào sản phẩm, tính năng và bản chất sự kiện.
+    * Metadata mạng xã hội: TUYỆT ĐỐI KHÔNG đưa mốc thời gian đăng bài, chia sẻ link hay bình luận của người dùng trên mạng xã hội vào bản tin (CẤM các câu như: 'Bài đăng trên X của người dùng A vào lúc 17:10 ngày 10/9 đã chia sẻ...', 'Lúc 8h sáng một tài khoản đăng bài...', 'Theo một bài đăng trên X vào lúc...'). Thời điểm ai đó bấm nút đăng status/tweet là metadata vô nghĩa, không phải tin tức công nghệ. Đi thẳng vào sản phẩm, tính năng và bản chất sự kiện.
 - Không viết tắt địa danh trong văn xuôi: Việt Nam, Hà Nội. Không thêm emoji hoặc icon; chữ tiếng Việt và ký hiệu đơn vị vẫn được giữ.
 - Không bịa tên, số, thông số, mức độ phổ biến hay phản ứng cộng đồng. Một lời kể chỉ đại diện người kể; không biến thành 'nhiều người dùng' hoặc cam kết của sản phẩm.
 - Diễn đạt gãy gọn, chuẩn tiếng Việt hiện đại. CẤM các cấu trúc dịch máy thô: không dùng 'cung cấp khả năng cho phép', 'được thiết kế nhằm mục đích', 'đóng vai trò như là', 'mang lại sự cải thiện', 'tiến hành thực hiện'. CẤM dịch thô từng chữ các cụm thành ngữ tiếng Anh: không dùng 'vào cuối ngày' (thay bằng 'xét cho cùng'), 'chơi một vai trò' (thay bằng 'đóng vai trò'), 'có ý nghĩa' khi dịch make sense (thay bằng 'hợp lý/dễ hiểu'). Dùng từ nối tự nhiên khi chuyển ý: 'Tuy nhiên', 'Ngoài ra', 'May thay', 'Đó là lý do'.
 - Độ dài câu hợp lý: ưu tiên câu 15-25 từ, tối đa 35 từ. Ngắt câu mạch lạc bằng dấu chấm, tránh câu ghép quá nhiều vế phụ rườm rà.
-- Giữ giọng điệu trung lập, khách quan: loại bỏ các từ ngữ tâng bốc PR (đột phá mang tính cách mạng, hoàn hảo, siêu phẩm, đỉnh cao, thần thánh).`;
+- Giữ giọng điệu trung lập, khách quan: loại bỏ các từ ngữ tâng bốc PR (đột phá mang tính cách mạng, hoàn hảo, siêu phẩm, đỉnh cao, thần thánh).
+- THỊ HIẾU NGƯỜI ĐỌC VIỆT:
+  + Tiêu đề theo khẩu vị báo Việt: chủ thể đứng đầu, động từ hành động rõ, kết quả/hệ quả theo sau ("iPhone 17 tăng giá 1,5 triệu đồng"). Tránh cấu trúc bị động dài và danh từ hóa nặng nề ("việc cải thiện khả năng").
+  + Động từ mạnh, cụ thể: "ra mắt", "tăng giá", "vá lỗi", "cắt giảm", "mở rộng" thay vì "thực hiện", "tiến hành", "đưa ra" khi nguồn cho phép.
+  + Quan hệ nhân quả nêu trực tiếp bằng "vì/vì thế/nên" khi nguồn thể hiện rõ; không suy diễn nguyên nhân.
+  + Cụm từ đời báo Việt quen thuộc được ưu tiên: "theo công bố", "dự kiến", "vừa ra mắt", "lần đầu tiên" — dùng đúng mức độ chắc chắn của nguồn.
+  + Không đảo cấu trúc kiểu dịch ("Việc X đã được Y thực hiện" → "Y thực hiện X"). Ưu tiên trật tự Chủ ngữ - Động từ - Tân ngữ tự nhiên của tiếng Việt.`;
 
 // BẢN TIN CÓ CẤU TRÚC - retain useful sections, never source chronology
 const SUMMARY_STRUCTURED_PROMPT = `Bạn là biên tập viên bản tin có cấu trúc.
@@ -1286,7 +1659,7 @@ CẤU TRÚC BÀI BÁO:
 YÊU CẦU BẮT BUỘC:
 - GIỌNG PHÓNG VIÊN: khách quan, trung lập, có chiều sâu. KHÔNG phải blogger, KHÔNG phải người review.
 - MỞ BÀI đưa sự kiện/kết quả lên trước; bối cảnh có nguồn đặt sau. Không mở bằng lời dẫn rỗng hoặc bối cảnh ngành chung.
-- DẪN NGUỒN gián tiếp: "Theo thông tin từ...", "Dựa trên dữ liệu..." khi nguồn nêu rõ danh tính. KHÔNG "tác giả cho biết" nếu không có tên cụ thể.
+- ĐƯA TIN TRỰC TIẾP: Phát biểu trực tiếp sự kiện, không dùng câu dẫn gián tiếp kiểu thuật lại ("Theo một bài đăng trên X...", "OpenAI cho biết...") và CẤM các câu tự xưng máy móc ("Tôi đưa tin về...", "Tôi chia sẻ về..."). Nguồn bài viết được hệ thống ghi nhận ở footer, thân bài chỉ tập trung vào dữ kiện, bối cảnh và tác động thực tế. Giữ nguyên thuật ngữ CNTT/AI quen thuộc (no-code, low-code, prompt, model, token, pipeline, AI agent, PC, local); CẤM dịch thô kiểu "không mã kéo-thả", "đường ống".
 - SỐ LIỆU cụ thể từ nguồn phải giữ nguyên: tên sản phẩm, phiên bản, giá, %, so sánh.
 - QUY ĐÚNG NGƯỜI PHÁT BIỂU: cảm xúc hoặc trải nghiệm của một người chỉ đại diện người đó. Chỉ nói phản ứng cộng đồng khi nguồn thực sự có nhiều người; không suy rộng từ một bài đăng.
 - KHÔNG tường thuật lại diễn biến từng bước. CHỈ viết các bước khi nguồn là hướng dẫn/thủ thuật.
@@ -1328,6 +1701,147 @@ const PROVIDER_PRIORITY = [
   "openrouter",
 ];
 
+// === MODEL CONFIGURATION ===
+// Model IDs resolve through lib/model-registry.js (bundled into the SW).
+// Users override per-provider via chrome.storage.sync.modelOverrides.
+
+function _modelRegistry() {
+  return typeof FeedWriterModelRegistry !== "undefined"
+    ? FeedWriterModelRegistry
+    : null;
+}
+
+/** Resolve the model a provider should run right now (user override → task tier → default). */
+async function getProviderModel(provider, task) {
+  const reg = _modelRegistry();
+  if (!reg) return "";
+  try {
+    const { modelOverrides } = await chrome.storage.sync.get(["modelOverrides"]);
+    return reg.resolveModel(provider, reg.sanitizeOverrides(modelOverrides), task);
+  } catch (_) {
+    return task ? reg.fastModel(provider) : reg.defaultModel(provider);
+  }
+}
+
+/**
+ * True when an error means the MODEL is wrong (bad id, decommissioned,
+ * context/max_tokens limits) — not the API key. These must not poison keys.
+ */
+function isModelError(errMsg, status) {
+  const m = String(errMsg || "").toLowerCase();
+  return (
+    status === 404 ||
+    /model.{0,40}(not found|does not exist|unsupported|unavailable|decommissioned|isn't supported|is not supported)|invalid.{0,15}model|no such model|model_not_found|unknown model|does not have access/i.test(
+      m,
+    )
+  );
+}
+
+/** True when the input/output size exceeds what the model accepts. */
+function isContextError(errMsg, status) {
+  const m = String(errMsg || "").toLowerCase();
+  return (
+    status === 413 ||
+    /context.{0,20}(length|window|size|limit)|context_length_exceeded|maximum context|too many tokens|max.?tokens.{0,30}(too large|exceed|invalid|maximum)|max.?completion|maxoutputtokens|reduce.{0,20}length|prompt.{0,20}too long|payload.{0,15}too large|request.{0,20}too large/i.test(
+      m,
+    )
+  );
+}
+
+/**
+ * Invoke a provider call with the resolved model. If the resolved model is a
+ * non-default tier (user override or fast model) and the provider rejects the
+ * MODEL, retry once with the provider default. Preserves each call fn's
+ * return/throw contract: stream fns return {error}, non-stream fns throw.
+ */
+async function callWithModel(provider, task, invoke) {
+  const reg = _modelRegistry();
+  const model = await getProviderModel(provider, task);
+  const defaultModel = reg ? reg.defaultModel(provider) : model;
+  const canFallback = model !== defaultModel;
+  try {
+    const result = await invoke(model);
+    if (
+      canFallback &&
+      result &&
+      result.error &&
+      isModelError(result.error, result.status)
+    ) {
+      return invoke(defaultModel);
+    }
+    return result;
+  } catch (e) {
+    if (canFallback && isModelError(e && e.message, e && e.status)) {
+      return invoke(defaultModel);
+    }
+    throw e;
+  }
+}
+
+// === PROVIDER CIRCUIT BREAKER ===
+// Per-key cooldowns handle bad keys; this handles provider-wide outages so a
+// dead provider doesn't burn through all its keys before rotation moves on.
+// State lives in storage.local.providerStatus: { [provider]: { failures, downUntil, lastError } }
+
+const PROVIDER_BREAKER_THRESHOLD = 3; // consecutive failures before opening
+const PROVIDER_BREAKER_BASE_MS = 2 * 60 * 1000; // 2 min, doubles per trip, cap 30m
+const PROVIDER_BREAKER_MAX_MS = 30 * 60 * 1000;
+
+async function markProviderFailure(provider, reason = "") {
+  if (!provider) return;
+  try {
+    const { providerStatus = {} } = await chrome.storage.local.get(["providerStatus"]);
+    const s = { ...(providerStatus[provider] || {}) };
+    s.failures = (s.failures || 0) + 1;
+    s.lastError = String(reason || "").slice(0, 120);
+    if (s.failures >= PROVIDER_BREAKER_THRESHOLD) {
+      const trips = s.trips || 0;
+      const backoff = Math.min(
+        PROVIDER_BREAKER_BASE_MS * Math.pow(2, trips),
+        PROVIDER_BREAKER_MAX_MS,
+      );
+      s.downUntil = Date.now() + backoff;
+      s.trips = trips + 1;
+    }
+    providerStatus[provider] = s;
+    await chrome.storage.local.set({ providerStatus });
+  } catch (_) {}
+}
+
+async function markProviderSuccess(provider, latencyMs) {
+  if (!provider) return;
+  try {
+    const { providerStatus = {}, providerStats = {} } =
+      await chrome.storage.local.get(["providerStatus", "providerStats"]);
+    if (providerStatus[provider]) {
+      delete providerStatus[provider];
+      await chrome.storage.local.set({ providerStatus });
+    }
+    const st = providerStats[provider] || { ok: 0, fail: 0, latencyTotal: 0, latencyCount: 0 };
+    st.ok += 1;
+    if (Number.isFinite(latencyMs) && latencyMs > 0) {
+      st.latencyTotal += latencyMs;
+      st.latencyCount += 1;
+      st.lastLatency = Math.round(latencyMs);
+    }
+    st.lastOk = Date.now();
+    providerStats[provider] = st;
+    await chrome.storage.local.set({ providerStats });
+  } catch (_) {}
+}
+
+async function markProviderFailureStats(provider) {
+  if (!provider) return;
+  try {
+    const { providerStats = {} } = await chrome.storage.local.get(["providerStats"]);
+    const st = providerStats[provider] || { ok: 0, fail: 0, latencyTotal: 0, latencyCount: 0 };
+    st.fail += 1;
+    st.lastFail = Date.now();
+    providerStats[provider] = st;
+    await chrome.storage.local.set({ providerStats });
+  } catch (_) {}
+}
+
 /**
  * Pure key selection — keep in sync with lib/provider-rotation.js
  * (SW cannot import CommonJS modules; this is the production copy).
@@ -1337,6 +1851,7 @@ function selectAvailableKey(opts) {
     legacyApiKey = null,
     legacyProvider = "groq",
     preferredProvider = null,
+    providerStatus = null,
     now,
   } = opts;
 
@@ -1383,32 +1898,41 @@ function selectAvailableKey(opts) {
         ]
       : PROVIDER_PRIORITY;
 
-  for (const provider of orderedProviders) {
-    const keys = apiKeys[provider] || [];
-    if (keys.length === 0) continue;
+  // Pass 1: providers whose circuit breaker is closed. Pass 2 (fallback):
+  // down providers too — when every configured provider is tripped the user
+  // should still get a best-effort attempt rather than a dead end.
+  for (const ignoreBreaker of [false, true]) {
+    for (const provider of orderedProviders) {
+      const keys = apiKeys[provider] || [];
+      if (keys.length === 0) continue;
 
-    const startIdx = (rotationIndex[provider] || 0) % keys.length;
-    for (let i = 0; i < keys.length; i++) {
-      const idx = (startIdx + i) % keys.length;
-      const key = keys[idx];
-      const status = keyStatus[key] || {};
+      const ps = providerStatus && providerStatus[provider];
+      const isDown = ps && ps.downUntil && now < ps.downUntil;
+      if (isDown && !ignoreBreaker) continue;
 
-      if (!status.rateLimitedUntil || now >= status.rateLimitedUntil) {
-        const newRotationIndex = {
-          ...rotationIndex,
-          [provider]: (idx + 1) % keys.length,
-        };
-        const newKeyStatus = {
-          ...keyStatus,
-          [key]: { ...(keyStatus[key] || {}), lastUsed: now },
-        };
-        return {
-          key,
-          provider,
-          index: idx,
-          newRotationIndex,
-          newKeyStatus,
-        };
+      const startIdx = (rotationIndex[provider] || 0) % keys.length;
+      for (let i = 0; i < keys.length; i++) {
+        const idx = (startIdx + i) % keys.length;
+        const key = keys[idx];
+        const status = keyStatus[key] || {};
+
+        if (!status.rateLimitedUntil || now >= status.rateLimitedUntil) {
+          const newRotationIndex = {
+            ...rotationIndex,
+            [provider]: (idx + 1) % keys.length,
+          };
+          const newKeyStatus = {
+            ...keyStatus,
+            [key]: { ...(keyStatus[key] || {}), lastUsed: now },
+          };
+          return {
+            key,
+            provider,
+            index: idx,
+            newRotationIndex,
+            newKeyStatus,
+          };
+        }
       }
     }
   }
@@ -1470,6 +1994,7 @@ async function loadApiKeyStore() {
     "keyStatus",
     "keyRotationIndex",
     "backupApiKeys",
+    "providerStatus",
   ]);
 
   let apiKeys = localData.apiKeys || data.apiKeys;
@@ -1497,6 +2022,7 @@ async function loadApiKeyStore() {
     legacyProvider: data.provider || "groq",
     keyStatus: localData.keyStatus || {},
     rotationIndex: localData.keyRotationIndex || {},
+    providerStatus: localData.providerStatus || {},
   };
 }
 
@@ -1510,12 +2036,23 @@ function getAvailableKey(preferredProvider = null) {
 async function selectAvailableKeyForRequest(preferredProvider = null) {
   const store = await loadApiKeyStore();
   const hashedStatus = { ...(store.keyStatus || {}) };
+  const validHashes = new Set();
   if (store.apiKeys) {
     for (const p of Object.keys(store.apiKeys)) {
       for (const key of store.apiKeys[p] || []) {
         const hashed = await hashKeyId(key);
+        if (hashed) validHashes.add(hashed);
         Object.assign(hashedStatus, remapKeyStatus(hashedStatus, key, hashed));
       }
+    }
+  }
+  // Drop status entries for keys that no longer exist — deleted keys would
+  // otherwise leave orphaned hashes in storage.local forever.
+  let pruned = false;
+  for (const h of Object.keys(hashedStatus)) {
+    if (!validHashes.has(h)) {
+      delete hashedStatus[h];
+      pruned = true;
     }
   }
 
@@ -1535,6 +2072,7 @@ async function selectAvailableKeyForRequest(preferredProvider = null) {
     legacyProvider: store.legacyProvider,
     keyStatus: lookupStatus,
     rotationIndex: store.rotationIndex,
+    providerStatus: store.providerStatus,
     preferredProvider,
     now: Date.now(),
   });
@@ -1555,6 +2093,11 @@ async function selectAvailableKeyForRequest(preferredProvider = null) {
     return { key: result.key, provider: result.provider, index: result.index };
   }
 
+  if (result.noKeys || pruned) {
+    chrome.storage.local
+      .set({ keyStatus: hashedStatus })
+      .catch(() => {});
+  }
   if (result.noKeys) return { key: null, provider: null, noKeys: true };
   return {
     key: null,
@@ -1596,7 +2139,7 @@ async function markKeyCooldown(key, retryAfterMs, reason = "cooldown") {
 
 /** Clear all key cooldowns (used by Test connection / user stuck). */
 async function clearAllKeyCooldowns() {
-  const localData = await chrome.storage.local.get(["keyStatus"]);
+  const localData = await chrome.storage.local.get(["keyStatus", "providerStatus"]);
   const keyStatus = localData.keyStatus || {};
   let changed = false;
   for (const key of Object.keys(keyStatus)) {
@@ -1607,6 +2150,10 @@ async function clearAllKeyCooldowns() {
     }
   }
   if (changed) await chrome.storage.local.set({ keyStatus });
+  // Test connection is the manual unstick path — reset circuit breakers too.
+  if (localData.providerStatus && Object.keys(localData.providerStatus).length) {
+    await chrome.storage.local.set({ providerStatus: {} });
+  }
   return changed;
 }
 
@@ -1624,7 +2171,19 @@ function parseRetryAfter(errorMessage) {
 /** Classify provider error for cooldown + user message */
 function classifyProviderError(errMsg = "", status = 0) {
   const m = String(errMsg || "").toLowerCase();
-  if (status === 401 || status === 403 || /invalid|unauthorized|forbidden|incorrect api key|api key not|not valid|authentication/i.test(m)) {
+  // Model/config errors first: they must never look like a bad key, or every
+  // key gets a 1h cooldown and the user sees a fake "out of quota" lockout.
+  if (isModelError(errMsg, status)) {
+    return { kind: "model", cooldownMs: 15 * 1000 };
+  }
+  if (isContextError(errMsg, status)) {
+    return { kind: "context", cooldownMs: 30 * 1000 };
+  }
+  if (
+    status === 401 ||
+    status === 403 ||
+    /incorrect api key|api key.{0,20}(invalid|not valid|expired|revoked|incorrect)|invalid.{0,10}api.?key|unauthorized|authentication|forbidden/i.test(m)
+  ) {
     return { kind: "invalid", cooldownMs: 60 * 60 * 1000 }; // 1h
   }
   if (status === 429 || /rate limit|quota|too many requests|resource.?exhausted/i.test(m)) {
@@ -1733,7 +2292,7 @@ async function getSystemPrompt(
         "- KHÔNG khung mở/thân/kết. Giọng bản tin khách quan. CẤM câu hỏi mở.",
       reporter: "\n\nGHI ĐÈ — GÓC NHÌN PHÓNG VIÊN:\n" +
         "- Mở bài đưa sự kiện/kết quả lên trước; chỉ bổ sung bối cảnh khi nguồn có.\n" +
-        "- Dẫn nguồn gián tiếp khi có danh tính cụ thể: \"Theo...\", \"Dựa trên dữ liệu...\"\n" +
+        "- Đưa tin trực tiếp về sự kiện và kết quả, không viết kiểu thuật lại (\"OpenAI cho biết...\", \"Theo một bài đăng trên X...\").\n" +
         "- Giữ đúng người phát biểu và mức chắc chắn; không suy rộng một trải nghiệm thành phản ứng cộng đồng.\n" +
         "- Phân tích / ảnh hưởng thị trường nếu nguồn cung cấp đủ dữ kiện.\n" +
         "- Chỉ nêu triển vọng hoặc xu hướng tiếp theo nếu nguồn có; hết ý thì dừng.\n" +
@@ -1761,8 +2320,10 @@ async function getSystemPrompt(
   // Output language is always Vietnamese (journalistic standard).
   // Source language is irrelevant — the AI must translate and rewrite in Vietnamese.
   prompt +=
-    "\n- Luôn trả lời bằng tiếng Việt chuẩn báo chí. Nếu bài viết bằng tiếng Anh hoặc bất kỳ ngôn ngữ nào khác, PHẢI dịch và viết lại thành tiếng Việt. Không được giữ nguyên ngôn ngữ gốc." +
-    "\n- Múi giờ chuẩn của bản tin: Giờ Việt Nam (ICT, UTC+7). Chỉ quy đổi mốc thời gian khi gắn với SỰ KIỆN CÔNG NGHỆ THỰC TẾ (lịch ra mắt, công bố, mở bán, cập nhật phần mềm, sự cố kỹ thuật, deadline). Tuyệt đối KHÔNG đưa thời điểm ai đó đăng bài/tweet trên mạng xã hội vào bản tin và KHÔNG viết các câu tường thuật hành vi đăng bài.";
+    "\n- Luôn trả lời bằng tiếng Việt chuẩn báo chí. Nếu bài viết bằng tiếng Anh hoặc bất kỳ ngôn ngữ nào khác, PHẢI dịch và viết lại thành tiếng Việt dễ hiểu, tự nhiên, chuẩn văn phong công nghệ." +
+    "\n- Đưa tin từ ngôi thứ nhất (chủ thể trực tiếp đưa tin): Phát biểu trực tiếp sự kiện công nghệ, TUYỆT ĐỐI KHÔNG viết kiểu thuật lại (CẤM '[Công ty] cho biết...', CẤM 'Theo một bài đăng trên X vào lúc...'). TUYỆT ĐỐI CẤM các câu tự xưng máy móc (CẤM 'Tôi đưa tin về...', 'Tôi xin chia sẻ...', 'Hôm nay tôi...'). Bản tin đi thẳng vào sản phẩm hoặc sự kiện." +
+    "\n- Chuẩn hóa thuật ngữ CNTT/AI: Giữ nguyên các thuật ngữ tiếng Anh phổ biến (no-code, low-code, prompt, token, model, pipeline, workflow, framework, runtime, benchmark, fine-tune, AI agent, repo, UI/UX, plugin, cache, PC, local...). TUYỆT ĐỐI CẤM dịch máy thô cứng (CẤM 'không mã', CẤM 'không mã kéo-thả', CẤM 'máy tính cá nhân' khi nói về PC/local, CẤM 'đường ống', CẤM 'đại lý AI'). Cụm 'no-code drag-and-drop' dịch là 'công cụ no-code kéo thả' hoặc 'kéo thả không cần code'." +
+    "\n- Múi giờ chuẩn của bản tin: Giờ Việt Nam (ICT, UTC+7). Chỉ quy đổi mốc thời gian khi gắn với SỰ KIỆN CÔNG NGHỆ THỰC TẾ (lịch ra mắt, công bố, mở bán, cập nhật phần mềm, sự cố kỹ thuật, deadline). Tuyệt đối KHÔNG đưa thời điểm ai đó đăng bài/tweet trên mạng xã hội vào bản tin (CẤM 'vào lúc 00...', 'lúc ... trên X') và KHÔNG viết các câu tường thuật hành vi đăng bài.";
 
   // Source metadata is attribution data, never an instruction or independent proof.
   const sourceMetadata = {
@@ -1892,12 +2453,14 @@ async function callGroqStream(
   port,
   signal,
   maxTokens = 512,
+  task,
 ) {
-  return callStreamAPI({
+  return callWithModel("groq", task, (model) =>
+    callStreamAPI({
     url: "https://api.groq.com/openai/v1/chat/completions",
     headers: { Authorization: "Bearer " + apiKey },
     body: {
-      model: "openai/gpt-oss-120b",
+      model,
       stream: true,
       messages: [
         { role: "system", content: systemPrompt },
@@ -1911,7 +2474,8 @@ async function callGroqStream(
     signal,
     maxTokens,
     provider: "Groq",
-  });
+    }),
+  );
 }
 
 async function callGeminiStream(
@@ -1921,9 +2485,11 @@ async function callGeminiStream(
   port,
   signal,
   maxTokens = 512,
+  task,
 ) {
-  return callStreamAPI({
-    url: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse",
+  return callWithModel("gemini", task, (model) =>
+    callStreamAPI({
+    url: "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + ":streamGenerateContent?alt=sse",
     headers: { "x-goog-api-key": apiKey },
     body: {
       system_instruction: { parts: [{ text: systemPrompt }] },
@@ -1935,7 +2501,8 @@ async function callGeminiStream(
     signal,
     maxTokens,
     provider: "Gemini",
-  });
+    }),
+  );
 }
 
 // === CEREBRAS: OpenAI-compatible API, ultra-fast inference ===
@@ -1946,12 +2513,14 @@ async function callCerebrasStream(
   port,
   signal,
   maxTokens = 512,
+  task,
 ) {
-  return callStreamAPI({
+  return callWithModel("cerebras", task, (model) =>
+    callStreamAPI({
     url: "https://api.cerebras.ai/v1/chat/completions",
     headers: { Authorization: "Bearer " + apiKey },
     body: {
-      model: "gpt-oss-120b",
+      model,
       stream: true,
       messages: [
         { role: "system", content: systemPrompt },
@@ -1965,15 +2534,17 @@ async function callCerebrasStream(
     signal,
     maxTokens,
     provider: "Cerebras",
-  });
+    }),
+  );
 }
 
-async function callCerebrasNonStream(apiKey, userMessage, systemPrompt) {
-  return callNonStream(
+async function callCerebrasNonStream(apiKey, userMessage, systemPrompt, task) {
+  return callWithModel("cerebras", task, (model) =>
+    callNonStream(
     "https://api.cerebras.ai/v1/chat/completions",
     { Authorization: "Bearer " + apiKey },
     {
-      model: "gpt-oss-120b",
+      model,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userMessage },
@@ -1982,6 +2553,7 @@ async function callCerebrasNonStream(apiKey, userMessage, systemPrompt) {
       temperature: 0.3,
     },
     (d) => d?.choices?.[0]?.message?.content,
+    ),
   );
 }
 
@@ -1993,12 +2565,14 @@ async function callSambanovaStream(
   port,
   signal,
   maxTokens = 512,
+  task,
 ) {
-  return callStreamAPI({
+  return callWithModel("sambanova", task, (model) =>
+    callStreamAPI({
     url: "https://api.sambanova.ai/v1/chat/completions",
     headers: { Authorization: "Bearer " + apiKey },
     body: {
-      model: "Meta-Llama-3.3-70B-Instruct",
+      model,
       stream: true,
       messages: [
         { role: "system", content: systemPrompt },
@@ -2012,15 +2586,17 @@ async function callSambanovaStream(
     signal,
     maxTokens,
     provider: "SambaNova",
-  });
+    }),
+  );
 }
 
-async function callSambanovaNonStream(apiKey, userMessage, systemPrompt) {
-  return callNonStream(
+async function callSambanovaNonStream(apiKey, userMessage, systemPrompt, task) {
+  return callWithModel("sambanova", task, (model) =>
+    callNonStream(
     "https://api.sambanova.ai/v1/chat/completions",
     { Authorization: "Bearer " + apiKey },
     {
-      model: "Meta-Llama-3.3-70B-Instruct",
+      model,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userMessage },
@@ -2029,6 +2605,7 @@ async function callSambanovaNonStream(apiKey, userMessage, systemPrompt) {
       temperature: 0.3,
     },
     (d) => d?.choices?.[0]?.message?.content,
+    ),
   );
 }
 
@@ -2040,8 +2617,10 @@ async function callOpenrouterStream(
   port,
   signal,
   maxTokens = 512,
+  task,
 ) {
-  return callStreamAPI({
+  return callWithModel("openrouter", task, (model) =>
+    callStreamAPI({
     url: "https://openrouter.ai/api/v1/chat/completions",
     headers: {
       Authorization: "Bearer " + apiKey,
@@ -2049,7 +2628,7 @@ async function callOpenrouterStream(
       "X-Title": "FeedWriter",
     },
     body: {
-      model: "openai/gpt-oss-120b",
+      model,
       stream: true,
       messages: [
         { role: "system", content: systemPrompt },
@@ -2063,11 +2642,13 @@ async function callOpenrouterStream(
     signal,
     maxTokens,
     provider: "OpenRouter",
-  });
+    }),
+  );
 }
 
-async function callOpenrouterNonStream(apiKey, userMessage, systemPrompt) {
-  return callNonStream(
+async function callOpenrouterNonStream(apiKey, userMessage, systemPrompt, task) {
+  return callWithModel("openrouter", task, (model) =>
+    callNonStream(
     "https://openrouter.ai/api/v1/chat/completions",
     {
       Authorization: "Bearer " + apiKey,
@@ -2075,7 +2656,7 @@ async function callOpenrouterNonStream(apiKey, userMessage, systemPrompt) {
       "X-Title": "FeedWriter",
     },
     {
-      model: "openai/gpt-oss-120b",
+      model,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userMessage },
@@ -2084,6 +2665,7 @@ async function callOpenrouterNonStream(apiKey, userMessage, systemPrompt) {
       temperature: 0.3,
     },
     (d) => d?.choices?.[0]?.message?.content,
+    ),
   );
 }
 /* ===== END bg-api.js ===== */
@@ -2550,8 +3132,9 @@ async function injectAndSend(tabId, message) {
     await chrome.scripting.executeScript({
       target: { tabId },
       files: [
-        "errors.js",
+        "lib/error-boundary.js",
         "utils.js",
+        "lib/summary-policy.js",
         "dom-helpers.js",
         "post-data.js",
         "status-formatter.js",
@@ -3339,11 +3922,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             continue;
           }
           try {
+            const t0 = Date.now();
             const result = await callFn(
               keyInfo.key,
               "Reply with exactly: OK",
               "You are a test bot. Reply OK.",
+              "test",
             );
+            await markProviderSuccess(keyInfo.provider, Date.now() - t0);
             return sendResponse({
               ok: true,
               provider: keyInfo.provider,
@@ -3355,6 +3941,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             errors.push(`${keyInfo.provider}: ${msg.substring(0, 80)}`);
             failureKinds.push(cls.kind);
             await markKeyCooldown(keyInfo.key, cls.cooldownMs, msg.substring(0, 120));
+            await markProviderFailureStats(keyInfo.provider);
           }
         }
         sendResponse({
@@ -3562,7 +4149,8 @@ const TECH_TRANSLATION_GUIDE = `
 TECH/AI TERMINOLOGY RULES:
 - Infer the domain only from the selected input. In software, IT, developer, and AI text, use the established Vietnamese technical meaning, not a literal everyday translation.
 - If a short selection is ambiguous, present the software/AI meaning first and label other common meanings separately. Do not pretend an ambiguous word has only one meaning.
-- Preserve familiar English terms when Vietnamese professionals normally use them: API, prompt, token, model, framework, library, runtime, pipeline, cache, repository/repo, commit, branch, build, deploy, server, client, cloud, container, dataset, benchmark, embedding, fine-tuning, agent.
+- Preserve familiar English terms when Vietnamese professionals normally use them: API, prompt, token, model, framework, library, runtime, pipeline, cache, repository/repo, commit, branch, build, deploy, server, client, cloud, container, dataset, benchmark, embedding, fine-tuning, agent / AI agent, no-code, low-code, drag-and-drop, UI, UX, backend, frontend, full-stack, local, PC.
+- NEVER literally translate: "no-code" as "không mã", "low-code" as "mã thấp", "no-code drag-and-drop" as "không mã kéo-thả" (use "no-code kéo thả" or "kéo thả không cần code"), "pipeline" as "đường ống", "agent" as "đại lý AI", "runtime" as "thời gian chạy", "client" as "khách hàng" in client-server systems, "on PC / locally" as "trên máy tính cá nhân" (use "trên PC" or "chạy local / trên máy").
 - code (software noun) = "code" or "mã nguồn"; code/coding (activity) = "lập trình" or "viết code"; source code = "mã nguồn". NEVER translate code as "mã hóa". "Mã hóa" means encode/encrypt.
 - archive + file/.zip/.tar/compressed/extract/unpack/package = "tệp nén" or "gói nén". archive as a verb for email/data/logs = "lưu trữ". archived repository/project = "đưa vào trạng thái lưu trữ". Choose from context.
 - image in Docker/container context = "image" or "ảnh hệ thống", not "hình ảnh"; thread in programming = "luồng"; issue in a repository = "issue/vấn đề"; model in AI = "mô hình"; training/inference = "huấn luyện/suy luận".
@@ -3702,7 +4290,7 @@ async function translateText(text, mode = "auto") {
 
     const callFn = nonStreamFns[keyInfo.provider] || callGroqNonStream;
     try {
-      const result = await callFn(keyInfo.key, prompt, system);
+      const result = await callFn(keyInfo.key, prompt, system, "translate");
       const output = {
         word: source,
         translation: (result || "").trim(),
@@ -4004,10 +4592,20 @@ function postProcessOutput(output, sourceText, type) {
         );
         let guardedTitle = lines[i]
           .trim()
+          // Clickbait filler: "Mới đây" lead and "chính thức" are mechanically
+          // safe to remove; they carry no fact and only pad the headline.
+          .replace(/^mới\s+đây\s*[,;:\-–—]?\s*/iu, "")
+          .replace(/(?<![\p{L}\p{N}])chính\s+thức\s+/giu, "")
           .replace(
             /(?<![\p{L}\p{N}])tăng\s+mức\s+thẩm\s+mỹ(?![\p{L}\p{N}])/giu,
             "cải thiện khả năng thẩm mỹ",
-          );
+          )
+          .replace(/(?<![\p{L}\p{N}])không\s+mã\s+kéo[‑ -]?thả(?![\p{L}\p{N}])/giu, "no-code kéo thả")
+          .replace(/(?<![\p{L}\p{N}])(?:công\s+cụ|nền\s+tảng|giải\s+pháp|phần\s+mềm)\s+(?:AI\s+)?không\s+mã(?![\p{L}\p{N}])/giu, (m) => m.replace(/không\s+mã/i, "no-code"))
+          .replace(/(?<![\p{L}\p{N}])(?:nền\s+tảng|công\s+cụ|giải\s+pháp)\s+mã\s+thấp(?![\p{L}\p{N}])/giu, (m) => m.replace(/mã\s+thấp/i, "low-code"))
+          .replace(/(?<![\p{L}\p{N}])đại\s+lý\s+AI(?![\p{L}\p{N}])/giu, "AI agent")
+          .replace(/(?<![\p{L}\p{N}])kéo[‑-]thả(?![\p{L}\p{N}])/giu, "kéo thả")
+          .replace(/(?<=\b(?:trên|cho|chạy\s+trên)\s+)máy\s+tính\s+cá\s+nhân\b/giu, "PC");
         const recommendationMatch = guardedTitle.match(recommendationClause);
         if (recommendationMatch) {
           const prefix = guardedTitle.slice(0, recommendationMatch.index).trim();
@@ -4054,6 +4652,17 @@ function postProcessOutput(output, sourceText, type) {
         } else if (theoNamedLead.test(guardedTitle)) {
           guardedTitle = guardedTitle.replace(theoNamedLead, "").trim();
           issues.push("Đã loại bỏ tên nguồn ở đầu tiêu đề.");
+        }
+
+        // Clickbait flag: sensational words shouldn't appear in a news
+        // headline. Removing them mechanically risks corrupting grammar, so
+        // flag for the quality chip instead.
+        if (
+          /(?<![\p{L}\p{N}])(?:gây\s+sốc|chấn\s+động|không\s+thể\s+tin\s+nổi|toang|cháy\s+hàng|bí\s+mật|bạn\s+sẽ\s+bất\s+ngờ|điều\s+không\s+tưởng)(?![\p{L}\p{N}])/iu.test(
+            guardedTitle,
+          )
+        ) {
+          issues.push("Tiêu đề còn từ giật gân — nên viết lại thủ công.");
         }
         lines[i] = guardedTitle || "Cập nhật";
         // Viết hoa toàn bộ tiêu đề
@@ -4167,8 +4776,16 @@ function postProcessOutput(output, sourceText, type) {
     .replace(/(?<![\p{L}\p{N}])mang\s+lại\s+sự\s+cải\s+thiện(?![\p{L}\p{N}])/giu, "cải thiện")
     .replace(/(?<![\p{L}\p{N}])tiến\s+hành\s+thực\s+hiện(?![\p{L}\p{N}])/giu, "thực hiện")
     .replace(/(?<![\p{L}\p{N}])được\s+thiết\s+kế\s+nhằm\s+mục\s+đích(?![\p{L}\p{N}])/giu, "nhằm")
-    .replace(/(?<![\p{L}\p{N}])tăng\s+mức(?: độ)?\s+thẩm\s+mỹ(?![\p{L}\p{N}])/giu, "cải thiện khả năng thẩm mỹ");
-
+    .replace(/(?<![\p{L}\p{N}])tăng\s+mức(?: độ)?\s+thẩm\s+mỹ(?![\p{L}\p{N}])/giu, "cải thiện khả năng thẩm mỹ")
+    .replace(/(?<![\p{L}\p{N}])không\s+mã\s+kéo[‑ -]?thả(?![\p{L}\p{N}])/giu, "no-code kéo thả")
+    .replace(/(?<![\p{L}\p{N}])(?:công\s+cụ|nền\s+tảng|giải\s+pháp|phần\s+mềm)\s+(?:AI\s+)?không\s+mã(?![\p{L}\p{N}])/giu, (m) => m.replace(/không\s+mã/i, "no-code"))
+    .replace(/(?<![\p{L}\p{N}])(?:nền\s+tảng|công\s+cụ|giải\s+pháp)\s+mã\s+thấp(?![\p{L}\p{N}])/giu, (m) => m.replace(/mã\s+thấp/i, "low-code"))
+    .replace(/(?<![\p{L}\p{N}])đại\s+lý\s+AI(?![\p{L}\p{N}])/giu, "AI agent")
+    .replace(/(?<![\p{L}\p{N}])kéo[‑-]thả(?![\p{L}\p{N}])/giu, "kéo thả")
+    .replace(/(?<![\p{L}\p{N}])không\s+cần\s+viết\s+mã(?![\p{L}\p{N}])/giu, "không cần viết code")
+    .replace(/(?<![\p{L}\p{N}])trên\s+máy\s+tính\s+cá\s+nhân\s+của\s+mình(?![\p{L}\p{N}])/giu, "trên máy tính của mình")
+    .replace(/(?<![\p{L}\p{N}])chạy\s+trực\s+tiếp\s+trên\s+máy\s+tính\s+cá\s+nhân(?![\p{L}\p{N}])/giu, "chạy trực tiếp trên máy")
+    .replace(/(?<=\b(?:trên|cho|chạy\s+trên)\s+)máy\s+tính\s+cá\s+nhân\b/giu, "PC");
   // 8. Shorten VND units without rounding away source precision (supports millions and billions).
   processed = processed.replace(
     /\b(\d{1,3}(?:\.\d{3}){2,4})\s*(?:đồng|VND|vnđ|VNĐ)/gi,
@@ -4187,9 +4804,7 @@ function postProcessOutput(output, sourceText, type) {
     },
   );
 
-  // 9. Remove empty lead-in sentences at the beginning
-  const socialNarrationRe =
-    /(?:^|\n|[.!?]\s*)(?:trong\s+)?(?:một\s+)?(?:bài\s+(?:đăng|viết|chia\s+sẻ)|tweet|status)\s+(?:trên\s+[A-Za-z0-9_.\s]+)?(?:\s*của\s+[^\n.,!?]+?)?(?:\s*(?:vào\s+)?(?:lúc|ngày)\s+[^\n.,!?]+?)?\s+(?:đã\s+)?(?:chia\s+sẻ|cho\s+biết|đăng\s+tải|giới\s+thiệu|đề\s+cập|tiết\s+lộ|nói\s+về)[^\n.!?]*[.!?]/giu;
+  // 9. Remove empty lead-in sentences, social post narration, and indirect retelling
   const leadInPatterns = [
     /^[^\n.!?]*(?:mình|tôi|mình)\s+(?:vừa|mới|đã)\s+(?:đọc|xem|thấy|nghe|biết)\s+(?:được|thấy|về)?\s*[^\n.!?]*[.!?]\s*/i,
     /^(?:gần đây|mới đây|dạo gần đây|thời gian gần đây)[,.]?\s*[^\n.!?]*[.!?]\s*/i,
@@ -4197,42 +4812,89 @@ function postProcessOutput(output, sourceText, type) {
     /^(?:hôm nay|hôm qua|sáng nay|tối qua)\s+(?:mình|tôi)\s+(?:đọc|xem|thấy|nghe)[^\n.!?]*[.!?]\s*/i,
     /^(?:tài\s+khoản|người\s+dùng|user)\s+[^\n.,!?]+\s+(?:trên\s+[A-Za-z0-9_.\s]+)?(?:\s*(?:vào\s+)?(?:lúc|ngày)\s+[^\n.,!?]+?)?\s+(?:đã\s+)?(?:chia\s+sẻ|đăng\s+tải|cho\s+biết|giới\s+thiệu|đăng)[^\n.!?]*[.!?]\s*/iu,
   ];
+
+  const cleanBodyText = (text) => {
+    let result = text;
+    // 9a. Strip standalone social narration sentences (with or without timestamps):
+    // e.g. "Bài đăng trên X của người dùng A vào lúc 17:10 ngày 10/9 đã chia sẻ..."
+    // e.g. "Theo một bài đăng trên X vào lúc 00:30, người dùng A đã giới thiệu..."
+    const socialNarrationRe =
+      /(?:^|(\n+)|[.!?][^\S\n]*)(?:(?:theo|trong)\s+)?(?:một\s+)?(?:bài\s+(?:đăng|viết|chia\s+sẻ)|tweet|status)\s+[^\n.!?]*?(?:đã\s+)?(?:chia\s+sẻ|cho\s+biết|đăng\s+tải|giới\s+thiệu|đề\s+cập|tiết\s+lộ|nói\s+về|xác\s+nhận|mô\s+tả|công\s+bố)[^\n.!?]*[.!?]?/giu;
+    if (socialNarrationRe.test(result)) {
+      result = result.replace(socialNarrationRe, (m, nls) => {
+        issues.push("Đã loại bỏ câu tường thuật thời điểm đăng bài trên mạng xã hội.");
+        if (nls) return nls;
+        if (m.match(/^[.!?]/)) return ". ";
+        return "";
+      }).trimStart();
+    }
+
+    // 9b. Strip introductory clauses narrating social media posts/tweets:
+    // e.g. "Theo một bài đăng trên X vào lúc 00:30 ngày 11/9 (giờ Việt Nam), OpenAI đã mở..." -> "OpenAI đã mở..."
+    const introClauseRe =
+      /(?:^|(\n+)|[.!?][^\S\n]*)(?:theo|trong)\s+(?:một\s+)?(?:bài\s+(?:đăng|viết|chia\s+sẻ)|tweet|status|thông\s+tin|bản\s+tin)\s+(?:trên\s+[A-Za-z0-9_.\s]+)?(?:\s*(?:vào\s+)?(?:lúc|ngày)\s+[^\n.,!?]+?)?(?:\s*(?:của|bởi)\s+[^\n.,!?]+?)?,\s*/giu;
+    if (introClauseRe.test(result)) {
+      result = result.replace(introClauseRe, (m, nls) => {
+        issues.push("Đã loại bỏ mệnh đề dẫn dắt mạng xã hội.");
+        if (nls) return nls;
+        if (m.match(/^[.!?]/)) return ". ";
+        return "";
+      }).trimStart();
+    }
+    // 9b2. Strip self-referential prefix ("Tôi đưa tin về...", "Tôi xin chia sẻ về...") while preserving the news clause
+    const selfIntroRe =
+      /(?:^|(\n\n))(?:tôi|mình)\s+(?:đưa\s+tin\s+về|xin\s+đưa\s+tin\s+về|chia\s+sẻ\s+về|xin\s+chia\s+sẻ\s+về|giới\s+thiệu\s+về|muốn\s+nói\s+về|tóm\s+tắt\s+về)\s+([a-zà-ỹ0-9])/iu;
+    if (selfIntroRe.test(result)) {
+      result = result.replace(selfIntroRe, (m, nls, nextChar) => {
+        issues.push("Đã loại bỏ câu tự xưng đưa tin ở đầu bài.");
+        const prefix = nls || "";
+        return prefix + nextChar.toUpperCase();
+      }).trimStart();
+    }
+
+
+    // 9c. Strip empty lead-in patterns:
+    for (const pat of leadInPatterns) {
+      if (pat.test(result)) {
+        result = result.replace(pat, "").trimStart();
+        issues.push("Đã xóa câu dẫn dắt rỗng ở đầu bài.");
+        break;
+      }
+    }
+
+    // 9d. Transform indirect retelling openings ("OpenAI cho biết...") into direct news statements:
+    // e.g. "OpenAI cho biết họ/công ty đã mở..." -> "OpenAI đã mở..."
+    // e.g. "OpenAI cho biết hệ thống..." -> "Hệ thống..."
+    const reportingLeadRe =
+      /(?:^|(\n\n))([A-ZÀ-Ỹ][\p{L}\p{N}&.'’\-]*(?:\s+[A-ZÀ-Ỹ][\p{L}\p{N}&.'’\-]*){0,3})\s+(?:cho\s+biết|cho\s+hay|tuyên\s+bố|thông\s+báo)\s+(?:rằng\s+)?(?:(?:(công\s+ty|hãng|họ)\s+)?(đã|sẽ|vừa|đang)\s+)?/giu;
+    if (reportingLeadRe.test(result)) {
+      result = result.replace(reportingLeadRe, (match, nls, subject, companyRef, tense) => {
+        issues.push("Đã chuyển đổi câu thuật lại sang đưa tin trực tiếp.");
+        const prefix = nls || "";
+        if (companyRef || tense) {
+          return prefix + subject + " " + (tense || "đã") + " ";
+        }
+        return prefix;
+      }).trimStart();
+    }
+
+    result = result.replace(
+      /^(?:(?:được\s+biết|cụ\s+thể(?: là)?|theo\s+đó|đáng\s+chú\s+ý(?: là)?)[,:]\s*)/i,
+      "",
+    );
+
+    // Capitalize first letter of sentence or paragraph if lowercase
+    result = result.replace(/(?:^|\n\n|[.!?]\s+)([a-zà-ỹ])/gu, (m, c) => m.slice(0, -1) + c.toUpperCase());
+    return result.replace(/\.\s+\./g, ".").replace(/[^\S\n]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  };
+
   const bodyStart = processed.indexOf("\n\n");
   if (bodyStart > 0) {
     const headPart = processed.slice(0, bodyStart + 2);
-    let bodyPart = processed.slice(bodyStart + 2);
-    if (socialNarrationRe.test(bodyPart)) {
-      bodyPart = bodyPart.replace(socialNarrationRe, (m) => m.startsWith("\n") ? "\n" : (m.match(/^[.!?]/) ? ". " : "")).replace(/\.\s+/g, ". ").trimStart();
-      issues.push("Đã loại bỏ câu tường thuật thời điểm đăng bài trên mạng xã hội.");
-    }
-    for (const pat of leadInPatterns) {
-      if (pat.test(bodyPart)) {
-        bodyPart = bodyPart.replace(pat, "").trimStart();
-        issues.push("Đã xóa câu dẫn dắt rỗng ở đầu bài.");
-        break;
-      }
-    }
-    bodyPart = bodyPart.replace(
-      /^(?:(?:được\s+biết|cụ\s+thể(?: là)?|theo\s+đó|đáng\s+chú\s+ý(?: là)?)[,:]\s*)/i,
-      "",
-    );
-    processed = headPart + bodyPart;
+    const bodyPart = processed.slice(bodyStart + 2);
+    processed = headPart + cleanBodyText(bodyPart);
   } else {
-    if (socialNarrationRe.test(processed)) {
-      processed = processed.replace(socialNarrationRe, (m) => m.startsWith("\n") ? "\n" : (m.match(/^[.!?]/) ? ". " : "")).replace(/\.\s+/g, ". ").trimStart();
-      issues.push("Đã loại bỏ câu tường thuật thời điểm đăng bài trên mạng xã hội.");
-    }
-    for (const pat of leadInPatterns) {
-      if (pat.test(processed)) {
-        processed = processed.replace(pat, "").trim();
-        issues.push("Đã xóa câu dẫn dắt rỗng ở đầu bài.");
-        break;
-      }
-    }
-    processed = processed.replace(
-      /^(?:(?:được\s+biết|cụ\s+thể(?: là)?|theo\s+đó|đáng\s+chú\s+ý(?: là)?)[,:]\s*)/i,
-      "",
-    );
+    processed = cleanBodyText(processed);
   }
   // 10. Hallucination detection: check if output contains numbers not in source
   if (typeof sourceText === "string") {
@@ -4406,7 +5068,7 @@ async function handleStream(
   // Length presets control verbosity, never coverage. Long sources receive a
   // larger output budget so the model can retain every distinct valuable idea.
   const coverageTokens = Math.ceil(completeSource.length / 10);
-  const maxTokens = Math.min(
+  let maxTokens = Math.min(
     MAX_OUTPUT_TOKENS,
     Math.max(baseMaxTokens, coverageTokens),
   );
@@ -4430,13 +5092,19 @@ async function handleStream(
           await clearAllKeyCooldowns();
           continue;
         }
+        const softLock = keyInfo.waitMinutes <= 3;
         return {
-          error:
-            "Tất cả " +
-            keyInfo.total +
-            " key đang cooldown/rate-limit. Thử lại sau ~" +
-            keyInfo.waitMinutes +
-            " phút, hoặc tab Keys → Test kết nối (xóa cooldown).",
+          error: softLock
+            ? "Tất cả " +
+              keyInfo.total +
+              " key đang tạm khóa sau lỗi vừa rồi (không phải hết quota). Bấm tab Khóa API → Test kết nối để reset ngay, hoặc thử lại sau ~" +
+              keyInfo.waitMinutes +
+              " phút."
+            : "Tất cả " +
+              keyInfo.total +
+              " key đang cooldown/rate-limit. Thử lại sau ~" +
+              keyInfo.waitMinutes +
+              " phút, hoặc tab Khóa API → Test kết nối (xóa cooldown).",
         };
       }
       break;
@@ -4461,6 +5129,7 @@ async function handleStream(
       });
     } catch (_) {}
 
+    const t0 = Date.now();
     const result = await callFn(
       keyInfo.key,
       sourceMessage,
@@ -4468,11 +5137,15 @@ async function handleStream(
       port,
       signal,
       maxTokens,
+      type,
     );
 
     if (result.rateLimited) {
       const retryMs = parseRetryAfter(result.rateLimitError || "");
       await markKeyRateLimited(keyInfo.key, retryMs);
+      // Rate limits are per-key quota, not a provider outage — count the
+      // failure for stats but never toward the circuit breaker.
+      await markProviderFailureStats(keyInfo.provider);
       attemptErrors.push(`${keyInfo.provider}: rate limit`);
       try {
         port.postMessage({
@@ -4494,14 +5167,54 @@ async function handleStream(
         cls.kind,
         "→ trying next",
       );
+      // Context/size errors: don't punish the key — retry with a smaller
+      // output budget. Long sources previously died here and every rotated
+      // key got a cooldown, which looked to the user like "hết quota".
+      if (cls.kind === "context") {
+        if (maxTokens > 1024) {
+          maxTokens = Math.max(1024, Math.floor(maxTokens / 2));
+          attemptErrors.push(
+            `${keyInfo.provider}: quá tải độ dài — giảm max_tokens còn ${maxTokens}`,
+          );
+          try {
+            port.postMessage({
+              action: "status",
+              message: `Bài dài — giảm giới hạn đầu ra và thử lại...`,
+            });
+          } catch (_) {}
+          continue;
+        }
+        // Already at floor — the source itself exceeds context; cooling this
+        // key briefly still lets other providers/keys try.
+        await markKeyCooldown(keyInfo.key, cls.cooldownMs, result.error);
+        await markProviderFailureStats(keyInfo.provider);
+        attemptErrors.push(`${keyInfo.provider}: nội dung vượt giới hạn model`);
+        try {
+          port.postMessage({
+            action: "status",
+            message: `${keyInfo.provider}: nội dung quá dài cho model — thử provider khác...`,
+          });
+        } catch (_) {}
+        continue;
+      }
+
       await markKeyCooldown(keyInfo.key, cls.cooldownMs, result.error);
+      await markProviderFailureStats(keyInfo.provider);
+      // Only infrastructure-level failures (timeout/5xx) point at a provider
+      // outage. "invalid" means a bad key and "model" a bad model id — neither
+      // should trip the breaker for everyone.
+      if (cls.kind === "timeout" || cls.kind === "server" || cls.kind === "error") {
+        await markProviderFailure(keyInfo.provider, result.error);
+      }
       attemptErrors.push(`${keyInfo.provider}: ${String(result.error).substring(0, 100)}`);
       const statusMsg =
         cls.kind === "invalid"
           ? `${keyInfo.provider}: key không hợp lệ — thử key khác...`
-          : cls.kind === "timeout"
-            ? `${keyInfo.provider} chậm — thử provider khác...`
-            : `${keyInfo.provider} lỗi — thử tiếp...`;
+          : cls.kind === "model"
+            ? `${keyInfo.provider}: model không hỗ trợ — thử model mặc định...`
+            : cls.kind === "timeout"
+              ? `${keyInfo.provider} chậm — thử provider khác...`
+              : `${keyInfo.provider} lỗi — thử tiếp...`;
       try {
         port.postMessage({ action: "status", message: statusMsg });
       } catch (_) {}
@@ -4543,6 +5256,7 @@ async function handleStream(
       }
       // Count and persist only a usable summary. Provider refusals and empty
       // outputs rotate to another key above instead of becoming fake success.
+      await markProviderSuccess(keyInfo.provider, Date.now() - t0);
       await incrementTelemetry('summaries');
       trackEvent('summary_completed', { provider: keyInfo.provider, type });
       incrementBadge();
@@ -4665,6 +5379,16 @@ async function callStreamAPI(config) {
     streamIdleTimeoutMs = 20000,
   } = config;
 
+  // Large inputs take longer to reach the first token (providers process the
+  // whole prompt first). Scale the first-token deadline with payload size so
+  // long posts don't get killed at 22s and mislabeled as provider timeouts.
+  const bodyJson = JSON.stringify(body || {});
+  const bodySize = bodyJson.length;
+  const effectiveFirstTokenMs = Math.min(
+    90000,
+    Math.max(firstTokenTimeoutMs, 22000 + Math.floor(bodySize / 2500)),
+  );
+
   const effectiveTotalTimeoutMs = totalTimeoutMs || Math.min(
     300000,
     Math.max(60000, maxTokens * 40),
@@ -4677,7 +5401,7 @@ async function callStreamAPI(config) {
   const timeoutId = setTimeout(abortRequest, effectiveTotalTimeoutMs);
   const firstTokenTimeoutId = setTimeout(() => {
     if (!receivedToken) abortRequest();
-  }, firstTokenTimeoutMs);
+  }, effectiveFirstTokenMs);
   signal.addEventListener("abort", abortRequest, { once: true });
 
   try {
@@ -4688,7 +5412,7 @@ async function callStreamAPI(config) {
         ...headers,
       },
       signal: timeoutController.signal,
-      body: JSON.stringify(body),
+      body: bodyJson,
     });
 
     if (!resp.ok) {
@@ -4712,16 +5436,9 @@ async function callStreamAPI(config) {
           status: 429,
         };
       }
-      // 401/403 = bad key; plain 403 with empty/CF body still treat as auth/network issue
-      const invalidKey =
-        resp.status === 401 ||
-        /invalid|incorrect api key|api key|unauthorized|authentication/i.test(
-          String(msg),
-        );
       return {
         error: `${provider} API lỗi (${resp.status}): ` + msg,
         status: resp.status,
-        invalidKey,
       };
     }
     return await processStream(
@@ -4772,33 +5489,37 @@ async function callNonStream(url, extraHeaders, body, extractFn) {
   return extractFn(data) || "";
 }
 
-async function callGroqNonStream(apiKey, userMessage, systemPrompt) {
-  return callNonStream(
-    "https://api.groq.com/openai/v1/chat/completions",
-    { Authorization: "Bearer " + apiKey },
-    {
-      model: "openai/gpt-oss-120b",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userMessage },
-      ],
-      max_tokens: 1024,
-      temperature: 0.3,
-    },
-    (d) => d?.choices?.[0]?.message?.content,
+async function callGroqNonStream(apiKey, userMessage, systemPrompt, task) {
+  return callWithModel("groq", task, (model) =>
+    callNonStream(
+      "https://api.groq.com/openai/v1/chat/completions",
+      { Authorization: "Bearer " + apiKey },
+      {
+        model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userMessage },
+        ],
+        max_tokens: 1024,
+        temperature: 0.3,
+      },
+      (d) => d?.choices?.[0]?.message?.content,
+    ),
   );
 }
 
-async function callGeminiNonStream(apiKey, userMessage, systemPrompt) {
-  return callNonStream(
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
-    { "x-goog-api-key": apiKey },
-    {
-      system_instruction: { parts: [{ text: systemPrompt }] },
-      contents: [{ parts: [{ text: userMessage }] }],
-      generationConfig: { maxOutputTokens: 1024, temperature: 0.3 },
-    },
-    (d) => d?.candidates?.[0]?.content?.parts?.[0]?.text,
+async function callGeminiNonStream(apiKey, userMessage, systemPrompt, task) {
+  return callWithModel("gemini", task, (model) =>
+    callNonStream(
+      "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + ":generateContent",
+      { "x-goog-api-key": apiKey },
+      {
+        system_instruction: { parts: [{ text: systemPrompt }] },
+        contents: [{ parts: [{ text: userMessage }] }],
+        generationConfig: { maxOutputTokens: 1024, temperature: 0.3 },
+      },
+      (d) => d?.candidates?.[0]?.content?.parts?.[0]?.text,
+    ),
   );
 }
 

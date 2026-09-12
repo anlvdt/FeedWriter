@@ -12,6 +12,15 @@ try {
   });
 } catch (_) {}
 
+// Error boundary for this content script. lib/error-boundary.js is loaded
+// ahead of this file by the manifest, so the global is already present.
+// Content scripts cannot write chrome.storage.local (background.js restricts it
+// to TRUSTED_CONTEXTS), so errors are only logged locally here.
+const contentErrorBoundary =
+  typeof FeedWriterErrorBoundary !== "undefined"
+    ? new FeedWriterErrorBoundary.ErrorBoundary({ name: "ContentScript" })
+    : null;
+
 let MIN_LEN = 400;
 // Summary availability must not inherit the feed-filter length setting. The
 // background validator accepts 30 characters, so any real status at that
@@ -264,6 +273,18 @@ const batchOperations = {
   results: [],
   type: 'summary'
 };
+
+// Run fn, routing any throw through the content-script error boundary instead
+// of letting it escape into Facebook's own error handling.
+function safeExecute(fn, context = {}) {
+  try {
+    return fn();
+  } catch (error) {
+    if (contentErrorBoundary) contentErrorBoundary.handleError(error, context);
+    else console.error("[FeedWriter] safeExecute failed:", error);
+    return null;
+  }
+}
 
 // Cleanup function
 function cleanup() {
@@ -2837,7 +2858,7 @@ function displayError(errorData) {
   if (typeof errorData === 'string') {
     errorHtml = '<div class="fbs-error">' + esc(errorData) + '</div>';
   } else if (errorData && typeof errorData === 'object') {
-    // Structured error from errors.js
+    // Structured error object (message/detail/severity/action fields)
     const severityClass = errorData.severity === 'warning' ? 'fbs-error-warning' :
                           errorData.severity === 'info' ? 'fbs-error-info' : '';
 
@@ -2854,7 +2875,7 @@ function displayError(errorData) {
       errorHtml += '<div class="fbs-error-buttons">';
 
       if (errorData.retryable) {
-        errorHtml += '<button class="fbs-error-btn fbs-error-btn-primary" onclick="window.location.reload()">Thử lại</button>';
+        errorHtml += '<button type="button" class="fbs-error-btn fbs-error-btn-primary" data-fbs-reload>Thử lại</button>';
       }
 
       if (errorData.actionUrl) {
@@ -5563,6 +5584,11 @@ async function consumePendingRedditPost() {
 consumePendingRedditPost();
 
 document.addEventListener("click", (e) => {
+  if (e.target.closest("[data-fbs-reload]")) {
+    e.preventDefault();
+    window.location.reload();
+    return;
+  }
   const btn = e.target.closest("[data-fbs-open-popup]");
   if (!btn) return;
   e.preventDefault();

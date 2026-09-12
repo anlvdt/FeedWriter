@@ -324,3 +324,61 @@ describe("hashKeyId", () => {
     assert.match(a, /^[0-9a-f]{20}$/);
   });
 });
+
+describe("selectAvailableKey — circuit breaker (providerStatus)", () => {
+  const keys = () => ({
+    groq: ["gsk_a"],
+    cerebras: ["csk_b"],
+    sambanova: [],
+    gemini: [],
+    openrouter: [],
+  });
+
+  it("skips a provider whose breaker is open", () => {
+    const result = selectAvailableKey({
+      apiKeys: keys(),
+      keyStatus: {},
+      rotationIndex: {},
+      providerStatus: { groq: { downUntil: NOW + 60_000 } },
+      now: NOW,
+    });
+    assert.equal(result.provider, "cerebras");
+    assert.equal(result.key, "csk_b");
+  });
+
+  it("still uses a down provider when it is the only option (fallback pass)", () => {
+    const result = selectAvailableKey({
+      apiKeys: { ...emptyKeys(), groq: ["gsk_a"] },
+      keyStatus: {},
+      rotationIndex: {},
+      providerStatus: { groq: { downUntil: NOW + 60_000 } },
+      now: NOW,
+    });
+    assert.equal(result.provider, "groq");
+    assert.equal(result.key, "gsk_a");
+  });
+
+  it("uses a provider again once downUntil has passed", () => {
+    const result = selectAvailableKey({
+      apiKeys: keys(),
+      keyStatus: {},
+      rotationIndex: {},
+      providerStatus: { groq: { downUntil: NOW - 1 } },
+      now: NOW,
+    });
+    assert.equal(result.provider, "groq");
+  });
+
+  it("prefers the preferred provider unless its breaker is open", () => {
+    const result = selectAvailableKey({
+      apiKeys: keys(),
+      keyStatus: {},
+      rotationIndex: {},
+      providerStatus: { cerebras: { downUntil: NOW + 60_000 } },
+      preferredProvider: "cerebras",
+      now: NOW,
+    });
+    // cerebras is down → falls back to next provider with keys (groq)
+    assert.equal(result.provider, "groq");
+  });
+});

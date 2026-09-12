@@ -43,8 +43,9 @@ Dark mode remains for Facebook dark feed and user preference (`theme: dark` / `a
 
 ## Typography
 
-- UI: system sans (`ui-sans-serif`, Segoe UI, Helvetica Neue) 400 / 500 / 600
-- Brand / titles: serif stack — `"Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif`
+- UI + brand / titles: **Be Vietnam Pro** (bundled) then system sans — 400 / 500 / 600.
+  Chosen over a serif stack because serif faces (Iowan, Palatino) lack consistent
+  Vietnamese stacked-diacritic coverage (ệ, ữ, ộ fall back per-glyph).
 - Mono: **ui-monospace / JetBrains Mono** for keys, shortcuts, IDs
 - Scale (popup / dense UI): 11 · 12 · 13 · 14 · 15–16 panel title
 - Line-height body ≥ **1.45** (Vietnamese diacritics)

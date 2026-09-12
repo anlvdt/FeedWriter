@@ -109,6 +109,11 @@ describe("getSystemPrompt", () => {
     assert.match(prompt, /PHÂN BIỆT RÕ RÀNG GIỮA TIN ĐỒN VÀ DỮ KIỆN XÁC NHẬN/);
     assert.match(prompt, /Công thức Lead 3W siêu cô đọng/);
     assert.match(prompt, /DÙNG TIẾNG VIỆT TỰ NHIÊN, CHỐNG DỊCH MÁY/);
+    assert.match(prompt, /QUY TẮC THUẬT NGỮ CNTT VÀ AI/);
+    assert.match(prompt, /CẤM dịch "no-code" thành "không mã"/);
+    assert.match(prompt, /CẤM dịch thô máy móc kiểu "không mã kéo-thả"/);
+    assert.match(prompt, /TUYỆT ĐỐI CẤM CÁC CÂU TỰ XƯNG MÁY MÓC/);
+    assert.match(prompt, /CẤM 'Tôi đưa tin về\.\.\.'/);
     assert.doesNotMatch(prompt, /Viết như TƯỜNG THUẬT|Giọng tường thuật/i);
     assert.doesNotMatch(prompt, /theo thứ tự thông tin trong nguồn/i);
     assert.doesNotMatch(prompt, /giữ cảm xúc và quan điểm/i);

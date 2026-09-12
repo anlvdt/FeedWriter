@@ -133,4 +133,67 @@ describe("summary headline deterministic guard", () => {
     assert.ok(!body.startsWith("Được biết,"));
     assert.match(body, /Apple vừa phát hành bản cập nhật mới/);
   });
+
+  it("normalizes awkward IT terminology in headlines into standard terms", () => {
+    const cases = [
+      [
+        "CÔNG CỤ AI KHÔNG MÃ KÉO‑THẢ TẠO ẢNH, VIDEO VÀ MÔ HÌNH 3D TRÊN MÁY TÍNH CÁ NHÂN\n\nNội dung bài viết.",
+        "CÔNG CỤ AI NO-CODE KÉO THẢ TẠO ẢNH, VIDEO VÀ MÔ HÌNH 3D TRÊN PC",
+      ],
+      [
+        "Nền tảng không mã mới cho lập trình viên\n\nNội dung bài viết.",
+        "NỀN TẢNG NO-CODE MỚI CHO LẬP TRÌNH VIÊN",
+      ],
+      [
+        "Đại lý AI tự động hóa tác vụ trên máy tính cá nhân\n\nNội dung bài viết.",
+        "AI AGENT TỰ ĐỘNG HÓA TÁC VỤ TRÊN PC",
+      ],
+    ];
+    for (const [input, expected] of cases) {
+      const result = process(input);
+      assert.equal(result.text.split("\n")[0], expected);
+    }
+  });
+
+  it("strips robotic self-referential introductory leads while preserving the main fact", () => {
+    const input =
+      "TIÊU ĐỀ BẢN TIN\n\nTôi đưa tin về công cụ mới cho phép người dùng xây dựng ảnh, video và mô hình 3D AI bằng cách kết nối các khối trực quan, không cần viết mã và chạy trực tiếp trên máy tính cá nhân của mình.";
+    const result = process(input);
+    const body = result.text.split("\n\n")[1];
+    assert.doesNotMatch(body, /^Tôi đưa tin về/i);
+    assert.match(body, /^Công cụ mới cho phép người dùng/);
+    assert.match(body, /không cần viết code/);
+    assert.doesNotMatch(body, /không cần viết mã/);
+    assert.match(body, /chạy trực tiếp trên máy/);
+    assert.doesNotMatch(body, /máy tính cá nhân của mình/);
+  });
+
+  it("cleans awkward IT translationese in body paragraphs", () => {
+    const input =
+      "TIÊU ĐỀ BẢN TIN\n\nNền tảng AI không mã hỗ trợ kéo-thả để xây dựng đại lý AI mà không cần viết mã.";
+    const result = process(input);
+    assert.match(result.text, /Nền tảng AI no-code/);
+    assert.match(result.text, /kéo thả/);
+    assert.match(result.text, /AI agent/);
+    assert.match(result.text, /không cần viết code/);
+    assert.doesNotMatch(result.text, /không mã/);
+    assert.doesNotMatch(result.text, /đại lý AI/);
+  });
+
+  it("strips 'Mới đây' lead and 'chính thức' filler from headline", () => {
+    const result = process(
+      "Mới đây, Apple chính thức ra mắt iPhone 17\n\nNội dung bài viết.",
+    );
+    assert.match(result.text, /^APPLE RA MẮT IPHONE 17/);
+  });
+
+  it("flags clickbait words in headline as a quality issue", () => {
+    const result = process(
+      "Tính năng mới gây sốc trên iPhone\n\nNội dung bài viết đủ dài.",
+    );
+    assert.ok(
+      result.issues.some((i) => i.includes("giật gân")),
+      "expected clickbait flag, got: " + JSON.stringify(result.issues),
+    );
+  });
 });

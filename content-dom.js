@@ -3559,9 +3559,15 @@ function _classifyRelatedUrl(rawUrl, label = "", evidence = "post-link") {
   const haystack = (url + " " + label).toLowerCase();
   const socialHosts = [
     "facebook.com", "web.facebook.com", "m.facebook.com", "threads.net",
-    "x.com", "twitter.com", "linkedin.com", "reddit.com",
+    "x.com", "twitter.com", "t.co", "linkedin.com", "reddit.com",
+    "instagram.com", "tiktok.com",
   ];
   if (socialHosts.some((domain) => host === domain || host.endsWith("." + domain))) return null;
+  const shortenerHosts = [
+    "t.co", "bit.ly", "tinyurl.com", "ow.ly", "is.gd", "buff.ly", "goo.gl",
+    "lnkd.in", "fb.me",
+  ];
+  if (shortenerHosts.some((domain) => host === domain || host.endsWith("." + domain))) return null;
   const shoppingHosts = [
     "shopee.vn", "shope.ee", "lazada.vn", "tiki.vn", "sendo.vn",
     "accesstrade.vn", "invol.co",
@@ -3602,16 +3608,42 @@ function _expandedXAnchorUrls(anchor, label = "") {
   const seen = new Set();
   for (const raw of values) {
     const value = String(raw || "").trim();
-    if (!value || /[…]|\.\.\./.test(value)) continue;
+    if (!value) continue;
     let candidate = "";
     const absolute = value.match(/https?:\/\/[^\s<>'"\])}]+/i)?.[0] || "";
     if (absolute) {
-      candidate = absolute;
-    } else {
-      const displayed = value.match(
+      try {
+        const u = new URL(absolute);
+        const host = u.hostname.toLowerCase();
+        if (!["t.co", "x.com", "twitter.com"].some((d) => host === d || host.endsWith("." + d))) {
+          candidate = absolute;
+        }
+      } catch (_) {}
+    }
+    if (!candidate && !/[…]|\.\.\./.test(value)) {
+      const repoMatch = value.match(
         /(?:^|\s)((?:www\.)?(?:github\.com|gitlab\.com)\/[^\s<>'"\])}]+)/i,
       )?.[1] || "";
-      if (displayed) candidate = "https://" + displayed.replace(/^www\./i, "");
+      if (repoMatch) {
+        const displayed = repoMatch.replace(/^www\./i, "");
+        candidate = "https://" + displayed;
+      } else {
+        const domainMatch = value.match(
+          /(?:^|\s)((?:www\.)?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.[a-z]{2,}(?:\/[^\s<>'"\])}]+)?)/i,
+        )?.[1] || "";
+        if (domainMatch) {
+          const cleanDomain = domainMatch.replace(/^www\./i, "");
+          const hostOnly = cleanDomain.split("/")[0].toLowerCase();
+          const blocked = [
+            "t.co", "x.com", "twitter.com", "facebook.com", "instagram.com",
+            "threads.net", "linkedin.com", "reddit.com", "tiktok.com",
+          ];
+          if (!blocked.some((d) => hostOnly === d || hostOnly.endsWith("." + d))) {
+            const displayed = cleanDomain;
+            candidate = "https://" + displayed;
+          }
+        }
+      }
     }
     const clean = _cleanRelatedUrl(candidate);
     if (!clean || seen.has(clean)) continue;

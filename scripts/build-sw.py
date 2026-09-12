@@ -16,9 +16,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 ORDER = [
+    "lib/error-boundary.js",
     "utils.js",
     "lib/message-schema.js",
     "lib/summary-policy.js",
+    "lib/model-registry.js",
     "bg-prompts.js",
     "bg-api.js",
     "background.js",
@@ -27,7 +29,7 @@ OUT = ROOT / "service-worker.js"
 
 HEADER = """/* ==========================================================================
  * FeedWriter service-worker.js (GENERATED — do not edit by hand)
- * Bundle of: utils.js + lib/message-schema.js + bg-prompts.js + bg-api.js + background.js
+ * Bundle of: lib/error-boundary.js + utils.js + lib/message-schema.js + lib/summary-policy.js + lib/model-registry.js + bg-prompts.js + bg-api.js + background.js
  * Rebuild: python3 scripts/build-sw.py
  * ========================================================================== */
 """
@@ -45,7 +47,7 @@ def main() -> int:
         if name == "background.js":
             lines = []
             for line in body.splitlines(keepends=True):
-                if "importScripts(" in line and "utils.js" in line:
+                if "importScripts(" in line and ("utils.js" in line or "error-boundary.js" in line):
                     lines.append(
                         "// importScripts inlined into service-worker.js — do not re-import\n"
                     )

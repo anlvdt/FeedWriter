@@ -23,7 +23,7 @@ const TIMEOUT_MS = 30000;
 // Models configuration sau migration
 const MODELS = {
   groq: "openai/gpt-oss-120b",
-  gemini: "gemini-2.0-flash",
+  gemini: "gemini-3.1-flash-lite",
   cerebras: "gpt-oss-120b",
   sambanova: "Meta-Llama-3.3-70B-Instruct",
   openrouter: "openai/gpt-oss-120b"

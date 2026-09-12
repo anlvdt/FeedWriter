@@ -45,10 +45,12 @@ describe("Vietnam Timezone & Smart Time Conversion System", () => {
       assert.match(rules, /TUYỆT ĐỐI KHÔNG đưa mốc thời gian đăng bài/);
     });
 
-    it("NEWS_REWRITE_POLICY forbids social post timestamp narration", () => {
+    it("NEWS_REWRITE_POLICY enforces first-person direct reporting and forbids retelling/narration", () => {
       const policy = vm.runInContext("NEWS_REWRITE_POLICY", context);
+      assert.match(policy, /ĐƯA TIN TỪ NGÔI THỨ NHẤT/);
+      assert.match(policy, /TUYỆT ĐỐI CẤM KIỂU THUẬT LẠI GIÁN TIẾP/);
       assert.match(policy, /QUY ĐỔI THÔNG MINH MỐC THỜI GIAN SANG GIỜ VIỆT NAM/);
-      assert.match(policy, /CẤM đưa mốc thời gian đăng bài\/tweet/);
+      assert.match(policy, /CẤM TUYỆT ĐỐI đưa mốc thời gian đăng bài\/tweet/);
     });
 
     it("all summary prompts include smart Vietnam time conversion requirement", () => {
@@ -143,6 +145,37 @@ describe("Vietnam Timezone & Smart Time Conversion System", () => {
       assert.doesNotMatch(result.text, /Một bài đăng trên Facebook của tài khoản John Doe/);
       assert.match(result.text, /Công cụ tối ưu mã nguồn mới đã ra mắt\./);
       assert.match(result.text, /Hiệu năng xử lý tăng 30%\./);
+    });
+    it("strips social media post intro clauses while preserving the core news", () => {
+      const text =
+        "TIÊU ĐỀ BẢN TIN\n\n" +
+        "Theo một bài đăng trên X vào lúc 00:30 ngày 11/9 (giờ Việt Nam), OpenAI đã mở cổng đăng ký thử nghiệm.";
+      const result = process(text, "OpenAI testing portal opened on X");
+      assert.doesNotMatch(result.text, /Theo một bài đăng trên X vào lúc/);
+      assert.match(result.text, /OpenAI đã mở cổng đăng ký thử nghiệm\./);
+      assert.ok(result.issues.some((i) => i.includes("mệnh đề dẫn dắt mạng xã hội")));
+    });
+
+    it("transforms indirect retelling leads (OpenAI cho biết...) into direct news statements", () => {
+      const text =
+        "TIÊU ĐỀ BẢN TIN\n\n" +
+        "OpenAI cho biết hệ thống giọng nói đã được triển khai cho hơn 1 tỷ người dùng ChatGPT.";
+      const result = process(text, "Source");
+      assert.doesNotMatch(result.text, /OpenAI cho biết/);
+      assert.match(result.text, /Hệ thống giọng nói đã được triển khai cho hơn 1 tỷ người dùng ChatGPT\./);
+      assert.ok(result.issues.some((i) => i.includes("chuyển đổi câu thuật lại")));
+    });
+
+    it("cleans user's exact reported failure case end-to-end", () => {
+      const userExample =
+        "OPENAI MỞ API GIỌNG NÓI CHO NHÀ PHÁT TRIỂN SAU KHI ĐẠT 1 TỶ NGƯỜI DÙNG\n\n" +
+        "OpenAI cho biết hệ thống giọng nói đã được triển khai cho hơn 1 tỷ người dùng ChatGPT và hiện nay cho phép các nhà phát triển xây dựng ứng dụng dựa trên cùng công nghệ.\n\n" +
+        "Theo một bài đăng trên X vào lúc 00:30 ngày 11/9 (giờ Việt Nam), OpenAI đã mở cổng đăng ký thử nghiệm.";
+      const result = process(userExample, "OpenAI voice API source text");
+      assert.doesNotMatch(result.text, /OpenAI cho biết/);
+      assert.doesNotMatch(result.text, /Theo một bài đăng trên X vào lúc/);
+      assert.match(result.text, /Hệ thống giọng nói đã được triển khai/);
+      assert.match(result.text, /OpenAI đã mở cổng đăng ký thử nghiệm\./);
     });
 
     it("does not flag legitimate tech event Vietnam time as fabricated number", () => {

@@ -25,7 +25,16 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
   let cleanSource = isValidName(source) ? source : "";
   let linkQuality = options.linkQuality || "";
   const postElement = options.postElement || null;
-  const initialRelatedLinks = Array.isArray(discoveredLinks) ? discoveredLinks : [];
+  const initialRelatedLinks = (Array.isArray(discoveredLinks) ? discoveredLinks : [])
+    .filter((item) => {
+      if (!item || !item.url) return false;
+      try {
+        const host = new URL(item.url).hostname.toLowerCase();
+        return !["t.co", "x.com", "twitter.com"].some((d) => host === d || host.endsWith("." + d));
+      } catch (_) {
+        return false;
+      }
+    });
   const initialRelatedText = initialRelatedLinks.map((item) => item.url).filter(Boolean).join("\n");
 
   const escAttrValue = (value) =>
@@ -260,6 +269,14 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
       .split(/\s+/)
       .map((url) => url.trim())
       .filter((url) => /^https?:\/\//i.test(url))
+      .filter((url) => {
+        try {
+          const host = new URL(url).hostname.toLowerCase();
+          return !["t.co", "x.com", "twitter.com"].some((d) => host === d || host.endsWith("." + d));
+        } catch (_) {
+          return false;
+        }
+      })
       .map((url) => {
         if (typeof window.fbsClassifyRelatedUrl === "function") {
           return window.fbsClassifyRelatedUrl(url, "", "manual");

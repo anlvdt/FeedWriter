@@ -736,8 +736,21 @@ function _updateKeysTabBadge(total) {
 
 async function loadKeyLists() {
   const { apiKeys, restoredFromBackup } = await ensureApiKeysLoaded();
-  const localData = await chrome.storage.local.get(["keyStatus"]);
+  const localData = await chrome.storage.local.get([
+    "keyStatus",
+    "providerStatus",
+    "providerStats",
+  ]);
   const ks = localData.keyStatus || {};
+  const providerStatus = localData.providerStatus || {};
+  const providerStats = localData.providerStats || {};
+  const reg =
+    typeof FeedWriterModelRegistry !== "undefined"
+      ? FeedWriterModelRegistry
+      : null;
+  const { modelOverrides } = reg
+    ? await chrome.storage.sync.get(["modelOverrides"])
+    : { modelOverrides: {} };
   let totalKeys = 0;
   for (const p of ALL_PROVIDERS) {
     const keys = apiKeys[p] || [];
@@ -751,6 +764,12 @@ async function loadKeyLists() {
       mapped[key] = hashed ? (ks[hashed] || {}) : {};
     }
     renderKeyList(p, keys, mapped);
+    renderProviderHealth(
+      p,
+      providerStatus[p],
+      providerStats[p],
+      reg ? reg.resolveModel(p, reg.sanitizeOverrides(modelOverrides)) : "",
+    );
   }
   if (keyEmptyState) {
     const empty = totalKeys === 0;
@@ -765,6 +784,90 @@ async function loadKeyLists() {
     );
   }
 }
+
+// === MODEL CONFIG ===
+// Per-provider model overrides, persisted to chrome.storage.sync.modelOverrides.
+// Empty field = provider default. Datalist suggests known-good models but any
+// valid model ID is accepted (validated on write via the registry).
+
+async function renderModelConfig() {
+  const body = document.getElementById("modelConfigBody");
+  const reg =
+    typeof FeedWriterModelRegistry !== "undefined"
+      ? FeedWriterModelRegistry
+      : null;
+  if (!body || !reg) return;
+
+  const { modelOverrides } = await chrome.storage.sync.get(["modelOverrides"]);
+  const overrides = reg.sanitizeOverrides(modelOverrides);
+
+  for (const provider of ALL_PROVIDERS) {
+    const models = reg.listModels(provider);
+    const row = document.createElement("div");
+    row.className = "model-config-row";
+
+    const label = document.createElement("label");
+    label.className = "model-config-label";
+    label.htmlFor = "modelInput-" + provider;
+    label.textContent = reg.PROVIDER_LABELS[provider] || provider;
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.id = "modelInput-" + provider;
+    input.className = "field-input model-config-input";
+    input.dataset.provider = provider;
+    input.placeholder = reg.defaultModel(provider);
+    input.value = overrides[provider] || "";
+    input.autocomplete = "off";
+    input.spellcheck = false;
+    input.setAttribute("list", "modelList-" + provider);
+
+    const datalist = document.createElement("datalist");
+    datalist.id = "modelList-" + provider;
+    for (const m of models) {
+      const opt = document.createElement("option");
+      opt.value = m.id;
+      opt.label = m.label;
+      datalist.appendChild(opt);
+    }
+
+    row.appendChild(label);
+    row.appendChild(input);
+    row.appendChild(datalist);
+    body.appendChild(row);
+  }
+}
+
+// Persist on change (debounced per-field via change event, not input).
+document.addEventListener("change", async (e) => {
+  const input = e.target.closest(".model-config-input");
+  if (!input) return;
+  const reg =
+    typeof FeedWriterModelRegistry !== "undefined"
+      ? FeedWriterModelRegistry
+      : null;
+  if (!reg) return;
+  const provider = input.dataset.provider;
+  const value = input.value.trim();
+
+  if (value && !reg.isValidModelId(value)) {
+    showKeyStatus("Model ID không hợp lệ: " + value, "error");
+    input.value = "";
+    return;
+  }
+
+  const { modelOverrides } = await chrome.storage.sync.get(["modelOverrides"]);
+  const overrides = reg.sanitizeOverrides(modelOverrides);
+  if (value) overrides[provider] = value;
+  else delete overrides[provider];
+  await chrome.storage.sync.set({ modelOverrides: overrides });
+  showKeyStatus(
+    value
+      ? (reg.PROVIDER_LABELS[provider] || provider) + " → " + value
+      : (reg.PROVIDER_LABELS[provider] || provider) + " về model mặc định",
+    "success",
+  );
+});
 
 /** Normalize various import shapes into { provider: string[] }. */
 function _normalizeImportedApiKeys(raw) {
@@ -915,6 +1018,56 @@ function renderKeyList(provider, keys, keyStatusData) {
       );
     })
     .join("");
+}
+
+// Show provider health next to the key-list name: circuit-breaker state,
+// success rate and last observed latency from providerStats.
+function renderProviderHealth(provider, status, stats, model) {
+  const cap = provider.charAt(0).toUpperCase() + provider.slice(1);
+  const wrapper = document.getElementById("keyList" + cap);
+  if (!wrapper) return;
+  const header = wrapper.querySelector(".key-list-header");
+  if (!header) return;
+
+  // Show the resolved model under the provider name
+  const nameEl = header.querySelector(".key-list-name");
+  if (nameEl && model) {
+    let modelEl = nameEl.querySelector(".key-list-model");
+    if (!modelEl) {
+      modelEl = document.createElement("span");
+      modelEl.className = "key-list-model";
+      nameEl.appendChild(modelEl);
+    }
+    modelEl.textContent = model;
+    modelEl.title = "Model đang dùng: " + model;
+  }
+
+  let badge = header.querySelector(".provider-health");
+  if (!badge) {
+    badge = document.createElement("span");
+    badge.className = "provider-health";
+    header.appendChild(badge);
+  }
+
+  const isDown = status && status.downUntil && Date.now() < status.downUntil;
+  const total = (stats?.ok || 0) + (stats?.fail || 0);
+
+  if (isDown) {
+    const mins = Math.ceil((status.downUntil - Date.now()) / 60000);
+    badge.textContent = "⚠ " + mins + "p";
+    badge.className = "provider-health is-down";
+    badge.title = "Provider đang tạm ngắt (circuit breaker) — còn ~" + mins + " phút";
+  } else if (total > 0) {
+    const rate = Math.round(((stats.ok || 0) / total) * 100);
+    const lat = stats.lastLatency ? " · " + (stats.lastLatency / 1000).toFixed(1) + "s" : "";
+    badge.textContent = rate + "%" + lat;
+    badge.className = "provider-health " + (rate >= 80 ? "is-good" : rate >= 50 ? "is-warn" : "is-down");
+    badge.title = "Tỉ lệ thành công " + rate + "% (" + total + " lần gọi)" + (stats.lastLatency ? " · latency gần nhất " + (stats.lastLatency / 1000).toFixed(1) + "s" : "");
+  } else {
+    badge.textContent = "";
+    badge.title = "";
+    badge.className = "provider-health";
+  }
 }
 
 // Event delegation for key delete buttons (click may land on SVG child)
@@ -1083,6 +1236,7 @@ if (clearCacheBtn) {
 
 // Load keys (+ restore from local backup if sync was wiped)
 loadKeyLists();
+renderModelConfig();
 
 // === HISTORY ===
 let historyData = [];

@@ -10,6 +10,147 @@ const PROVIDER_PRIORITY = [
   "openrouter",
 ];
 
+// === MODEL CONFIGURATION ===
+// Model IDs resolve through lib/model-registry.js (bundled into the SW).
+// Users override per-provider via chrome.storage.sync.modelOverrides.
+
+function _modelRegistry() {
+  return typeof FeedWriterModelRegistry !== "undefined"
+    ? FeedWriterModelRegistry
+    : null;
+}
+
+/** Resolve the model a provider should run right now (user override → task tier → default). */
+async function getProviderModel(provider, task) {
+  const reg = _modelRegistry();
+  if (!reg) return "";
+  try {
+    const { modelOverrides } = await chrome.storage.sync.get(["modelOverrides"]);
+    return reg.resolveModel(provider, reg.sanitizeOverrides(modelOverrides), task);
+  } catch (_) {
+    return task ? reg.fastModel(provider) : reg.defaultModel(provider);
+  }
+}
+
+/**
+ * True when an error means the MODEL is wrong (bad id, decommissioned,
+ * context/max_tokens limits) — not the API key. These must not poison keys.
+ */
+function isModelError(errMsg, status) {
+  const m = String(errMsg || "").toLowerCase();
+  return (
+    status === 404 ||
+    /model.{0,40}(not found|does not exist|unsupported|unavailable|decommissioned|isn't supported|is not supported)|invalid.{0,15}model|no such model|model_not_found|unknown model|does not have access/i.test(
+      m,
+    )
+  );
+}
+
+/** True when the input/output size exceeds what the model accepts. */
+function isContextError(errMsg, status) {
+  const m = String(errMsg || "").toLowerCase();
+  return (
+    status === 413 ||
+    /context.{0,20}(length|window|size|limit)|context_length_exceeded|maximum context|too many tokens|max.?tokens.{0,30}(too large|exceed|invalid|maximum)|max.?completion|maxoutputtokens|reduce.{0,20}length|prompt.{0,20}too long|payload.{0,15}too large|request.{0,20}too large/i.test(
+      m,
+    )
+  );
+}
+
+/**
+ * Invoke a provider call with the resolved model. If the resolved model is a
+ * non-default tier (user override or fast model) and the provider rejects the
+ * MODEL, retry once with the provider default. Preserves each call fn's
+ * return/throw contract: stream fns return {error}, non-stream fns throw.
+ */
+async function callWithModel(provider, task, invoke) {
+  const reg = _modelRegistry();
+  const model = await getProviderModel(provider, task);
+  const defaultModel = reg ? reg.defaultModel(provider) : model;
+  const canFallback = model !== defaultModel;
+  try {
+    const result = await invoke(model);
+    if (
+      canFallback &&
+      result &&
+      result.error &&
+      isModelError(result.error, result.status)
+    ) {
+      return invoke(defaultModel);
+    }
+    return result;
+  } catch (e) {
+    if (canFallback && isModelError(e && e.message, e && e.status)) {
+      return invoke(defaultModel);
+    }
+    throw e;
+  }
+}
+
+// === PROVIDER CIRCUIT BREAKER ===
+// Per-key cooldowns handle bad keys; this handles provider-wide outages so a
+// dead provider doesn't burn through all its keys before rotation moves on.
+// State lives in storage.local.providerStatus: { [provider]: { failures, downUntil, lastError } }
+
+const PROVIDER_BREAKER_THRESHOLD = 3; // consecutive failures before opening
+const PROVIDER_BREAKER_BASE_MS = 2 * 60 * 1000; // 2 min, doubles per trip, cap 30m
+const PROVIDER_BREAKER_MAX_MS = 30 * 60 * 1000;
+
+async function markProviderFailure(provider, reason = "") {
+  if (!provider) return;
+  try {
+    const { providerStatus = {} } = await chrome.storage.local.get(["providerStatus"]);
+    const s = { ...(providerStatus[provider] || {}) };
+    s.failures = (s.failures || 0) + 1;
+    s.lastError = String(reason || "").slice(0, 120);
+    if (s.failures >= PROVIDER_BREAKER_THRESHOLD) {
+      const trips = s.trips || 0;
+      const backoff = Math.min(
+        PROVIDER_BREAKER_BASE_MS * Math.pow(2, trips),
+        PROVIDER_BREAKER_MAX_MS,
+      );
+      s.downUntil = Date.now() + backoff;
+      s.trips = trips + 1;
+    }
+    providerStatus[provider] = s;
+    await chrome.storage.local.set({ providerStatus });
+  } catch (_) {}
+}
+
+async function markProviderSuccess(provider, latencyMs) {
+  if (!provider) return;
+  try {
+    const { providerStatus = {}, providerStats = {} } =
+      await chrome.storage.local.get(["providerStatus", "providerStats"]);
+    if (providerStatus[provider]) {
+      delete providerStatus[provider];
+      await chrome.storage.local.set({ providerStatus });
+    }
+    const st = providerStats[provider] || { ok: 0, fail: 0, latencyTotal: 0, latencyCount: 0 };
+    st.ok += 1;
+    if (Number.isFinite(latencyMs) && latencyMs > 0) {
+      st.latencyTotal += latencyMs;
+      st.latencyCount += 1;
+      st.lastLatency = Math.round(latencyMs);
+    }
+    st.lastOk = Date.now();
+    providerStats[provider] = st;
+    await chrome.storage.local.set({ providerStats });
+  } catch (_) {}
+}
+
+async function markProviderFailureStats(provider) {
+  if (!provider) return;
+  try {
+    const { providerStats = {} } = await chrome.storage.local.get(["providerStats"]);
+    const st = providerStats[provider] || { ok: 0, fail: 0, latencyTotal: 0, latencyCount: 0 };
+    st.fail += 1;
+    st.lastFail = Date.now();
+    providerStats[provider] = st;
+    await chrome.storage.local.set({ providerStats });
+  } catch (_) {}
+}
+
 /**
  * Pure key selection — keep in sync with lib/provider-rotation.js
  * (SW cannot import CommonJS modules; this is the production copy).
@@ -19,6 +160,7 @@ function selectAvailableKey(opts) {
     legacyApiKey = null,
     legacyProvider = "groq",
     preferredProvider = null,
+    providerStatus = null,
     now,
   } = opts;
 
@@ -65,32 +207,41 @@ function selectAvailableKey(opts) {
         ]
       : PROVIDER_PRIORITY;
 
-  for (const provider of orderedProviders) {
-    const keys = apiKeys[provider] || [];
-    if (keys.length === 0) continue;
+  // Pass 1: providers whose circuit breaker is closed. Pass 2 (fallback):
+  // down providers too — when every configured provider is tripped the user
+  // should still get a best-effort attempt rather than a dead end.
+  for (const ignoreBreaker of [false, true]) {
+    for (const provider of orderedProviders) {
+      const keys = apiKeys[provider] || [];
+      if (keys.length === 0) continue;
 
-    const startIdx = (rotationIndex[provider] || 0) % keys.length;
-    for (let i = 0; i < keys.length; i++) {
-      const idx = (startIdx + i) % keys.length;
-      const key = keys[idx];
-      const status = keyStatus[key] || {};
+      const ps = providerStatus && providerStatus[provider];
+      const isDown = ps && ps.downUntil && now < ps.downUntil;
+      if (isDown && !ignoreBreaker) continue;
 
-      if (!status.rateLimitedUntil || now >= status.rateLimitedUntil) {
-        const newRotationIndex = {
-          ...rotationIndex,
-          [provider]: (idx + 1) % keys.length,
-        };
-        const newKeyStatus = {
-          ...keyStatus,
-          [key]: { ...(keyStatus[key] || {}), lastUsed: now },
-        };
-        return {
-          key,
-          provider,
-          index: idx,
-          newRotationIndex,
-          newKeyStatus,
-        };
+      const startIdx = (rotationIndex[provider] || 0) % keys.length;
+      for (let i = 0; i < keys.length; i++) {
+        const idx = (startIdx + i) % keys.length;
+        const key = keys[idx];
+        const status = keyStatus[key] || {};
+
+        if (!status.rateLimitedUntil || now >= status.rateLimitedUntil) {
+          const newRotationIndex = {
+            ...rotationIndex,
+            [provider]: (idx + 1) % keys.length,
+          };
+          const newKeyStatus = {
+            ...keyStatus,
+            [key]: { ...(keyStatus[key] || {}), lastUsed: now },
+          };
+          return {
+            key,
+            provider,
+            index: idx,
+            newRotationIndex,
+            newKeyStatus,
+          };
+        }
       }
     }
   }
@@ -152,6 +303,7 @@ async function loadApiKeyStore() {
     "keyStatus",
     "keyRotationIndex",
     "backupApiKeys",
+    "providerStatus",
   ]);
 
   let apiKeys = localData.apiKeys || data.apiKeys;
@@ -179,6 +331,7 @@ async function loadApiKeyStore() {
     legacyProvider: data.provider || "groq",
     keyStatus: localData.keyStatus || {},
     rotationIndex: localData.keyRotationIndex || {},
+    providerStatus: localData.providerStatus || {},
   };
 }
 
@@ -192,12 +345,23 @@ function getAvailableKey(preferredProvider = null) {
 async function selectAvailableKeyForRequest(preferredProvider = null) {
   const store = await loadApiKeyStore();
   const hashedStatus = { ...(store.keyStatus || {}) };
+  const validHashes = new Set();
   if (store.apiKeys) {
     for (const p of Object.keys(store.apiKeys)) {
       for (const key of store.apiKeys[p] || []) {
         const hashed = await hashKeyId(key);
+        if (hashed) validHashes.add(hashed);
         Object.assign(hashedStatus, remapKeyStatus(hashedStatus, key, hashed));
       }
+    }
+  }
+  // Drop status entries for keys that no longer exist — deleted keys would
+  // otherwise leave orphaned hashes in storage.local forever.
+  let pruned = false;
+  for (const h of Object.keys(hashedStatus)) {
+    if (!validHashes.has(h)) {
+      delete hashedStatus[h];
+      pruned = true;
     }
   }
 
@@ -217,6 +381,7 @@ async function selectAvailableKeyForRequest(preferredProvider = null) {
     legacyProvider: store.legacyProvider,
     keyStatus: lookupStatus,
     rotationIndex: store.rotationIndex,
+    providerStatus: store.providerStatus,
     preferredProvider,
     now: Date.now(),
   });
@@ -237,6 +402,11 @@ async function selectAvailableKeyForRequest(preferredProvider = null) {
     return { key: result.key, provider: result.provider, index: result.index };
   }
 
+  if (result.noKeys || pruned) {
+    chrome.storage.local
+      .set({ keyStatus: hashedStatus })
+      .catch(() => {});
+  }
   if (result.noKeys) return { key: null, provider: null, noKeys: true };
   return {
     key: null,
@@ -278,7 +448,7 @@ async function markKeyCooldown(key, retryAfterMs, reason = "cooldown") {
 
 /** Clear all key cooldowns (used by Test connection / user stuck). */
 async function clearAllKeyCooldowns() {
-  const localData = await chrome.storage.local.get(["keyStatus"]);
+  const localData = await chrome.storage.local.get(["keyStatus", "providerStatus"]);
   const keyStatus = localData.keyStatus || {};
   let changed = false;
   for (const key of Object.keys(keyStatus)) {
@@ -289,6 +459,10 @@ async function clearAllKeyCooldowns() {
     }
   }
   if (changed) await chrome.storage.local.set({ keyStatus });
+  // Test connection is the manual unstick path — reset circuit breakers too.
+  if (localData.providerStatus && Object.keys(localData.providerStatus).length) {
+    await chrome.storage.local.set({ providerStatus: {} });
+  }
   return changed;
 }
 
@@ -306,7 +480,19 @@ function parseRetryAfter(errorMessage) {
 /** Classify provider error for cooldown + user message */
 function classifyProviderError(errMsg = "", status = 0) {
   const m = String(errMsg || "").toLowerCase();
-  if (status === 401 || status === 403 || /invalid|unauthorized|forbidden|incorrect api key|api key not|not valid|authentication/i.test(m)) {
+  // Model/config errors first: they must never look like a bad key, or every
+  // key gets a 1h cooldown and the user sees a fake "out of quota" lockout.
+  if (isModelError(errMsg, status)) {
+    return { kind: "model", cooldownMs: 15 * 1000 };
+  }
+  if (isContextError(errMsg, status)) {
+    return { kind: "context", cooldownMs: 30 * 1000 };
+  }
+  if (
+    status === 401 ||
+    status === 403 ||
+    /incorrect api key|api key.{0,20}(invalid|not valid|expired|revoked|incorrect)|invalid.{0,10}api.?key|unauthorized|authentication|forbidden/i.test(m)
+  ) {
     return { kind: "invalid", cooldownMs: 60 * 60 * 1000 }; // 1h
   }
   if (status === 429 || /rate limit|quota|too many requests|resource.?exhausted/i.test(m)) {
@@ -415,7 +601,7 @@ async function getSystemPrompt(
         "- KHÔNG khung mở/thân/kết. Giọng bản tin khách quan. CẤM câu hỏi mở.",
       reporter: "\n\nGHI ĐÈ — GÓC NHÌN PHÓNG VIÊN:\n" +
         "- Mở bài đưa sự kiện/kết quả lên trước; chỉ bổ sung bối cảnh khi nguồn có.\n" +
-        "- Dẫn nguồn gián tiếp khi có danh tính cụ thể: \"Theo...\", \"Dựa trên dữ liệu...\"\n" +
+        "- Đưa tin trực tiếp về sự kiện và kết quả, không viết kiểu thuật lại (\"OpenAI cho biết...\", \"Theo một bài đăng trên X...\").\n" +
         "- Giữ đúng người phát biểu và mức chắc chắn; không suy rộng một trải nghiệm thành phản ứng cộng đồng.\n" +
         "- Phân tích / ảnh hưởng thị trường nếu nguồn cung cấp đủ dữ kiện.\n" +
         "- Chỉ nêu triển vọng hoặc xu hướng tiếp theo nếu nguồn có; hết ý thì dừng.\n" +
@@ -443,8 +629,10 @@ async function getSystemPrompt(
   // Output language is always Vietnamese (journalistic standard).
   // Source language is irrelevant — the AI must translate and rewrite in Vietnamese.
   prompt +=
-    "\n- Luôn trả lời bằng tiếng Việt chuẩn báo chí. Nếu bài viết bằng tiếng Anh hoặc bất kỳ ngôn ngữ nào khác, PHẢI dịch và viết lại thành tiếng Việt. Không được giữ nguyên ngôn ngữ gốc." +
-    "\n- Múi giờ chuẩn của bản tin: Giờ Việt Nam (ICT, UTC+7). Chỉ quy đổi mốc thời gian khi gắn với SỰ KIỆN CÔNG NGHỆ THỰC TẾ (lịch ra mắt, công bố, mở bán, cập nhật phần mềm, sự cố kỹ thuật, deadline). Tuyệt đối KHÔNG đưa thời điểm ai đó đăng bài/tweet trên mạng xã hội vào bản tin và KHÔNG viết các câu tường thuật hành vi đăng bài.";
+    "\n- Luôn trả lời bằng tiếng Việt chuẩn báo chí. Nếu bài viết bằng tiếng Anh hoặc bất kỳ ngôn ngữ nào khác, PHẢI dịch và viết lại thành tiếng Việt dễ hiểu, tự nhiên, chuẩn văn phong công nghệ." +
+    "\n- Đưa tin từ ngôi thứ nhất (chủ thể trực tiếp đưa tin): Phát biểu trực tiếp sự kiện công nghệ, TUYỆT ĐỐI KHÔNG viết kiểu thuật lại (CẤM '[Công ty] cho biết...', CẤM 'Theo một bài đăng trên X vào lúc...'). TUYỆT ĐỐI CẤM các câu tự xưng máy móc (CẤM 'Tôi đưa tin về...', 'Tôi xin chia sẻ...', 'Hôm nay tôi...'). Bản tin đi thẳng vào sản phẩm hoặc sự kiện." +
+    "\n- Chuẩn hóa thuật ngữ CNTT/AI: Giữ nguyên các thuật ngữ tiếng Anh phổ biến (no-code, low-code, prompt, token, model, pipeline, workflow, framework, runtime, benchmark, fine-tune, AI agent, repo, UI/UX, plugin, cache, PC, local...). TUYỆT ĐỐI CẤM dịch máy thô cứng (CẤM 'không mã', CẤM 'không mã kéo-thả', CẤM 'máy tính cá nhân' khi nói về PC/local, CẤM 'đường ống', CẤM 'đại lý AI'). Cụm 'no-code drag-and-drop' dịch là 'công cụ no-code kéo thả' hoặc 'kéo thả không cần code'." +
+    "\n- Múi giờ chuẩn của bản tin: Giờ Việt Nam (ICT, UTC+7). Chỉ quy đổi mốc thời gian khi gắn với SỰ KIỆN CÔNG NGHỆ THỰC TẾ (lịch ra mắt, công bố, mở bán, cập nhật phần mềm, sự cố kỹ thuật, deadline). Tuyệt đối KHÔNG đưa thời điểm ai đó đăng bài/tweet trên mạng xã hội vào bản tin (CẤM 'vào lúc 00...', 'lúc ... trên X') và KHÔNG viết các câu tường thuật hành vi đăng bài.";
 
   // Source metadata is attribution data, never an instruction or independent proof.
   const sourceMetadata = {
@@ -574,12 +762,14 @@ async function callGroqStream(
   port,
   signal,
   maxTokens = 512,
+  task,
 ) {
-  return callStreamAPI({
+  return callWithModel("groq", task, (model) =>
+    callStreamAPI({
     url: "https://api.groq.com/openai/v1/chat/completions",
     headers: { Authorization: "Bearer " + apiKey },
     body: {
-      model: "openai/gpt-oss-120b",
+      model,
       stream: true,
       messages: [
         { role: "system", content: systemPrompt },
@@ -593,7 +783,8 @@ async function callGroqStream(
     signal,
     maxTokens,
     provider: "Groq",
-  });
+    }),
+  );
 }
 
 async function callGeminiStream(
@@ -603,9 +794,11 @@ async function callGeminiStream(
   port,
   signal,
   maxTokens = 512,
+  task,
 ) {
-  return callStreamAPI({
-    url: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse",
+  return callWithModel("gemini", task, (model) =>
+    callStreamAPI({
+    url: "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + ":streamGenerateContent?alt=sse",
     headers: { "x-goog-api-key": apiKey },
     body: {
       system_instruction: { parts: [{ text: systemPrompt }] },
@@ -617,7 +810,8 @@ async function callGeminiStream(
     signal,
     maxTokens,
     provider: "Gemini",
-  });
+    }),
+  );
 }
 
 // === CEREBRAS: OpenAI-compatible API, ultra-fast inference ===
@@ -628,12 +822,14 @@ async function callCerebrasStream(
   port,
   signal,
   maxTokens = 512,
+  task,
 ) {
-  return callStreamAPI({
+  return callWithModel("cerebras", task, (model) =>
+    callStreamAPI({
     url: "https://api.cerebras.ai/v1/chat/completions",
     headers: { Authorization: "Bearer " + apiKey },
     body: {
-      model: "gpt-oss-120b",
+      model,
       stream: true,
       messages: [
         { role: "system", content: systemPrompt },
@@ -647,15 +843,17 @@ async function callCerebrasStream(
     signal,
     maxTokens,
     provider: "Cerebras",
-  });
+    }),
+  );
 }
 
-async function callCerebrasNonStream(apiKey, userMessage, systemPrompt) {
-  return callNonStream(
+async function callCerebrasNonStream(apiKey, userMessage, systemPrompt, task) {
+  return callWithModel("cerebras", task, (model) =>
+    callNonStream(
     "https://api.cerebras.ai/v1/chat/completions",
     { Authorization: "Bearer " + apiKey },
     {
-      model: "gpt-oss-120b",
+      model,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userMessage },
@@ -664,6 +862,7 @@ async function callCerebrasNonStream(apiKey, userMessage, systemPrompt) {
       temperature: 0.3,
     },
     (d) => d?.choices?.[0]?.message?.content,
+    ),
   );
 }
 
@@ -675,12 +874,14 @@ async function callSambanovaStream(
   port,
   signal,
   maxTokens = 512,
+  task,
 ) {
-  return callStreamAPI({
+  return callWithModel("sambanova", task, (model) =>
+    callStreamAPI({
     url: "https://api.sambanova.ai/v1/chat/completions",
     headers: { Authorization: "Bearer " + apiKey },
     body: {
-      model: "Meta-Llama-3.3-70B-Instruct",
+      model,
       stream: true,
       messages: [
         { role: "system", content: systemPrompt },
@@ -694,15 +895,17 @@ async function callSambanovaStream(
     signal,
     maxTokens,
     provider: "SambaNova",
-  });
+    }),
+  );
 }
 
-async function callSambanovaNonStream(apiKey, userMessage, systemPrompt) {
-  return callNonStream(
+async function callSambanovaNonStream(apiKey, userMessage, systemPrompt, task) {
+  return callWithModel("sambanova", task, (model) =>
+    callNonStream(
     "https://api.sambanova.ai/v1/chat/completions",
     { Authorization: "Bearer " + apiKey },
     {
-      model: "Meta-Llama-3.3-70B-Instruct",
+      model,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userMessage },
@@ -711,6 +914,7 @@ async function callSambanovaNonStream(apiKey, userMessage, systemPrompt) {
       temperature: 0.3,
     },
     (d) => d?.choices?.[0]?.message?.content,
+    ),
   );
 }
 
@@ -722,8 +926,10 @@ async function callOpenrouterStream(
   port,
   signal,
   maxTokens = 512,
+  task,
 ) {
-  return callStreamAPI({
+  return callWithModel("openrouter", task, (model) =>
+    callStreamAPI({
     url: "https://openrouter.ai/api/v1/chat/completions",
     headers: {
       Authorization: "Bearer " + apiKey,
@@ -731,7 +937,7 @@ async function callOpenrouterStream(
       "X-Title": "FeedWriter",
     },
     body: {
-      model: "openai/gpt-oss-120b",
+      model,
       stream: true,
       messages: [
         { role: "system", content: systemPrompt },
@@ -745,11 +951,13 @@ async function callOpenrouterStream(
     signal,
     maxTokens,
     provider: "OpenRouter",
-  });
+    }),
+  );
 }
 
-async function callOpenrouterNonStream(apiKey, userMessage, systemPrompt) {
-  return callNonStream(
+async function callOpenrouterNonStream(apiKey, userMessage, systemPrompt, task) {
+  return callWithModel("openrouter", task, (model) =>
+    callNonStream(
     "https://openrouter.ai/api/v1/chat/completions",
     {
       Authorization: "Bearer " + apiKey,
@@ -757,7 +965,7 @@ async function callOpenrouterNonStream(apiKey, userMessage, systemPrompt) {
       "X-Title": "FeedWriter",
     },
     {
-      model: "openai/gpt-oss-120b",
+      model,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userMessage },
@@ -766,5 +974,6 @@ async function callOpenrouterNonStream(apiKey, userMessage, systemPrompt) {
       temperature: 0.3,
     },
     (d) => d?.choices?.[0]?.message?.content,
+    ),
   );
 }

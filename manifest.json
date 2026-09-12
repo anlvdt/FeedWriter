@@ -31,7 +31,7 @@
     "https://da.gd/*"
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'"
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://generativelanguage.googleapis.com https://api.groq.com https://api.cerebras.ai https://api.sambanova.ai https://openrouter.ai https://tinyurl.com https://is.gd https://v.gd https://da.gd; img-src 'self' data: https: blob:; style-src 'self' 'unsafe-inline'"
   },
   "background": {
     "service_worker": "service-worker.js"
@@ -44,7 +44,7 @@
         "https://m.facebook.com/*"
       ],
       "js": [
-        "errors.js",
+        "lib/error-boundary.js",
         "utils.js",
         "lib/summary-policy.js",
         "dom-helpers.js",
@@ -65,31 +65,32 @@
     },
     {
       "matches": ["https://*.threads.net/*"],
-      "js": ["errors.js", "utils.js", "lib/summary-policy.js", "dom-helpers.js", "post-data.js", "status-formatter.js", "content-dom-runtime.js", "poster-threads.js", "cross-poster.js", "content-composer-runtime.js", "content.js"],
+      "js": ["lib/error-boundary.js", "utils.js", "lib/summary-policy.js", "dom-helpers.js", "post-data.js", "status-formatter.js", "content-dom-runtime.js", "poster-threads.js", "cross-poster.js", "content-composer-runtime.js", "content.js"],
       "css": ["fonts/be-vietnam-pro.css", "content.css", "ui.css"],
       "run_at": "document_end"
     },
     {
       "matches": ["https://x.com/*", "https://twitter.com/*"],
-      "js": ["errors.js", "utils.js", "lib/summary-policy.js", "dom-helpers.js", "post-data.js", "status-formatter.js", "content-dom-runtime.js", "poster-x.js", "cross-poster.js", "content-composer-runtime.js", "content.js"],
+      "js": ["lib/error-boundary.js", "utils.js", "lib/summary-policy.js", "dom-helpers.js", "post-data.js", "status-formatter.js", "content-dom-runtime.js", "poster-x.js", "cross-poster.js", "content-composer-runtime.js", "content.js"],
       "css": ["fonts/be-vietnam-pro.css", "content.css", "ui.css"],
       "run_at": "document_end"
     },
     {
       "matches": ["https://www.linkedin.com/*"],
-      "js": ["errors.js", "utils.js", "lib/summary-policy.js", "dom-helpers.js", "post-data.js", "status-formatter.js", "content-dom-runtime.js", "poster-linkedin.js", "cross-poster.js", "content-composer-runtime.js", "content.js"],
+      "js": ["lib/error-boundary.js", "utils.js", "lib/summary-policy.js", "dom-helpers.js", "post-data.js", "status-formatter.js", "content-dom-runtime.js", "poster-linkedin.js", "cross-poster.js", "content-composer-runtime.js", "content.js"],
       "css": ["fonts/be-vietnam-pro.css", "content.css", "ui.css"],
       "run_at": "document_end"
     },
     {
       "matches": ["https://www.reddit.com/*"],
-      "js": ["errors.js", "utils.js", "lib/summary-policy.js", "dom-helpers.js", "post-data.js", "status-formatter.js", "content-dom-runtime.js", "poster-reddit.js", "cross-poster.js", "content-composer-runtime.js", "content.js"],
+      "js": ["lib/error-boundary.js", "utils.js", "lib/summary-policy.js", "dom-helpers.js", "post-data.js", "status-formatter.js", "content-dom-runtime.js", "poster-reddit.js", "cross-poster.js", "content-composer-runtime.js", "content.js"],
       "css": ["fonts/be-vietnam-pro.css", "content.css", "ui.css"],
       "run_at": "document_end"
     },
     {
       "matches": ["https://*/*"],
       "js": [
+        "lib/error-boundary.js",
         "translate.js"
       ],
       "css": [

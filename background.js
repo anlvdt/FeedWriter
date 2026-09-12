@@ -459,8 +459,9 @@ async function injectAndSend(tabId, message) {
     await chrome.scripting.executeScript({
       target: { tabId },
       files: [
-        "errors.js",
+        "lib/error-boundary.js",
         "utils.js",
+        "lib/summary-policy.js",
         "dom-helpers.js",
         "post-data.js",
         "status-formatter.js",
@@ -1248,11 +1249,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             continue;
           }
           try {
+            const t0 = Date.now();
             const result = await callFn(
               keyInfo.key,
               "Reply with exactly: OK",
               "You are a test bot. Reply OK.",
+              "test",
             );
+            await markProviderSuccess(keyInfo.provider, Date.now() - t0);
             return sendResponse({
               ok: true,
               provider: keyInfo.provider,
@@ -1264,6 +1268,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             errors.push(`${keyInfo.provider}: ${msg.substring(0, 80)}`);
             failureKinds.push(cls.kind);
             await markKeyCooldown(keyInfo.key, cls.cooldownMs, msg.substring(0, 120));
+            await markProviderFailureStats(keyInfo.provider);
           }
         }
         sendResponse({
@@ -1471,7 +1476,8 @@ const TECH_TRANSLATION_GUIDE = `
 TECH/AI TERMINOLOGY RULES:
 - Infer the domain only from the selected input. In software, IT, developer, and AI text, use the established Vietnamese technical meaning, not a literal everyday translation.
 - If a short selection is ambiguous, present the software/AI meaning first and label other common meanings separately. Do not pretend an ambiguous word has only one meaning.
-- Preserve familiar English terms when Vietnamese professionals normally use them: API, prompt, token, model, framework, library, runtime, pipeline, cache, repository/repo, commit, branch, build, deploy, server, client, cloud, container, dataset, benchmark, embedding, fine-tuning, agent.
+- Preserve familiar English terms when Vietnamese professionals normally use them: API, prompt, token, model, framework, library, runtime, pipeline, cache, repository/repo, commit, branch, build, deploy, server, client, cloud, container, dataset, benchmark, embedding, fine-tuning, agent / AI agent, no-code, low-code, drag-and-drop, UI, UX, backend, frontend, full-stack, local, PC.
+- NEVER literally translate: "no-code" as "không mã", "low-code" as "mã thấp", "no-code drag-and-drop" as "không mã kéo-thả" (use "no-code kéo thả" or "kéo thả không cần code"), "pipeline" as "đường ống", "agent" as "đại lý AI", "runtime" as "thời gian chạy", "client" as "khách hàng" in client-server systems, "on PC / locally" as "trên máy tính cá nhân" (use "trên PC" or "chạy local / trên máy").
 - code (software noun) = "code" or "mã nguồn"; code/coding (activity) = "lập trình" or "viết code"; source code = "mã nguồn". NEVER translate code as "mã hóa". "Mã hóa" means encode/encrypt.
 - archive + file/.zip/.tar/compressed/extract/unpack/package = "tệp nén" or "gói nén". archive as a verb for email/data/logs = "lưu trữ". archived repository/project = "đưa vào trạng thái lưu trữ". Choose from context.
 - image in Docker/container context = "image" or "ảnh hệ thống", not "hình ảnh"; thread in programming = "luồng"; issue in a repository = "issue/vấn đề"; model in AI = "mô hình"; training/inference = "huấn luyện/suy luận".
@@ -1611,7 +1617,7 @@ async function translateText(text, mode = "auto") {
 
     const callFn = nonStreamFns[keyInfo.provider] || callGroqNonStream;
     try {
-      const result = await callFn(keyInfo.key, prompt, system);
+      const result = await callFn(keyInfo.key, prompt, system, "translate");
       const output = {
         word: source,
         translation: (result || "").trim(),
@@ -1913,10 +1919,20 @@ function postProcessOutput(output, sourceText, type) {
         );
         let guardedTitle = lines[i]
           .trim()
+          // Clickbait filler: "Mới đây" lead and "chính thức" are mechanically
+          // safe to remove; they carry no fact and only pad the headline.
+          .replace(/^mới\s+đây\s*[,;:\-–—]?\s*/iu, "")
+          .replace(/(?<![\p{L}\p{N}])chính\s+thức\s+/giu, "")
           .replace(
             /(?<![\p{L}\p{N}])tăng\s+mức\s+thẩm\s+mỹ(?![\p{L}\p{N}])/giu,
             "cải thiện khả năng thẩm mỹ",
-          );
+          )
+          .replace(/(?<![\p{L}\p{N}])không\s+mã\s+kéo[‑ -]?thả(?![\p{L}\p{N}])/giu, "no-code kéo thả")
+          .replace(/(?<![\p{L}\p{N}])(?:công\s+cụ|nền\s+tảng|giải\s+pháp|phần\s+mềm)\s+(?:AI\s+)?không\s+mã(?![\p{L}\p{N}])/giu, (m) => m.replace(/không\s+mã/i, "no-code"))
+          .replace(/(?<![\p{L}\p{N}])(?:nền\s+tảng|công\s+cụ|giải\s+pháp)\s+mã\s+thấp(?![\p{L}\p{N}])/giu, (m) => m.replace(/mã\s+thấp/i, "low-code"))
+          .replace(/(?<![\p{L}\p{N}])đại\s+lý\s+AI(?![\p{L}\p{N}])/giu, "AI agent")
+          .replace(/(?<![\p{L}\p{N}])kéo[‑-]thả(?![\p{L}\p{N}])/giu, "kéo thả")
+          .replace(/(?<=\b(?:trên|cho|chạy\s+trên)\s+)máy\s+tính\s+cá\s+nhân\b/giu, "PC");
         const recommendationMatch = guardedTitle.match(recommendationClause);
         if (recommendationMatch) {
           const prefix = guardedTitle.slice(0, recommendationMatch.index).trim();
@@ -1963,6 +1979,17 @@ function postProcessOutput(output, sourceText, type) {
         } else if (theoNamedLead.test(guardedTitle)) {
           guardedTitle = guardedTitle.replace(theoNamedLead, "").trim();
           issues.push("Đã loại bỏ tên nguồn ở đầu tiêu đề.");
+        }
+
+        // Clickbait flag: sensational words shouldn't appear in a news
+        // headline. Removing them mechanically risks corrupting grammar, so
+        // flag for the quality chip instead.
+        if (
+          /(?<![\p{L}\p{N}])(?:gây\s+sốc|chấn\s+động|không\s+thể\s+tin\s+nổi|toang|cháy\s+hàng|bí\s+mật|bạn\s+sẽ\s+bất\s+ngờ|điều\s+không\s+tưởng)(?![\p{L}\p{N}])/iu.test(
+            guardedTitle,
+          )
+        ) {
+          issues.push("Tiêu đề còn từ giật gân — nên viết lại thủ công.");
         }
         lines[i] = guardedTitle || "Cập nhật";
         // Viết hoa toàn bộ tiêu đề
@@ -2076,8 +2103,16 @@ function postProcessOutput(output, sourceText, type) {
     .replace(/(?<![\p{L}\p{N}])mang\s+lại\s+sự\s+cải\s+thiện(?![\p{L}\p{N}])/giu, "cải thiện")
     .replace(/(?<![\p{L}\p{N}])tiến\s+hành\s+thực\s+hiện(?![\p{L}\p{N}])/giu, "thực hiện")
     .replace(/(?<![\p{L}\p{N}])được\s+thiết\s+kế\s+nhằm\s+mục\s+đích(?![\p{L}\p{N}])/giu, "nhằm")
-    .replace(/(?<![\p{L}\p{N}])tăng\s+mức(?: độ)?\s+thẩm\s+mỹ(?![\p{L}\p{N}])/giu, "cải thiện khả năng thẩm mỹ");
-
+    .replace(/(?<![\p{L}\p{N}])tăng\s+mức(?: độ)?\s+thẩm\s+mỹ(?![\p{L}\p{N}])/giu, "cải thiện khả năng thẩm mỹ")
+    .replace(/(?<![\p{L}\p{N}])không\s+mã\s+kéo[‑ -]?thả(?![\p{L}\p{N}])/giu, "no-code kéo thả")
+    .replace(/(?<![\p{L}\p{N}])(?:công\s+cụ|nền\s+tảng|giải\s+pháp|phần\s+mềm)\s+(?:AI\s+)?không\s+mã(?![\p{L}\p{N}])/giu, (m) => m.replace(/không\s+mã/i, "no-code"))
+    .replace(/(?<![\p{L}\p{N}])(?:nền\s+tảng|công\s+cụ|giải\s+pháp)\s+mã\s+thấp(?![\p{L}\p{N}])/giu, (m) => m.replace(/mã\s+thấp/i, "low-code"))
+    .replace(/(?<![\p{L}\p{N}])đại\s+lý\s+AI(?![\p{L}\p{N}])/giu, "AI agent")
+    .replace(/(?<![\p{L}\p{N}])kéo[‑-]thả(?![\p{L}\p{N}])/giu, "kéo thả")
+    .replace(/(?<![\p{L}\p{N}])không\s+cần\s+viết\s+mã(?![\p{L}\p{N}])/giu, "không cần viết code")
+    .replace(/(?<![\p{L}\p{N}])trên\s+máy\s+tính\s+cá\s+nhân\s+của\s+mình(?![\p{L}\p{N}])/giu, "trên máy tính của mình")
+    .replace(/(?<![\p{L}\p{N}])chạy\s+trực\s+tiếp\s+trên\s+máy\s+tính\s+cá\s+nhân(?![\p{L}\p{N}])/giu, "chạy trực tiếp trên máy")
+    .replace(/(?<=\b(?:trên|cho|chạy\s+trên)\s+)máy\s+tính\s+cá\s+nhân\b/giu, "PC");
   // 8. Shorten VND units without rounding away source precision (supports millions and billions).
   processed = processed.replace(
     /\b(\d{1,3}(?:\.\d{3}){2,4})\s*(?:đồng|VND|vnđ|VNĐ)/gi,
@@ -2096,9 +2131,7 @@ function postProcessOutput(output, sourceText, type) {
     },
   );
 
-  // 9. Remove empty lead-in sentences at the beginning
-  const socialNarrationRe =
-    /(?:^|\n|[.!?]\s*)(?:trong\s+)?(?:một\s+)?(?:bài\s+(?:đăng|viết|chia\s+sẻ)|tweet|status)\s+(?:trên\s+[A-Za-z0-9_.\s]+)?(?:\s*của\s+[^\n.,!?]+?)?(?:\s*(?:vào\s+)?(?:lúc|ngày)\s+[^\n.,!?]+?)?\s+(?:đã\s+)?(?:chia\s+sẻ|cho\s+biết|đăng\s+tải|giới\s+thiệu|đề\s+cập|tiết\s+lộ|nói\s+về)[^\n.!?]*[.!?]/giu;
+  // 9. Remove empty lead-in sentences, social post narration, and indirect retelling
   const leadInPatterns = [
     /^[^\n.!?]*(?:mình|tôi|mình)\s+(?:vừa|mới|đã)\s+(?:đọc|xem|thấy|nghe|biết)\s+(?:được|thấy|về)?\s*[^\n.!?]*[.!?]\s*/i,
     /^(?:gần đây|mới đây|dạo gần đây|thời gian gần đây)[,.]?\s*[^\n.!?]*[.!?]\s*/i,
@@ -2106,42 +2139,89 @@ function postProcessOutput(output, sourceText, type) {
     /^(?:hôm nay|hôm qua|sáng nay|tối qua)\s+(?:mình|tôi)\s+(?:đọc|xem|thấy|nghe)[^\n.!?]*[.!?]\s*/i,
     /^(?:tài\s+khoản|người\s+dùng|user)\s+[^\n.,!?]+\s+(?:trên\s+[A-Za-z0-9_.\s]+)?(?:\s*(?:vào\s+)?(?:lúc|ngày)\s+[^\n.,!?]+?)?\s+(?:đã\s+)?(?:chia\s+sẻ|đăng\s+tải|cho\s+biết|giới\s+thiệu|đăng)[^\n.!?]*[.!?]\s*/iu,
   ];
+
+  const cleanBodyText = (text) => {
+    let result = text;
+    // 9a. Strip standalone social narration sentences (with or without timestamps):
+    // e.g. "Bài đăng trên X của người dùng A vào lúc 17:10 ngày 10/9 đã chia sẻ..."
+    // e.g. "Theo một bài đăng trên X vào lúc 00:30, người dùng A đã giới thiệu..."
+    const socialNarrationRe =
+      /(?:^|(\n+)|[.!?][^\S\n]*)(?:(?:theo|trong)\s+)?(?:một\s+)?(?:bài\s+(?:đăng|viết|chia\s+sẻ)|tweet|status)\s+[^\n.!?]*?(?:đã\s+)?(?:chia\s+sẻ|cho\s+biết|đăng\s+tải|giới\s+thiệu|đề\s+cập|tiết\s+lộ|nói\s+về|xác\s+nhận|mô\s+tả|công\s+bố)[^\n.!?]*[.!?]?/giu;
+    if (socialNarrationRe.test(result)) {
+      result = result.replace(socialNarrationRe, (m, nls) => {
+        issues.push("Đã loại bỏ câu tường thuật thời điểm đăng bài trên mạng xã hội.");
+        if (nls) return nls;
+        if (m.match(/^[.!?]/)) return ". ";
+        return "";
+      }).trimStart();
+    }
+
+    // 9b. Strip introductory clauses narrating social media posts/tweets:
+    // e.g. "Theo một bài đăng trên X vào lúc 00:30 ngày 11/9 (giờ Việt Nam), OpenAI đã mở..." -> "OpenAI đã mở..."
+    const introClauseRe =
+      /(?:^|(\n+)|[.!?][^\S\n]*)(?:theo|trong)\s+(?:một\s+)?(?:bài\s+(?:đăng|viết|chia\s+sẻ)|tweet|status|thông\s+tin|bản\s+tin)\s+(?:trên\s+[A-Za-z0-9_.\s]+)?(?:\s*(?:vào\s+)?(?:lúc|ngày)\s+[^\n.,!?]+?)?(?:\s*(?:của|bởi)\s+[^\n.,!?]+?)?,\s*/giu;
+    if (introClauseRe.test(result)) {
+      result = result.replace(introClauseRe, (m, nls) => {
+        issues.push("Đã loại bỏ mệnh đề dẫn dắt mạng xã hội.");
+        if (nls) return nls;
+        if (m.match(/^[.!?]/)) return ". ";
+        return "";
+      }).trimStart();
+    }
+    // 9b2. Strip self-referential prefix ("Tôi đưa tin về...", "Tôi xin chia sẻ về...") while preserving the news clause
+    const selfIntroRe =
+      /(?:^|(\n\n))(?:tôi|mình)\s+(?:đưa\s+tin\s+về|xin\s+đưa\s+tin\s+về|chia\s+sẻ\s+về|xin\s+chia\s+sẻ\s+về|giới\s+thiệu\s+về|muốn\s+nói\s+về|tóm\s+tắt\s+về)\s+([a-zà-ỹ0-9])/iu;
+    if (selfIntroRe.test(result)) {
+      result = result.replace(selfIntroRe, (m, nls, nextChar) => {
+        issues.push("Đã loại bỏ câu tự xưng đưa tin ở đầu bài.");
+        const prefix = nls || "";
+        return prefix + nextChar.toUpperCase();
+      }).trimStart();
+    }
+
+
+    // 9c. Strip empty lead-in patterns:
+    for (const pat of leadInPatterns) {
+      if (pat.test(result)) {
+        result = result.replace(pat, "").trimStart();
+        issues.push("Đã xóa câu dẫn dắt rỗng ở đầu bài.");
+        break;
+      }
+    }
+
+    // 9d. Transform indirect retelling openings ("OpenAI cho biết...") into direct news statements:
+    // e.g. "OpenAI cho biết họ/công ty đã mở..." -> "OpenAI đã mở..."
+    // e.g. "OpenAI cho biết hệ thống..." -> "Hệ thống..."
+    const reportingLeadRe =
+      /(?:^|(\n\n))([A-ZÀ-Ỹ][\p{L}\p{N}&.'’\-]*(?:\s+[A-ZÀ-Ỹ][\p{L}\p{N}&.'’\-]*){0,3})\s+(?:cho\s+biết|cho\s+hay|tuyên\s+bố|thông\s+báo)\s+(?:rằng\s+)?(?:(?:(công\s+ty|hãng|họ)\s+)?(đã|sẽ|vừa|đang)\s+)?/giu;
+    if (reportingLeadRe.test(result)) {
+      result = result.replace(reportingLeadRe, (match, nls, subject, companyRef, tense) => {
+        issues.push("Đã chuyển đổi câu thuật lại sang đưa tin trực tiếp.");
+        const prefix = nls || "";
+        if (companyRef || tense) {
+          return prefix + subject + " " + (tense || "đã") + " ";
+        }
+        return prefix;
+      }).trimStart();
+    }
+
+    result = result.replace(
+      /^(?:(?:được\s+biết|cụ\s+thể(?: là)?|theo\s+đó|đáng\s+chú\s+ý(?: là)?)[,:]\s*)/i,
+      "",
+    );
+
+    // Capitalize first letter of sentence or paragraph if lowercase
+    result = result.replace(/(?:^|\n\n|[.!?]\s+)([a-zà-ỹ])/gu, (m, c) => m.slice(0, -1) + c.toUpperCase());
+    return result.replace(/\.\s+\./g, ".").replace(/[^\S\n]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  };
+
   const bodyStart = processed.indexOf("\n\n");
   if (bodyStart > 0) {
     const headPart = processed.slice(0, bodyStart + 2);
-    let bodyPart = processed.slice(bodyStart + 2);
-    if (socialNarrationRe.test(bodyPart)) {
-      bodyPart = bodyPart.replace(socialNarrationRe, (m) => m.startsWith("\n") ? "\n" : (m.match(/^[.!?]/) ? ". " : "")).replace(/\.\s+/g, ". ").trimStart();
-      issues.push("Đã loại bỏ câu tường thuật thời điểm đăng bài trên mạng xã hội.");
-    }
-    for (const pat of leadInPatterns) {
-      if (pat.test(bodyPart)) {
-        bodyPart = bodyPart.replace(pat, "").trimStart();
-        issues.push("Đã xóa câu dẫn dắt rỗng ở đầu bài.");
-        break;
-      }
-    }
-    bodyPart = bodyPart.replace(
-      /^(?:(?:được\s+biết|cụ\s+thể(?: là)?|theo\s+đó|đáng\s+chú\s+ý(?: là)?)[,:]\s*)/i,
-      "",
-    );
-    processed = headPart + bodyPart;
+    const bodyPart = processed.slice(bodyStart + 2);
+    processed = headPart + cleanBodyText(bodyPart);
   } else {
-    if (socialNarrationRe.test(processed)) {
-      processed = processed.replace(socialNarrationRe, (m) => m.startsWith("\n") ? "\n" : (m.match(/^[.!?]/) ? ". " : "")).replace(/\.\s+/g, ". ").trimStart();
-      issues.push("Đã loại bỏ câu tường thuật thời điểm đăng bài trên mạng xã hội.");
-    }
-    for (const pat of leadInPatterns) {
-      if (pat.test(processed)) {
-        processed = processed.replace(pat, "").trim();
-        issues.push("Đã xóa câu dẫn dắt rỗng ở đầu bài.");
-        break;
-      }
-    }
-    processed = processed.replace(
-      /^(?:(?:được\s+biết|cụ\s+thể(?: là)?|theo\s+đó|đáng\s+chú\s+ý(?: là)?)[,:]\s*)/i,
-      "",
-    );
+    processed = cleanBodyText(processed);
   }
   // 10. Hallucination detection: check if output contains numbers not in source
   if (typeof sourceText === "string") {
@@ -2315,7 +2395,7 @@ async function handleStream(
   // Length presets control verbosity, never coverage. Long sources receive a
   // larger output budget so the model can retain every distinct valuable idea.
   const coverageTokens = Math.ceil(completeSource.length / 10);
-  const maxTokens = Math.min(
+  let maxTokens = Math.min(
     MAX_OUTPUT_TOKENS,
     Math.max(baseMaxTokens, coverageTokens),
   );
@@ -2339,13 +2419,19 @@ async function handleStream(
           await clearAllKeyCooldowns();
           continue;
         }
+        const softLock = keyInfo.waitMinutes <= 3;
         return {
-          error:
-            "Tất cả " +
-            keyInfo.total +
-            " key đang cooldown/rate-limit. Thử lại sau ~" +
-            keyInfo.waitMinutes +
-            " phút, hoặc tab Keys → Test kết nối (xóa cooldown).",
+          error: softLock
+            ? "Tất cả " +
+              keyInfo.total +
+              " key đang tạm khóa sau lỗi vừa rồi (không phải hết quota). Bấm tab Khóa API → Test kết nối để reset ngay, hoặc thử lại sau ~" +
+              keyInfo.waitMinutes +
+              " phút."
+            : "Tất cả " +
+              keyInfo.total +
+              " key đang cooldown/rate-limit. Thử lại sau ~" +
+              keyInfo.waitMinutes +
+              " phút, hoặc tab Khóa API → Test kết nối (xóa cooldown).",
         };
       }
       break;
@@ -2370,6 +2456,7 @@ async function handleStream(
       });
     } catch (_) {}
 
+    const t0 = Date.now();
     const result = await callFn(
       keyInfo.key,
       sourceMessage,
@@ -2377,11 +2464,15 @@ async function handleStream(
       port,
       signal,
       maxTokens,
+      type,
     );
 
     if (result.rateLimited) {
       const retryMs = parseRetryAfter(result.rateLimitError || "");
       await markKeyRateLimited(keyInfo.key, retryMs);
+      // Rate limits are per-key quota, not a provider outage — count the
+      // failure for stats but never toward the circuit breaker.
+      await markProviderFailureStats(keyInfo.provider);
       attemptErrors.push(`${keyInfo.provider}: rate limit`);
       try {
         port.postMessage({
@@ -2403,14 +2494,54 @@ async function handleStream(
         cls.kind,
         "→ trying next",
       );
+      // Context/size errors: don't punish the key — retry with a smaller
+      // output budget. Long sources previously died here and every rotated
+      // key got a cooldown, which looked to the user like "hết quota".
+      if (cls.kind === "context") {
+        if (maxTokens > 1024) {
+          maxTokens = Math.max(1024, Math.floor(maxTokens / 2));
+          attemptErrors.push(
+            `${keyInfo.provider}: quá tải độ dài — giảm max_tokens còn ${maxTokens}`,
+          );
+          try {
+            port.postMessage({
+              action: "status",
+              message: `Bài dài — giảm giới hạn đầu ra và thử lại...`,
+            });
+          } catch (_) {}
+          continue;
+        }
+        // Already at floor — the source itself exceeds context; cooling this
+        // key briefly still lets other providers/keys try.
+        await markKeyCooldown(keyInfo.key, cls.cooldownMs, result.error);
+        await markProviderFailureStats(keyInfo.provider);
+        attemptErrors.push(`${keyInfo.provider}: nội dung vượt giới hạn model`);
+        try {
+          port.postMessage({
+            action: "status",
+            message: `${keyInfo.provider}: nội dung quá dài cho model — thử provider khác...`,
+          });
+        } catch (_) {}
+        continue;
+      }
+
       await markKeyCooldown(keyInfo.key, cls.cooldownMs, result.error);
+      await markProviderFailureStats(keyInfo.provider);
+      // Only infrastructure-level failures (timeout/5xx) point at a provider
+      // outage. "invalid" means a bad key and "model" a bad model id — neither
+      // should trip the breaker for everyone.
+      if (cls.kind === "timeout" || cls.kind === "server" || cls.kind === "error") {
+        await markProviderFailure(keyInfo.provider, result.error);
+      }
       attemptErrors.push(`${keyInfo.provider}: ${String(result.error).substring(0, 100)}`);
       const statusMsg =
         cls.kind === "invalid"
           ? `${keyInfo.provider}: key không hợp lệ — thử key khác...`
-          : cls.kind === "timeout"
-            ? `${keyInfo.provider} chậm — thử provider khác...`
-            : `${keyInfo.provider} lỗi — thử tiếp...`;
+          : cls.kind === "model"
+            ? `${keyInfo.provider}: model không hỗ trợ — thử model mặc định...`
+            : cls.kind === "timeout"
+              ? `${keyInfo.provider} chậm — thử provider khác...`
+              : `${keyInfo.provider} lỗi — thử tiếp...`;
       try {
         port.postMessage({ action: "status", message: statusMsg });
       } catch (_) {}
@@ -2452,6 +2583,7 @@ async function handleStream(
       }
       // Count and persist only a usable summary. Provider refusals and empty
       // outputs rotate to another key above instead of becoming fake success.
+      await markProviderSuccess(keyInfo.provider, Date.now() - t0);
       await incrementTelemetry('summaries');
       trackEvent('summary_completed', { provider: keyInfo.provider, type });
       incrementBadge();
@@ -2574,6 +2706,16 @@ async function callStreamAPI(config) {
     streamIdleTimeoutMs = 20000,
   } = config;
 
+  // Large inputs take longer to reach the first token (providers process the
+  // whole prompt first). Scale the first-token deadline with payload size so
+  // long posts don't get killed at 22s and mislabeled as provider timeouts.
+  const bodyJson = JSON.stringify(body || {});
+  const bodySize = bodyJson.length;
+  const effectiveFirstTokenMs = Math.min(
+    90000,
+    Math.max(firstTokenTimeoutMs, 22000 + Math.floor(bodySize / 2500)),
+  );
+
   const effectiveTotalTimeoutMs = totalTimeoutMs || Math.min(
     300000,
     Math.max(60000, maxTokens * 40),
@@ -2586,7 +2728,7 @@ async function callStreamAPI(config) {
   const timeoutId = setTimeout(abortRequest, effectiveTotalTimeoutMs);
   const firstTokenTimeoutId = setTimeout(() => {
     if (!receivedToken) abortRequest();
-  }, firstTokenTimeoutMs);
+  }, effectiveFirstTokenMs);
   signal.addEventListener("abort", abortRequest, { once: true });
 
   try {
@@ -2597,7 +2739,7 @@ async function callStreamAPI(config) {
         ...headers,
       },
       signal: timeoutController.signal,
-      body: JSON.stringify(body),
+      body: bodyJson,
     });
 
     if (!resp.ok) {
@@ -2621,16 +2763,9 @@ async function callStreamAPI(config) {
           status: 429,
         };
       }
-      // 401/403 = bad key; plain 403 with empty/CF body still treat as auth/network issue
-      const invalidKey =
-        resp.status === 401 ||
-        /invalid|incorrect api key|api key|unauthorized|authentication/i.test(
-          String(msg),
-        );
       return {
         error: `${provider} API lỗi (${resp.status}): ` + msg,
         status: resp.status,
-        invalidKey,
       };
     }
     return await processStream(
@@ -2681,33 +2816,37 @@ async function callNonStream(url, extraHeaders, body, extractFn) {
   return extractFn(data) || "";
 }
 
-async function callGroqNonStream(apiKey, userMessage, systemPrompt) {
-  return callNonStream(
-    "https://api.groq.com/openai/v1/chat/completions",
-    { Authorization: "Bearer " + apiKey },
-    {
-      model: "openai/gpt-oss-120b",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userMessage },
-      ],
-      max_tokens: 1024,
-      temperature: 0.3,
-    },
-    (d) => d?.choices?.[0]?.message?.content,
+async function callGroqNonStream(apiKey, userMessage, systemPrompt, task) {
+  return callWithModel("groq", task, (model) =>
+    callNonStream(
+      "https://api.groq.com/openai/v1/chat/completions",
+      { Authorization: "Bearer " + apiKey },
+      {
+        model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userMessage },
+        ],
+        max_tokens: 1024,
+        temperature: 0.3,
+      },
+      (d) => d?.choices?.[0]?.message?.content,
+    ),
   );
 }
 
-async function callGeminiNonStream(apiKey, userMessage, systemPrompt) {
-  return callNonStream(
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
-    { "x-goog-api-key": apiKey },
-    {
-      system_instruction: { parts: [{ text: systemPrompt }] },
-      contents: [{ parts: [{ text: userMessage }] }],
-      generationConfig: { maxOutputTokens: 1024, temperature: 0.3 },
-    },
-    (d) => d?.candidates?.[0]?.content?.parts?.[0]?.text,
+async function callGeminiNonStream(apiKey, userMessage, systemPrompt, task) {
+  return callWithModel("gemini", task, (model) =>
+    callNonStream(
+      "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) + ":generateContent",
+      { "x-goog-api-key": apiKey },
+      {
+        system_instruction: { parts: [{ text: systemPrompt }] },
+        contents: [{ parts: [{ text: userMessage }] }],
+        generationConfig: { maxOutputTokens: 1024, temperature: 0.3 },
+      },
+      (d) => d?.candidates?.[0]?.content?.parts?.[0]?.text,
+    ),
   );
 }
 

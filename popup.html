@@ -231,39 +231,41 @@
         <div id="keyListGroq" class="key-list" style="display:none">
           <div class="key-list-header">
             <span class="key-list-name">Groq</span>
-            <span class="key-limit-badge">100.000 token/ngày</span>
           </div>
           <div id="keyListGroqItems" class="key-list-items"></div>
         </div>
         <div id="keyListGemini" class="key-list" style="display:none">
           <div class="key-list-header">
             <span class="key-list-name">Gemini</span>
-            <span class="key-limit-badge">1.500 yêu cầu/ngày</span>
           </div>
           <div id="keyListGeminiItems" class="key-list-items"></div>
         </div>
         <div id="keyListCerebras" class="key-list" style="display:none">
           <div class="key-list-header">
             <span class="key-list-name">Cerebras</span>
-            <span class="key-limit-badge">1 triệu token/ngày</span>
           </div>
           <div id="keyListCerebrasItems" class="key-list-items"></div>
         </div>
         <div id="keyListSambanova" class="key-list" style="display:none">
           <div class="key-list-header">
             <span class="key-list-name">SambaNova</span>
-            <span class="key-limit-badge">20 triệu token/ngày</span>
           </div>
           <div id="keyListSambanovaItems" class="key-list-items"></div>
         </div>
         <div id="keyListOpenrouter" class="key-list" style="display:none">
           <div class="key-list-header">
             <span class="key-list-name">OpenRouter</span>
-            <span class="key-limit-badge">50 yêu cầu/ngày</span>
           </div>
           <div id="keyListOpenrouterItems" class="key-list-items"></div>
         </div>
       </div>
+
+      <details class="provider-guide model-config" id="modelConfig">
+        <summary class="provider-guide-title">Model AI (nâng cao)</summary>
+        <div class="provider-guide-body" id="modelConfigBody">
+          <p class="field-hint">Để trống = dùng model mặc định của provider. Nhập ID model bất kỳ mà provider hỗ trợ.</p>
+        </div>
+      </details>
 
       <div class="keys-actions">
         <button id="testBtn" class="btn btn-primary btn-block" type="button">Test kết nối</button>
@@ -280,23 +282,23 @@
         <div class="provider-guide-body">
           <a class="guide-row" href="https://console.groq.com/keys" target="_blank" rel="noopener">
             <span class="guide-name">Groq</span>
-            <span class="guide-meta">gsk_… · 100.000 token/ngày</span>
+            <span class="guide-meta">gsk_… · ~free tier theo model</span>
           </a>
           <a class="guide-row" href="https://cloud.cerebras.ai" target="_blank" rel="noopener">
             <span class="guide-name">Cerebras</span>
-            <span class="guide-meta">csk-… · 1 triệu token/ngày</span>
+            <span class="guide-meta">csk-… · ~1 triệu token/ngày</span>
           </a>
           <a class="guide-row" href="https://cloud.sambanova.ai" target="_blank" rel="noopener">
             <span class="guide-name">SambaNova</span>
-            <span class="guide-meta">Miễn phí 5 USD · 20 triệu token/ngày</span>
+            <span class="guide-meta">Miễn phí 5 USD · ~20 triệu token/ngày</span>
           </a>
           <a class="guide-row" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">
             <span class="guide-name">Gemini</span>
-            <span class="guide-meta">AIza… · 1.500 yêu cầu/ngày</span>
+            <span class="guide-meta">AIza… · ~free tier theo model</span>
           </a>
           <a class="guide-row" href="https://openrouter.ai/keys" target="_blank" rel="noopener">
             <span class="guide-name">OpenRouter</span>
-            <span class="guide-meta">sk-or-… · 50 yêu cầu/ngày</span>
+            <span class="guide-meta">sk-or-… · ~50 req/ngày free</span>
           </a>
         </div>
       </details>
@@ -475,7 +477,7 @@
         <div class="wizard-api-guide-title">Lấy API Key miễn phí:</div>
         <div class="wizard-api-guide-step">1. <a href="https://console.groq.com/keys" target="_blank" rel="noopener">Groq</a> — 100.000 token/ngày</div>
         <div class="wizard-api-guide-step">2. <a href="https://cloud.cerebras.ai" target="_blank" rel="noopener">Cerebras</a> — 1 triệu token/ngày</div>
-        <div class="wizard-api-guide-step">3. <a href="https://cloud.sambanova.ai" target="_blank" rel="noopener">SambaNova</a> — Miễn phí 5 USD · 20 triệu token/ngày</div>
+        <div class="wizard-api-guide-step">3. <a href="https://cloud.sambanova.ai" target="_blank" rel="noopener">SambaNova</a> — Miễn phí 5 USD · ~20 triệu token/ngày</div>
         <div class="wizard-api-guide-step">4. <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Gemini</a> — 1.500 yêu cầu/ngày</div>
         <div class="wizard-api-guide-step">5. <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">OpenRouter</a> — 50 yêu cầu/ngày</div>
       </div>
@@ -546,6 +548,7 @@
     </div>
   </div>
 
+  <script src="lib/model-registry.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
