@@ -31,6 +31,8 @@ function confirmAutoPublishCountdown(seconds = 5) {
   return new Promise((resolve) => {
     const bar = document.createElement("div");
     bar.setAttribute("data-fbs-ui", "v3");
+    bar.setAttribute("role", "alert");
+    bar.setAttribute("aria-live", "assertive");
     bar.style.cssText =
       "position:fixed;bottom:20px;left:50%;transform:translateX(-50%);" +
       "z-index:2147483647;background:#1a2229;color:#eef2f5;padding:10px 16px;" +
@@ -39,24 +41,29 @@ function confirmAutoPublishCountdown(seconds = 5) {
     const label = document.createElement("span");
     const cancel = document.createElement("button");
     cancel.type = "button";
-    cancel.textContent = "Huỷ đăng";
+    cancel.textContent = "Huỷ đăng (Esc)";
     cancel.style.cssText =
       "background:#eb5757;color:#fff;border:none;border-radius:6px;" +
       "padding:5px 12px;font:inherit;cursor:pointer";
     let left = seconds;
     let settled = false;
+    const onKey = (e) => {
+      if (e.key === "Escape") finish(false);
+    };
     const finish = (go) => {
       if (settled) return;
       settled = true;
       clearInterval(timer);
+      document.removeEventListener("keydown", onKey, true);
       try { bar.remove(); } catch (_) {}
       resolve(go);
     };
     const tick = () => {
-      label.textContent = `FeedWriter tự đăng sau ${left}s —`;
+      label.textContent = `FeedWriter tự đăng sau ${left}s`;
       if (left-- <= 0) finish(true);
     };
     cancel.addEventListener("click", () => finish(false));
+    document.addEventListener("keydown", onKey, true);
     bar.appendChild(label);
     bar.appendChild(cancel);
     document.documentElement.appendChild(bar);

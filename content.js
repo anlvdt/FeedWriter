@@ -4397,7 +4397,21 @@ async function runAutoSummary(post) {
     box.setAttribute("data-fbs-ui", "v3");
     const head = document.createElement("div");
     head.className = "fbs-auto-summary-head";
-    head.textContent = "Tóm tắt tự động";
+    const title = document.createElement("span");
+    title.textContent =
+      "Tóm tắt tự động · " + autoSummaryCount + "/" + AUTO_SUMMARY_SESSION_CAP;
+    const dismiss = document.createElement("button");
+    dismiss.type = "button";
+    dismiss.className = "fbs-auto-summary-close";
+    dismiss.setAttribute("aria-label", "Đóng tóm tắt");
+    dismiss.textContent = "✕";
+    dismiss.addEventListener("click", () => {
+      try {
+        box.remove();
+      } catch (_) {}
+    });
+    head.appendChild(title);
+    head.appendChild(dismiss);
     const body = document.createElement("div");
     body.className = "fbs-auto-summary-body";
     body.textContent = "Đang tóm tắt…";

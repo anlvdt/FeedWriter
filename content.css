@@ -4073,12 +4073,32 @@ article:hover .fbs-allpost-btn,
   font-family: var(--fbs-font, ui-sans-serif, system-ui, sans-serif) !important;
 }
 .fbs-auto-summary-head {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 8px !important;
   font-size: 11px !important;
   font-weight: 600 !important;
   letter-spacing: 0.04em !important;
   text-transform: uppercase !important;
   color: var(--fbs-accent, #2dd4bf) !important;
   margin-bottom: 4px !important;
+}
+.fbs-auto-summary-close {
+  appearance: none !important;
+  background: none !important;
+  border: none !important;
+  padding: 0 2px !important;
+  margin: 0 !important;
+  font: inherit !important;
+  font-size: 12px !important;
+  line-height: 1 !important;
+  color: var(--fbs-text-3, #7a8794) !important;
+  cursor: pointer !important;
+  text-transform: none !important;
+}
+.fbs-auto-summary-close:hover {
+  color: var(--fbs-text, #eef2f5) !important;
 }
 .fbs-auto-summary-body {
   font-size: 13px !important;
