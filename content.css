@@ -4061,3 +4061,31 @@ article:hover .fbs-allpost-btn,
   --fbs-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
   --fbs-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
+
+/* Auto-summary inline card (opt-in, session-capped) */
+.fbs-auto-summary {
+  margin: 8px 0 !important;
+  padding: 10px 12px !important;
+  border: 1px solid var(--fbs-border, #3a4652) !important;
+  border-left: 3px solid var(--fbs-accent, #2dd4bf) !important;
+  border-radius: var(--fbs-radius-sm, 6px) !important;
+  background: var(--fbs-surface, #1a2229) !important;
+  font-family: var(--fbs-font, ui-sans-serif, system-ui, sans-serif) !important;
+}
+.fbs-auto-summary-head {
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.04em !important;
+  text-transform: uppercase !important;
+  color: var(--fbs-accent, #2dd4bf) !important;
+  margin-bottom: 4px !important;
+}
+.fbs-auto-summary-body {
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+  color: var(--fbs-text, #eef2f5) !important;
+  white-space: pre-line !important;
+}
+.fbs-auto-summary-body.is-error {
+  color: var(--fbs-text-3, #7a8794) !important;
+}

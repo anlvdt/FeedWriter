@@ -2214,13 +2214,11 @@ async function getSystemPrompt(
 ) {
   const data = await chrome.storage.sync.get([
     "customSummaryPrompt",
-    "outputLanguage",
     "promptStyle",
     "summaryLength",
     "customInstructions",
   ]);
 
-  const lang = data.outputLanguage || "auto";
   const promptStyle = data.promptStyle || "default";
   const summaryLength = data.summaryLength || "medium";
   const customInstructions = data.customInstructions || "";
@@ -3683,6 +3681,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               image.url.length <= 8 * 1024 * 1024;
           })
         : [];
+      const prefs = await chrome.storage.sync
+        .get(["autoPublish"])
+        .catch(() => ({}));
       const postData = {
         title: String(raw.title || "").slice(0, 500),
         content,
@@ -3692,7 +3693,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sourceUrl: String(raw.sourceUrl || "").slice(0, 8000),
         author: String(raw.author || "").slice(0, 200),
         source: String(raw.source || "").slice(0, 200),
-        autoPublish: false,
+        autoPublish: prefs.autoPublish === true,
       };
       const storageKey = "pendingFacebookPost:" + id;
       await chrome.storage.local.set({

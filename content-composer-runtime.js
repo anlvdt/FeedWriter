@@ -1,5 +1,35 @@
 "use strict";
 
+// Auto-shorten the source link through the background shorten-url bridge.
+// Cached per URL; falls back to the original on any failure.
+const _shortUrlCache = new Map();
+let _autoShortenLinks = true;
+try {
+  chrome.storage?.sync?.get(["autoShortenLinks"], (d) => {
+    if (!chrome.runtime?.lastError) _autoShortenLinks = d.autoShortenLinks !== false;
+  });
+} catch (_) {}
+
+function resolveDisplayUrl(url) {
+  const u = String(url || "").trim();
+  if (!_autoShortenLinks || !/^https?:\/\//i.test(u)) return Promise.resolve(u);
+  if (_shortUrlCache.has(u)) return Promise.resolve(_shortUrlCache.get(u));
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage({ action: "shorten-url", url: u }, (resp) => {
+        const short =
+          !chrome.runtime?.lastError && resp?.success && resp.shortUrl
+            ? resp.shortUrl
+            : u;
+        _shortUrlCache.set(u, short);
+        resolve(short);
+      });
+    } catch (_) {
+      resolve(u);
+    }
+  });
+}
+
 // --- FACEBOOK COMPOSER ---
 
 function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImages, discoveredLinks = [], options = {}) {
@@ -323,6 +353,25 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
     }
     if (typeof globalRelatedSourceLinks !== "undefined") {
       globalRelatedSourceLinks = oldRelatedLinks;
+    }
+    // Upgrade to a shortened link asynchronously when enabled — the bridge
+    // call is async while this preview renders synchronously.
+    const urlAtRender = String(url || "").trim();
+    if (/^https?:\/\//i.test(urlAtRender)) {
+      resolveDisplayUrl(urlAtRender)
+        .then((short) => {
+          if (!short || short === urlAtRender) return;
+          const current =
+            (linkField ? linkField.value.trim() : "") || sourceUrl || "";
+          if (current !== urlAtRender) return;
+          commentText.textContent = window.buildCommentText(
+            short,
+            authorNow,
+            cleanSource,
+            { relatedLinks },
+          );
+        })
+        .catch(() => {});
     }
   }
 
@@ -693,7 +742,9 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
         // Prep comment text for preview only. Do not auto-copy source because the
         // detected source can be wrong; the user can paste a manually copied link.
         let sourceLine = "";
-        const finalUrl = linkField.value.trim() || sourceUrl;
+        const finalUrl = await resolveDisplayUrl(
+          linkField.value.trim() || sourceUrl,
+        );
         const finalGithubUrl = githubField.value.trim();
         const finalRelatedLinks = parseRelatedLinks(finalGithubUrl);
 

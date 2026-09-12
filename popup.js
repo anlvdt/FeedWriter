@@ -283,13 +283,9 @@ function initWizard() {
 
   // Prefill settings (non-blocking)
   try {
-    chrome.storage.sync.get(
-      ["outputLanguage", "summaryLength"],
-      (d) => {
+    chrome.storage.sync.get(["summaryLength"], (d) => {
         if (chrome.runtime.lastError) return;
-        const lang = document.getElementById("wizardOutputLanguage");
         const len = document.getElementById("wizardSummaryLength");
-        if (d.outputLanguage && lang) lang.value = d.outputLanguage;
         if (d.summaryLength && len) len.value = d.summaryLength;
       },
     );
@@ -351,8 +347,9 @@ async function maybeOpenKeysTabIfNoKeys() {
       if (_countApiKeys(apiKeys) === 0) activateTab("apikeys");
       return;
     }
+    const local = await chrome.storage.local.get(["apiKeys"]);
     const data = await chrome.storage.sync.get(["apiKeys", "apiKey"]);
-    const apiKeys = data.apiKeys || {};
+    const apiKeys = local.apiKeys || data.apiKeys || {};
     const total = Object.values(apiKeys).reduce(
       (n, arr) => n + (Array.isArray(arr) ? arr.length : 0),
       0,
@@ -393,7 +390,7 @@ document.querySelector(".tabs")?.addEventListener("keydown", (e) => {
 
 // === SETTINGS ===
 const minLengthInput = document.getElementById("minLength");
-const outputLangSel = document.getElementById("outputLanguage");
+
 const summaryLengthSel = document.getElementById("summaryLength");
 const promptStyleSel = document.getElementById("promptStyle");
 const customInstructionsEl = document.getElementById("customInstructions");
@@ -403,6 +400,9 @@ const adDisplayModeEl = document.getElementById("adDisplayMode");
 const filterEngagementGatesEl = document.getElementById("filterEngagementGates");
 const blockedDomainsEl = document.getElementById("blockedDomains");
 const enableUnicodeBoldEl = document.getElementById("enableUnicodeBold");
+const autoShortenLinksEl = document.getElementById("autoShortenLinks");
+const autoPublishEl = document.getElementById("autoPublish");
+const autoSummarizeEl = document.getElementById("autoSummarize");
 const saveBtn = document.getElementById("saveBtn");
 const status = document.getElementById("status");
 
@@ -431,7 +431,6 @@ if (advancedModeToggle) {
 chrome.storage.sync.get(
   [
     "minLength",
-    "outputLanguage",
     "summaryLength",
     "promptStyle",
     "customInstructions",
@@ -441,12 +440,13 @@ chrome.storage.sync.get(
     "filterEngagementGates",
     "blockedDomains",
     "enableUnicodeBold",
-    "apiKeys",
+    "autoShortenLinks",
+    "autoPublish",
+    "autoSummarize",
     "advancedModeEnabled",
   ],
   (d) => {
     if (d.minLength) minLengthInput.value = d.minLength;
-    if (d.outputLanguage) outputLangSel.value = d.outputLanguage;
     if (d.summaryLength) summaryLengthSel.value = d.summaryLength;
     if (d.promptStyle) promptStyleSel.value = d.promptStyle;
     if (d.customInstructions) customInstructionsEl.value = d.customInstructions;
@@ -457,18 +457,23 @@ chrome.storage.sync.get(
     if (filterEngagementGatesEl) filterEngagementGatesEl.checked = d.filterEngagementGates === true;
     if (d.blockedDomains) blockedDomainsEl.value = d.blockedDomains;
     if (d.enableUnicodeBold !== false) enableUnicodeBoldEl.checked = true;
+    if (autoShortenLinksEl) autoShortenLinksEl.checked = d.autoShortenLinks !== false;
+    if (autoPublishEl) autoPublishEl.checked = d.autoPublish === true;
+    if (autoSummarizeEl) autoSummarizeEl.checked = d.autoSummarize === true;
 
     // Set advanced mode toggle state
     const advancedEnabled = !!d.advancedModeEnabled;
     if (advancedModeToggle) advancedModeToggle.checked = advancedEnabled;
     updateAdvancedModeView(advancedEnabled);
 
-    const total = Object.values(d.apiKeys || {}).reduce(
-      (s, a) => s + (a ? a.length : 0),
-      0,
-    );
-    if (total === 0)
-      showStatus('Chưa có API Key. Thêm ở tab "API Keys".', "error");
+    // Keys live in storage.local after migration — reading apiKeys from this
+    // sync snapshot would always report empty once any key exists.
+    ensureApiKeysLoaded()
+      .then(({ apiKeys }) => {
+        if (_countApiKeys(apiKeys) === 0)
+          showStatus('Chưa có API Key. Thêm ở tab "API Keys".', "error");
+      })
+      .catch(() => {});
   },
 );
 
@@ -505,6 +510,11 @@ if (saveBtn) saveBtn.addEventListener("click", () => {
       enableUnicodeBold: enableUnicodeBoldEl
         ? enableUnicodeBoldEl.checked !== false
         : true,
+      autoShortenLinks: autoShortenLinksEl
+        ? autoShortenLinksEl.checked !== false
+        : true,
+      autoPublish: !!(autoPublishEl && autoPublishEl.checked),
+      autoSummarize: !!(autoSummarizeEl && autoSummarizeEl.checked),
       advancedModeEnabled: !!(advancedModeToggle && advancedModeToggle.checked),
       languageAutoDetected: false,
     },

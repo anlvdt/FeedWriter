@@ -523,13 +523,11 @@ async function getSystemPrompt(
 ) {
   const data = await chrome.storage.sync.get([
     "customSummaryPrompt",
-    "outputLanguage",
     "promptStyle",
     "summaryLength",
     "customInstructions",
   ]);
 
-  const lang = data.outputLanguage || "auto";
   const promptStyle = data.promptStyle || "default";
   const summaryLength = data.summaryLength || "medium";
   const customInstructions = data.customInstructions || "";

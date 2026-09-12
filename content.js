@@ -331,15 +331,13 @@ window.addEventListener("beforeunload", cleanup, { once: true });
 
 window.enableUnicodeBold = true;
 
-chrome.storage.sync.get(["minLength", "blockedDomains", "sourceTemplate", "customSourceLink", "enableUnicodeBold"], (d) => {
+chrome.storage.sync.get(["minLength", "blockedDomains", "sourceTemplate", "customSourceLink", "enableUnicodeBold", "autoSummarize"], (d) => {
   if (d.minLength) MIN_LEN = d.minLength;
   globalSourceTemplate = d.sourceTemplate || DEFAULT_SOURCE_TEMPLATE;
   globalCustomSourceLink = d.customSourceLink || "";
   if (d.enableUnicodeBold !== undefined) window.enableUnicodeBold = d.enableUnicodeBold;
+  autoSummarizeEnabled = d.autoSummarize === true;
   updateBlockedState(d.blockedDomains);
-
-  // Auto-detect language from Facebook and set as default if not already set
-  detectAndSetLanguage();
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -348,6 +346,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (changes.sourceTemplate) globalSourceTemplate = changes.sourceTemplate.newValue || DEFAULT_SOURCE_TEMPLATE;
   if (changes.customSourceLink) globalCustomSourceLink = changes.customSourceLink.newValue || "";
   if (changes.enableUnicodeBold) window.enableUnicodeBold = changes.enableUnicodeBold.newValue !== false;
+  if (changes.autoSummarize) autoSummarizeEnabled = changes.autoSummarize.newValue === true;
   if (changes.adDisplayMode) adDisplayMode = changes.adDisplayMode.newValue === "mark" ? "mark" : "collapse";
   if (changes.filterEngagementGates) filterEngagementGates = changes.filterEngagementGates.newValue === true;
   if (changes.blockedDomains) updateBlockedState(changes.blockedDomains.newValue);
@@ -359,15 +358,6 @@ function updateBlockedState(rawPatterns = "") {
     .map((pattern) => pattern.trim())
     .filter(Boolean);
   isBlocked = patterns.some((pattern) => location.href.includes(pattern));
-}
-
-// Output language is always Vietnamese. No detection needed.
-function detectAndSetLanguage() {
-  chrome.storage.sync.get(["outputLanguage"], (data) => {
-    if (data.outputLanguage !== "vi") {
-      chrome.storage.sync.set({ outputLanguage: "vi" });
-    }
-  });
 }
 
 function hashText(text) {
@@ -4341,6 +4331,112 @@ function _markViewportScanned(el) {
   viewportScanSig.set(el, _viewportFingerprint(el));
 }
 
+// === AUTO-SUMMARIZE (opt-in) ===
+// Summarize qualifying posts after they dwell in the viewport ~2s, serialized
+// through a small queue with a per-session cap so the feature cannot silently
+// burn the day's free quota on a fast scroll.
+let autoSummarizeEnabled = false;
+let autoSummaryCount = 0;
+const AUTO_SUMMARY_SESSION_CAP = 10;
+const AUTO_SUMMARY_DWELL_MS = 2000;
+const autoSummaryTimers = new WeakMap();
+let autoSummaryChain = Promise.resolve();
+
+function scheduleAutoSummary(post) {
+  if (!autoSummarizeEnabled || autoSummaryCount >= AUTO_SUMMARY_SESSION_CAP) return;
+  if (!post || !post.isConnected || post.dataset.fbsAutoSummary) return;
+  if (autoSummaryTimers.has(post)) return;
+  const timer = setTimeout(() => {
+    autoSummaryTimers.delete(post);
+    if (!post.isConnected || !visiblePosts.has(post)) return;
+    queueAutoSummary(post);
+  }, AUTO_SUMMARY_DWELL_MS);
+  autoSummaryTimers.set(post, timer);
+}
+
+function cancelAutoSummary(post) {
+  const timer = autoSummaryTimers.get(post);
+  if (timer) {
+    clearTimeout(timer);
+    autoSummaryTimers.delete(post);
+  }
+}
+
+function queueAutoSummary(post) {
+  if (!autoSummarizeEnabled || autoSummaryCount >= AUTO_SUMMARY_SESSION_CAP) return;
+  if (post.dataset.fbsAutoSummary) return;
+  if (post.dataset.fbsSponsoredHidden === "1" || _isAlreadyFiltered(post)) return;
+  post.dataset.fbsAutoSummary = "queued";
+  autoSummaryCount++;
+  autoSummaryChain = autoSummaryChain
+    .then(() => new Promise((r) => setTimeout(r, 800)))
+    .then(() => runAutoSummary(post))
+    .catch(() => {});
+}
+
+async function runAutoSummary(post) {
+  try {
+    if (!post.isConnected) return;
+    const textEl =
+      (SITE === "facebook" && _findFacebookStatusText(post)) ||
+      post.querySelector('[data-testid="tweetText"]') ||
+      post;
+    const clone = textEl.cloneNode(true);
+    clone.querySelectorAll("[data-fbs-ui]").forEach((el) => el.remove());
+    const text = (clone.textContent || "").replace(/\s+/g, " ").trim();
+    if (
+      text.length < Math.max(MIN_LEN, 200) ||
+      (SITE !== "x" &&
+        !getSummaryPolicyDecision(text, "summary").shouldSummarize)
+    ) {
+      return;
+    }
+
+    const box = document.createElement("div");
+    box.className = "fbs-auto-summary";
+    box.setAttribute("data-fbs-ui", "v3");
+    const head = document.createElement("div");
+    head.className = "fbs-auto-summary-head";
+    head.textContent = "Tóm tắt tự động";
+    const body = document.createElement("div");
+    body.className = "fbs-auto-summary-body";
+    body.textContent = "Đang tóm tắt…";
+    box.appendChild(head);
+    box.appendChild(body);
+    const anchor =
+      (textEl !== post && textEl.parentElement && post.contains(textEl))
+        ? textEl
+        : null;
+    if (anchor && anchor.nextSibling) {
+      anchor.parentElement.insertBefore(box, anchor.nextSibling);
+    } else if (anchor) {
+      anchor.parentElement.appendChild(box);
+    } else {
+      post.appendChild(box);
+    }
+
+    const response = await chrome.runtime.sendMessage({
+      action: "summarize",
+      text,
+      type: "summary",
+      site: SITE || "unknown",
+      sourceUrl: location.href,
+    });
+    if (!post.isConnected) return;
+    const summary =
+      response?.summary || response?.result || "";
+    if (summary && !response?.error) {
+      body.textContent = summary;
+    } else {
+      body.textContent =
+        "Không tóm tắt được: " + (response?.error || "lỗi không rõ");
+      body.classList.add("is-error");
+    }
+  } catch (_) {
+    // Extension context invalidated or messaging failed — leave the post clean.
+  }
+}
+
 const visiblePosts = new Set();
 let postObserver = null;
 let feedRootObserver = null;
@@ -4361,8 +4457,10 @@ if (typeof IntersectionObserver !== "undefined") {
             _markViewportScanned(el);
             _queueFeedPost(el);
           }
+          if (autoSummarizeEnabled) scheduleAutoSummary(el);
         } else {
           visiblePosts.delete(el);
+          cancelAutoSummary(el);
         }
       }
       // Summary controls have their own one-card-per-frame fast path. Heavier

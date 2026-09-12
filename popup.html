@@ -56,16 +56,8 @@
               </select>
             </div>
             <div class="field">
-              <label for="outputLanguage">Ngôn ngữ</label>
-              <select id="outputLanguage" class="field-select">
-                <option value="vi">Tiếng Việt</option>
-                <option value="en">English</option>
-                <option value="zh">中文</option>
-                <option value="ja">日本語</option>
-                <option value="ko">한국어</option>
-                <option value="th">ไทย</option>
-                <option value="id">Bahasa Indonesia</option>
-              </select>
+              <label>Ngôn ngữ đầu ra</label>
+              <div class="field-hint">Tiếng Việt — prompt hệ thống được tối ưu riêng cho văn phong báo chí Việt.</div>
             </div>
           </div>
           <div class="field">
@@ -110,6 +102,13 @@
             <div class="field-hint">Tắt mặc định để tránh ẩn nhầm bài chia sẻ tài liệu hợp lệ.</div>
           </div>
           <div class="field">
+            <label class="checkbox-label">
+              <input type="checkbox" id="autoSummarize">
+              <span>Tự tóm tắt bài đủ dài khi cuộn tới</span>
+            </label>
+            <div class="field-hint">Hiện tóm tắt ngay trong bài viết. Tối đa 10 bài mỗi phiên để tiết kiệm quota.</div>
+          </div>
+          <div class="field">
             <label for="customInstructions">
               Hướng dẫn bổ sung (tùy chọn)
             </label>
@@ -139,6 +138,20 @@
             </label>
             <textarea id="sourceTemplate" rows="3" placeholder="• Nguồn bài viết: {platform} {author} {source}&#10;• Link gốc: {link}&#10;• Repo mặc định: {repo}"></textarea>
             <div class="field-hint">{author} = tác giả, {platform} = nền tảng, {source} = nhóm/page, {link} = URL gốc, {repo} = repo mặc định nếu đã cấu hình</div>
+          </div>
+          <div class="field field-check">
+            <label class="checkbox-label">
+              <input type="checkbox" id="autoShortenLinks" checked>
+              <span>Tự rút gọn link nguồn (is.gd)</span>
+            </label>
+            <div class="field-hint">Áp dụng cho link gốc trong phần Nguồn tham khảo khi đăng bài.</div>
+          </div>
+          <div class="field field-check">
+            <label class="checkbox-label">
+              <input type="checkbox" id="autoPublish">
+              <span>Tự đăng Facebook sau khi điền composer</span>
+            </label>
+            <div class="field-hint">Hiện đếm ngược 5 giây để huỷ trước khi bấm Đăng.</div>
           </div>
 
           <label class="section-subhead">Template Library</label>
@@ -500,14 +513,8 @@
       <p class="wizard-step-description">Tùy chỉnh một số cài đặt quan trọng để phù hợp với nhu cầu của bạn.</p>
 
       <div class="field">
-        <label for="wizardOutputLanguage">Ngôn ngữ đầu ra</label>
-        <select id="wizardOutputLanguage">
-          <option value="vi">Tiếng Việt</option>
-          <option value="en">English</option>
-          <option value="zh">中文</option>
-          <option value="ja">日本語</option>
-        </select>
-        <div class="field-hint">Ngôn ngữ mặc định cho kết quả tóm tắt</div>
+        <label>Ngôn ngữ đầu ra</label>
+        <div class="field-hint">Tiếng Việt — prompt hệ thống tối ưu riêng cho văn phong báo chí Việt.</div>
       </div>
 
       <div class="field">

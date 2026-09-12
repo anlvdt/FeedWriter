@@ -3,6 +3,79 @@
 // Platform adapter: Facebook
 // Uses FeedWriter's existing mature FB posting logic, wrapped in the unified adapter interface.
 
+// Facebook localizes the composer publish control ("Post"/"Đăng"/"Đăng bài").
+const FB_PUBLISH_LABEL_RE =
+  /^(post|đăng|đăng bài|chia sẻ|share|publish|update|đăng lên|post it)$/i;
+
+function findFacebookPublishButton() {
+  const dialogs = document.querySelectorAll('div[role="dialog"]');
+  for (const dialog of dialogs) {
+    const candidates = dialog.querySelectorAll(
+      'div[role="button"], button, span[role="button"]',
+    );
+    for (const el of candidates) {
+      if (el.getAttribute("aria-disabled") === "true") continue;
+      const label = (
+        el.getAttribute("aria-label") ||
+        el.textContent ||
+        ""
+      ).trim();
+      if (FB_PUBLISH_LABEL_RE.test(label)) return el;
+    }
+  }
+  return null;
+}
+
+// Floating cancel window — the user gets a few seconds to abort the auto-post.
+function confirmAutoPublishCountdown(seconds = 5) {
+  return new Promise((resolve) => {
+    const bar = document.createElement("div");
+    bar.setAttribute("data-fbs-ui", "v3");
+    bar.style.cssText =
+      "position:fixed;bottom:20px;left:50%;transform:translateX(-50%);" +
+      "z-index:2147483647;background:#1a2229;color:#eef2f5;padding:10px 16px;" +
+      "border-radius:10px;display:flex;gap:12px;align-items:center;" +
+      "box-shadow:0 12px 32px rgba(0,0,0,.45);font:500 13px/1.4 sans-serif";
+    const label = document.createElement("span");
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.textContent = "Huỷ đăng";
+    cancel.style.cssText =
+      "background:#eb5757;color:#fff;border:none;border-radius:6px;" +
+      "padding:5px 12px;font:inherit;cursor:pointer";
+    let left = seconds;
+    let settled = false;
+    const finish = (go) => {
+      if (settled) return;
+      settled = true;
+      clearInterval(timer);
+      try { bar.remove(); } catch (_) {}
+      resolve(go);
+    };
+    const tick = () => {
+      label.textContent = `FeedWriter tự đăng sau ${left}s —`;
+      if (left-- <= 0) finish(true);
+    };
+    cancel.addEventListener("click", () => finish(false));
+    bar.appendChild(label);
+    bar.appendChild(cancel);
+    document.documentElement.appendChild(bar);
+    const timer = setInterval(tick, 1000);
+    tick();
+  });
+}
+
+async function autoPublishFacebookPost() {
+  const go = await confirmAutoPublishCountdown(5);
+  if (!go) return { published: false, cancelled: true };
+  const btn = await waitForCondition(findFacebookPublishButton, 5000).catch(
+    () => null,
+  );
+  if (!btn) return { published: false, reason: "no_publish_button" };
+  btn.click();
+  return { published: true };
+}
+
 const PosterFacebook = {
   name: "facebook",
   label: "Facebook",
@@ -82,6 +155,17 @@ const PosterFacebook = {
                        imgFiles.length === 1 ? 2000 : 800;
     await new Promise(r => setTimeout(r, uploadWait));
 
-    return { ok: true, platform: "facebook", needsManualPublish: !postData.autoPublish };
+    if (postData.autoPublish) {
+      const pub = await autoPublishFacebookPost();
+      return {
+        ok: true,
+        platform: "facebook",
+        needsManualPublish: !pub.published,
+        published: !!pub.published,
+        cancelled: !!pub.cancelled,
+        publishReason: pub.reason || null,
+      };
+    }
+    return { ok: true, platform: "facebook", needsManualPublish: true };
   },
 };
