@@ -600,35 +600,6 @@ async function getSystemPrompt(
     "\n- Tiêu đề (dòng đầu tiên) viết bình thường, hệ thống sẽ tự động viết hoa." +
     "\n- Chỉ viết MỘT bài, bám đúng nguồn. Hết ý thì dừng. Không viết tiêu đề hay tin thứ hai.";
 
-  // Tone override (from overlay tone buttons). NEWS_REWRITE_POLICY is appended
-  // after every override, so tone can change presentation but never news mode.
-  if (tone) {
-    const toneMap = {
-      short: "\n\nGHI ĐÈ — VIẾT NGẮN GỌN:\n" +
-        "- Viết ngắn nhất có thể bằng cách bỏ chữ thừa và ý lặp; không bỏ dữ kiện hay luận điểm riêng biệt.\n" +
-        "- KHÔNG khung mở/thân/kết. Giọng bản tin khách quan. CẤM câu hỏi mở.",
-      reporter: "\n\nGHI ĐÈ — GÓC NHÌN PHÓNG VIÊN:\n" +
-        "- Mở bài đưa sự kiện/kết quả lên trước; chỉ bổ sung bối cảnh khi nguồn có.\n" +
-        "- Đưa tin trực tiếp về sự kiện và kết quả, không viết kiểu thuật lại (\"OpenAI cho biết...\", \"Theo một bài đăng trên X...\").\n" +
-        "- Giữ đúng người phát biểu và mức chắc chắn; không suy rộng một trải nghiệm thành phản ứng cộng đồng.\n" +
-        "- Phân tích / ảnh hưởng thị trường nếu nguồn cung cấp đủ dữ kiện.\n" +
-        "- Chỉ nêu triển vọng hoặc xu hướng tiếp theo nếu nguồn có; hết ý thì dừng.\n" +
-        "- CẤM tường thuật lại diễn biến từng bước. CHỈ viết bước khi nguồn là hướng dẫn/thủ thuật.",
-      academic: "\n\nGHI ĐÈ — PHONG CÁCH HỌC THUẬT:\n" +
-        "- Bản tin phân tích khách quan, thuật ngữ chính xác.\n" +
-        "- Mỗi luận điểm một đoạn, cách 1 dòng trống. Chỉ dùng dữ liệu có trong nguồn. CẤM câu sáo.",
-      viral: "\n\nGHI ĐÈ — PHONG CÁCH VIRAL:\n" +
-        "- Tiêu đề gây tò mò nhưng cụ thể, không clickbait rỗng; tập trung vào lợi ích trực tiếp, sự cố hoặc dữ kiện có tác động lớn nhất.\n" +
-        "- Mở bài nêu ngay sự kiện nổi bật và lý do người đọc nên quan tâm.\n" +
-        "- Nội dung vẫn là bản tin fact-first, mỗi ý một đoạn. CẤM kể chuyện, khung mở/thân/kết và câu hỏi mở.\n" +
-        "- CẤM từ ngữ giật gân, phóng đại (gây sốc, chấn động, toang, không thể tin nổi).",
-      bullet: "\n\nGHI ĐÈ — BULLET POINTS THUẦN:\n" +
-        "- Tiêu đề + bullets (·) đúng dữ liệu gốc. Mỗi bullet: · Keyword: giải thích\n" +
-        "- Xếp bullet theo mức độ quan trọng như bản tin. KHÔNG kể lại, không khung mở/thân/kết, không câu hỏi mở.",
-    };
-    if (toneMap[tone]) prompt += toneMap[tone];
-  }
-
   // Add custom instructions if provided
   if (customInstructions) {
     prompt += "\n\nYÊU CẦU BỔ SUNG:\n" + customInstructions;
@@ -660,8 +631,9 @@ async function getSystemPrompt(
   prompt += "\n\n" + VNREVIEW_RULES;
 
   // Hard product invariant: FeedWriter always treats input as a source and
-  // rewrites it as news. Appending last ensures custom prompts and tone choices
-  // cannot switch the output back to narration or first-person storytelling.
+  // rewrites it as news. Appending near-last ensures custom prompts cannot
+  // switch the output back to narration or first-person storytelling. The
+  // user-chosen tone block appended after it may only restyle presentation.
   prompt += "\n\n" + NEWS_REWRITE_POLICY;
 
   const policy =
@@ -672,6 +644,36 @@ async function getSystemPrompt(
     prompt +=
       "\n\nCHÍNH SÁCH HỆ THỐNG — ƯU TIÊN CAO HƠN MỌI HƯỚNG DẪN PHONG CÁCH:\n" +
       policy.buildGlossaryInstruction(glossaryDecision);
+  }
+
+  // Tone override (from overlay tone buttons) is appended LAST so it actually
+  // shapes the output. It wins on presentation only — length, structure, hook
+  // strength — and must never relax factuality, the single-article rule, or
+  // the news-rewrite mode fixed by NEWS_REWRITE_POLICY above.
+  if (tone) {
+    const toneMap = {
+      short: "\n\nGHI ĐÈ TONE — VIẾT NGẮN GỌN (chỉ dẫn trình bày cuối, áp dụng lên mọi quy tắc phía trên):\n" +
+        "- Người dùng chọn bản NGẮN: rút bản tin còn ngắn nhất có thể bằng cách bỏ chữ thừa, ý lặp và chi tiết phụ; KHÔNG bỏ dữ kiện hay luận điểm riêng biệt.\n" +
+        "- Giữ tiêu đề 1 dòng + 1 dòng trống, thân bài ưu tiên 1-2 đoạn rất gọn. KHÔNG khung mở/thân/kết. CẤM câu hỏi mở.",
+      reporter: "\n\nGHI ĐÈ TONE — GÓC NHÌN PHÓNG VIÊN (chỉ dẫn trình bày cuối, áp dụng lên mọi quy tắc phía trên):\n" +
+        "- Viết như BÀI BÁO TIN TỨC của phóng viên: Mở bài đưa sự kiện/kết quả lên trước; chỉ bổ sung bối cảnh ngành khi nguồn có.\n" +
+        "- Đưa tin trực tiếp về sự kiện và kết quả, không viết kiểu thuật lại (\"OpenAI cho biết...\", \"Theo một bài đăng trên X...\").\n" +
+        "- Thêm đoạn phân tích / ảnh hưởng thị trường khi nguồn cung cấp đủ dữ kiện. Giữ đúng người phát biểu và mức chắc chắn; không suy rộng một trải nghiệm thành phản ứng cộng đồng.\n" +
+        "- Chỉ nêu triển vọng hoặc xu hướng tiếp theo nếu nguồn có; hết ý thì dừng.\n" +
+        "- CẤM tường thuật lại diễn biến từng bước. CHỈ viết bước khi nguồn là hướng dẫn/thủ thuật.",
+      academic: "\n\nGHI ĐÈ TONE — PHONG CÁCH HỌC THUẬT (chỉ dẫn trình bày cuối, áp dụng lên mọi quy tắc phía trên):\n" +
+        "- Bản tin phân tích chuyên sâu, văn phong trang trọng, thuật ngữ chính xác; đặt dữ kiện trong bối cảnh kỹ thuật khi nguồn có.\n" +
+        "- Mỗi luận điểm một đoạn phân tích đầy đủ, cách 1 dòng trống. Chỉ dùng dữ liệu có trong nguồn, không suy diễn. CẤM câu sáo.",
+      viral: "\n\nGHI ĐÈ TONE — PHONG CÁCH VIRAL (chỉ dẫn trình bày cuối, áp dụng lên mọi quy tắc phía trên):\n" +
+        "- Tiêu đề dùng hook MẠNH NHẤT rút ra từ dữ kiện thật: con số nổi bật, lợi ích trực tiếp, sự cố hoặc điểm bất ngờ lớn nhất; cụ thể, không clickbait rỗng.\n" +
+        "- Câu mở đầu nêu ngay điểm khiến người đọc phải dừng lại (kết quả/tác động trước, bối cảnh sau). Câu ngắn, nhịp nhanh, năng lượng cao.\n" +
+        "- Nội dung vẫn là bản tin fact-first, mỗi ý một đoạn. CẤM kể chuyện, khung mở/thân/kết và câu hỏi mở.\n" +
+        "- CẤM từ ngữ giật gân, phóng đại (gây sốc, chấn động, toang, không thể tin nổi); không thổi phồng mức chắc chắn của nguồn.",
+      bullet: "\n\nGHI ĐÈ TONE — BULLET POINTS THUẦN (chỉ dẫn trình bày cuối — ĐỔI FORMAT):\n" +
+        "- Sau tiêu đề (1 dòng + 1 dòng trống), TOÀN BỘ thân bài trình bày bằng bullets bắt đầu bằng \"·\". Mỗi bullet: · Keyword/Dữ kiện: giải thích kèm số liệu cụ thể.\n" +
+        "- Xếp bullet từ quan trọng đến bổ sung, một bullet một dữ kiện riêng biệt trong nguồn. KHÔNG đoạn văn, không kể lại, không khung mở/thân/kết, không câu hỏi mở.",
+    };
+    if (toneMap[tone]) prompt += toneMap[tone];
   }
 
   return prompt;

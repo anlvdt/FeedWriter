@@ -24,6 +24,28 @@ vm.runInContext(
 );
 vm.runInContext(readFileSync(path.join(root, "bg-api.js"), "utf8"), context);
 
+function assertToneFollowsLastPolicy(prompt) {
+  // The policy carve-out mentions "GHI ĐÈ TONE"; the live block is "GHI ĐÈ TONE —".
+  const toneIdx = prompt.indexOf("GHI ĐÈ TONE —");
+  const newsIdx = prompt.lastIndexOf("CHẾ ĐỘ BẮT BUỘC — VIẾT LẠI THÀNH BẢN TIN");
+  const glossaryIdx = prompt.lastIndexOf(
+    "CHÍNH SÁCH HỆ THỐNG — ƯU TIÊN CAO HƠN MỌI HƯỚNG DẪN PHONG CÁCH",
+  );
+  assert.ok(toneIdx >= 0, "missing GHI ĐÈ TONE block");
+  assert.equal(
+    toneIdx,
+    prompt.lastIndexOf("GHI ĐÈ TONE —"),
+    "exactly one GHI ĐÈ TONE block",
+  );
+  assert.ok(newsIdx >= 0, "missing news-rewrite policy");
+  assert.ok(glossaryIdx >= 0, "missing glossary policy");
+  assert.ok(toneIdx > newsIdx, "GHI ĐÈ TONE block must follow NEWS_REWRITE_POLICY");
+  assert.ok(
+    toneIdx > glossaryIdx,
+    "GHI ĐÈ TONE block must follow the last policy (glossary)",
+  );
+}
+
 describe("getSystemPrompt", () => {
   it("preserves source metadata as bounded JSON data for attribution", async () => {
     storageSettings = {};
@@ -167,6 +189,8 @@ describe("getSystemPrompt", () => {
     assert.ok(customIndex >= 0);
     assert.ok(invariantIndex > customIndex);
     assert.match(prompt, /ưu tiên cao hơn mọi prompt tùy chỉnh/i);
+    assert.match(prompt, /Riêng khối "GHI ĐÈ TONE"/);
+    assert.doesNotMatch(prompt, /ưu tiên cao hơn mọi prompt tùy chỉnh, tone/);
     storageSettings = {};
   });
 
@@ -195,6 +219,34 @@ describe("getSystemPrompt", () => {
     assert.match(prompt, /Mở bài đưa sự kiện\/kết quả lên trước/);
     assert.doesNotMatch(prompt, /Mở bài phải đặt BỐI CẢNH|Nhiều người dùng phản ứng/);
     assert.match(prompt, /CHẾ ĐỘ BẮT BUỘC — VIẾT LẠI THÀNH BẢN TIN/);
+    assertToneFollowsLastPolicy(prompt);
+    storageSettings = {};
+  });
+
+  it("appends GHI ĐÈ TONE after the last policy for every overlay tone", async () => {
+    storageSettings = {};
+    const tones = {
+      short: /GHI ĐÈ TONE — VIẾT NGẮN GỌN[\s\S]*thân bài ưu tiên 1-2 đoạn/,
+      reporter: /GHI ĐÈ TONE — GÓC NHÌN PHÓNG VIÊN[\s\S]*Viết như BÀI BÁO TIN TỨC/,
+      academic: /GHI ĐÈ TONE — PHONG CÁCH HỌC THUẬT[\s\S]*văn phong trang trọng/,
+      viral: /GHI ĐÈ TONE — PHONG CÁCH VIRAL[\s\S]*hook MẠNH NHẤT/,
+      bullet: /GHI ĐÈ TONE — BULLET POINTS THUẦN[\s\S]*TOÀN BỘ thân bài trình bày bằng bullets/,
+    };
+    for (const [tone, distinctive] of Object.entries(tones)) {
+      context.testTone = tone;
+      const prompt = await vm.runInContext(
+        'getSystemPrompt("facebook", "", "", "", "", testTone, "summary", null)',
+        context,
+      );
+      assert.match(prompt, distinctive);
+      assertToneFollowsLastPolicy(prompt);
+    }
+
+    const defaultPrompt = await vm.runInContext(
+      'getSystemPrompt("facebook", "", "", "", "", null, "summary", null)',
+      context,
+    );
+    assert.doesNotMatch(defaultPrompt, /GHI ĐÈ TONE —/);
     storageSettings = {};
   });
 });

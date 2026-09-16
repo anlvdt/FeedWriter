@@ -51,6 +51,8 @@ describe("Vietnam Timezone & Smart Time Conversion System", () => {
       assert.match(policy, /TUYỆT ĐỐI CẤM KIỂU THUẬT LẠI GIÁN TIẾP/);
       assert.match(policy, /QUY ĐỔI THÔNG MINH MỐC THỜI GIAN SANG GIỜ VIỆT NAM/);
       assert.match(policy, /CẤM TUYỆT ĐỐI đưa mốc thời gian đăng bài\/tweet/);
+      assert.match(policy, /Riêng khối "GHI ĐÈ TONE"/);
+      assert.doesNotMatch(policy, /ưu tiên cao hơn mọi prompt tùy chỉnh, tone/);
     });
 
     it("all summary prompts include smart Vietnam time conversion requirement", () => {

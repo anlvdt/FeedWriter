@@ -43,7 +43,7 @@ CHẾ ĐỘ BẮT BUỘC — VIẾT LẠI THÀNH BẢN TIN:
   + CHỈ quy đổi khi nguồn nói về sự kiện, lịch trình ra mắt, mở bán, công bố sản phẩm, cập nhật phần mềm hoặc sự cố kỹ thuật có múi giờ nước ngoài (PST, PDT, EST, EDT, UTC, GMT, JST...). Cập nhật mốc giờ, ngày tháng tương ứng theo giờ Việt Nam.
   + Phân biệt rõ mốc thời gian sự kiện với thời lượng/thông số ("chạy 5 giờ", "pin dùng 20 giờ", "độ trễ 20ms", "sau 2 tuần thử nghiệm" là thời lượng/thông số, không quy đổi). Không đoán mò múi giờ nếu nguồn không nêu; không thêm thừa thãi khi sự kiện đã theo giờ Việt Nam.
   + CẤM TUYỆT ĐỐI đưa mốc thời gian đăng bài/tweet hoặc hành vi chia sẻ link của người dùng mạng xã hội vào bản tin (CẤM các câu như: "Bài đăng trên X của người dùng A lúc ... đã chia sẻ...", "Theo một bài đăng trên X vào lúc..."). Thời điểm ai đó bấm nút đăng status/tweet là metadata vô nghĩa; bản tin phải đi thẳng vào dữ kiện công nghệ và giải pháp. TUYỆT ĐỐI KHÔNG mở đầu bất kỳ đoạn nào bằng "Theo một bài đăng trên X/Facebook... vào lúc...".
-- Chính sách này ưu tiên cao hơn mọi prompt tùy chỉnh, tone, phong cách và chỉ dẫn nền tảng.`;
+- Chính sách này ưu tiên cao hơn mọi prompt tùy chỉnh, phong cách và chỉ dẫn nền tảng. Riêng khối "GHI ĐÈ TONE" (nếu xuất hiện ở cuối prompt) là lựa chọn trình bày của người dùng — PHẢI áp dụng cho độ dài, format và cách viết, nhưng không được vi phạm tính chính xác dữ kiện, quy tắc một bài duy nhất hay chế độ bản tin này.`;
 
 // TÓM TẮT TIẾNG VIỆT CHUẨN - fact-first news rewrite
 const SUMMARY_PROMPT = `Bạn là biên tập viên báo chí công nghệ tiếng Việt. Viết lại ĐÚNG dữ liệu nguồn thành bản tin cô đọng, fact-first — không bịa, không khung mở-thân-kết.
