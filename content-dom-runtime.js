@@ -2269,8 +2269,11 @@ async function fetchImageBlob(imgSrc, filename = "image.png") {
   if (/^data:image\/(?:png|jpeg|webp);base64,/i.test(imgSrc)) {
     try {
       if (imgSrc.length > 16 * 1024 * 1024) return null;
-      const response = await fetch(imgSrc);
-      const blob = await response.blob();
+      const binary = atob(imgSrc.slice(imgSrc.indexOf(",") + 1));
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const mime = (imgSrc.match(/^data:(image\/(?:png|jpeg|webp));base64,/i) || [])[1].toLowerCase();
+      const blob = new Blob([bytes], { type: mime });
       if (!blob || blob.size < 100 || blob.size > 12 * 1024 * 1024) return null;
       const ext = blob.type.includes("jpeg") ? "jpg" :
                   blob.type.includes("webp") ? "webp" : "png";
@@ -2335,8 +2338,12 @@ async function fetchImageBlob(imgSrc, filename = "image.png") {
       ),
     );
     if (resp && resp.base64) {
-      const fetchResp = await fetch(resp.base64);
-      const blob = await fetchResp.blob();
+      const binary = atob(resp.base64.slice(resp.base64.indexOf(",") + 1));
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const mime = (resp.base64.match(/^data:(image\/(?:png|jpeg|gif|webp|avif));base64,/i) || [])[1];
+      if (!mime) return null;
+      const blob = new Blob([bytes], { type: mime });
       if (blob) {
         const ext = blob.type.includes("jpeg") ? "jpg" :
                    blob.type.includes("webp") ? "webp" :
@@ -2344,6 +2351,7 @@ async function fetchImageBlob(imgSrc, filename = "image.png") {
         return new File([blob], filename.replace(/\.\w+$/, "." + ext), { type: blob.type || "image/jpeg" });
       }
     }
+    if (resp?.error) console.warn("[FeedWriter] Image fetch failed:", resp.error);
     if (resp && /missing_host_permission/i.test(resp.error || "")) {
       lastImageFetchPermissionDenied = true;
     }

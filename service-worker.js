@@ -3691,6 +3691,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               image.url.length <= 8 * 1024 * 1024;
           })
         : [];
+      if (Array.isArray(raw.images) && images.length !== Math.min(raw.images.length, 10)) {
+        throw new Error("Có ảnh bài viết không hợp lệ hoặc quá lớn để chuyển sang Facebook.");
+      }
       const prefs = await chrome.storage.sync
         .get(["autoPublish"])
         .catch(() => ({}));
@@ -4107,10 +4110,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       // If bounds provided, crop to element
       if (request.bounds) {
         const { x, y, width, height } = request.bounds;
-        // Load image and crop using OffscreenCanvas
-        const img = await createImageBitmap(
-          await (await fetch(dataUrl)).blob()
-        );
+        // Load image and crop using OffscreenCanvas. Decode the data URL
+        // manually — the extension CSP connect-src allowlist has no data:
+        // scheme, so fetch(dataUrl) fails inside the service worker.
+        const comma = dataUrl.indexOf(",");
+        const mime = (dataUrl.slice(0, comma).match(/^data:([^;,]+)/) || [])[1] || "image/png";
+        const binary = atob(dataUrl.slice(comma + 1));
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const img = await createImageBitmap(new Blob([bytes], { type: mime }));
         const viewportWidth = Number(request.viewport?.width) || img.width;
         const viewportHeight = Number(request.viewport?.height) || img.height;
         const scaleX = img.width / viewportWidth;

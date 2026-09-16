@@ -157,6 +157,9 @@ const PosterFacebook = {
           }
         }
       }
+      if (imgFiles.length === 0) {
+        return { ok: false, reason: "Không tải được ảnh bài viết. Hãy kiểm tra quyền truy cập ảnh rồi tải lại trang để thử lại." };
+      }
     }
 
     // Step 4: Paste text

@@ -631,7 +631,7 @@ describe("Composer source-card density", () => {
   it("materializes captured X screenshot data URLs for Facebook", () => {
     const domSource = fs.readFileSync(path.join(root, "content-dom.js"), "utf8");
     assert.match(domSource, /\^data:image\\\/\(\?:png\|jpeg\|webp\);base64,/);
-    assert.match(domSource, /const response = await fetch\(imgSrc\)/);
+    assert.match(domSource, /const binary = atob\(imgSrc\.slice/);
     assert.match(domSource, /return new File\(\[blob\]/);
   });
 

@@ -646,6 +646,17 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
         }
 
         btn.innerHTML = '<div class="fbs-spinner" style="width:14px;height:14px;border-width:2px"></div> Đang mở Facebook...';
+
+        // Grant optional host permission while the click's user gesture is
+        // still active — the new Facebook tab fetches remote images through
+        // the service worker, which refuses them without it.
+        try {
+          await chrome.runtime.sendMessage({
+            action: "request-optional-permission",
+            origins: ["https://*/*"],
+          });
+        } catch (_) {}
+
         let selectedUrls = [];
         const thumbCheckboxes = preview.querySelectorAll(".fbs-sp-thumb-cb");
         if (thumbCheckboxes.length > 0) {
@@ -773,6 +784,16 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
           }
         }
 
+        // Grant optional host permission while the click gesture is still
+        // active — fetchImageBlob's own request runs after the composer
+        // dialog wait, when transient activation may already be gone.
+        try {
+          await chrome.runtime.sendMessage({
+            action: "request-optional-permission",
+            origins: ["https://*/*"],
+          });
+        } catch (_) {}
+
         // Bước 1: Xác định ảnh user muốn đăng
         let selectedUrls = [];
         const thumbCheckboxes = preview.querySelectorAll(".fbs-sp-thumb-cb");
@@ -857,6 +878,10 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
             }
           }
           console.log("[Manual Post] Fetched", imgFiles.length, "/", selectedUrls.length, "images");
+          if (imgFiles.length === 0) {
+            setFail("Không tải được ảnh bài viết — kiểm tra quyền truy cập ảnh rồi thử lại");
+            return;
+          }
         }
 
         // Bước 5: Paste text + ảnh

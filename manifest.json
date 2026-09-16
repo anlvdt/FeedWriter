@@ -31,7 +31,7 @@
     "https://da.gd/*"
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://generativelanguage.googleapis.com https://api.groq.com https://api.cerebras.ai https://api.sambanova.ai https://openrouter.ai https://tinyurl.com https://is.gd https://v.gd https://da.gd; img-src 'self' data: https: blob:; style-src 'self' 'unsafe-inline'"
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https:; img-src 'self' data: https: blob:; style-src 'self' 'unsafe-inline'"
   },
   "background": {
     "service_worker": "service-worker.js"
