@@ -26,6 +26,28 @@
     return d.innerHTML;
   }
 
+  function detectPageTheme() {
+    try {
+      const bg = getComputedStyle(document.body).backgroundColor;
+      if (!bg || bg === "rgba(0, 0, 0, 0)") {
+        return window.matchMedia("(prefers-color-scheme: light)").matches
+          ? "light"
+          : "dark";
+      }
+      const m = bg.match(/\d+/g);
+      if (!m) return "dark";
+      return (+m[0] + +m[1] + +m[2]) / 3 > 128 ? "light" : "dark";
+    } catch (_) {
+      return "light";
+    }
+  }
+
+  function applyTranslateTheme() {
+    if (translateTooltip) {
+      translateTooltip.setAttribute("data-fbs-theme", detectPageTheme());
+    }
+  }
+
   function createTranslateTooltip() {
     if (translateTooltip) return;
     translateTooltip = document.createElement("div");
@@ -33,7 +55,7 @@
     translateTooltip.setAttribute("data-fbs-ui", "v3");
     translateTooltip.setAttribute("role", "dialog");
     translateTooltip.setAttribute("aria-label", "Kết quả dịch");
-    translateTooltip.setAttribute("aria-live", "polite");
+    translateTooltip.setAttribute("aria-modal", "true");
     translateTooltip.setAttribute("aria-hidden", "true");
     translateTooltip.setAttribute("tabindex", "-1");
     translateTooltip.innerHTML =
@@ -42,6 +64,7 @@
     translateTooltip.querySelector(".fbs-translate-close")
       .addEventListener("click", hideTranslateTooltip);
     document.body.appendChild(translateTooltip);
+    applyTranslateTheme();
   }
 
   function setTooltipContent(html) {
@@ -162,8 +185,8 @@
       "</div>" +
       '<div class="fbs-translate-result">' + bodyHtml + "</div>" +
       '<div class="fbs-translate-actions">' +
-        '<button class="fbs-translate-copy" type="button">Copy</button>' +
-        '<button class="fbs-translate-copy-source" type="button" title="Copy bản gốc để shadowing">Copy EN</button>' +
+        '<button class="fbs-translate-copy" type="button">Sao chép</button>' +
+        '<button class="fbs-translate-copy-source" type="button" title="Sao chép bản gốc để luyện shadowing">Sao chép EN</button>' +
       "</div>"
     );
   }
@@ -174,8 +197,8 @@
       copyBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         navigator.clipboard.writeText(rawTranslation).then(() => {
-          copyBtn.textContent = "Đã copy";
-          setTimeout(() => { copyBtn.textContent = "Copy"; }, 1000);
+          copyBtn.textContent = "Đã sao chép";
+          setTimeout(() => { copyBtn.textContent = "Sao chép"; }, 1000);
         }).catch(() => {});
       });
     }
@@ -184,8 +207,8 @@
       copySrc.addEventListener("click", (e) => {
         e.stopPropagation();
         navigator.clipboard.writeText(sourceText).then(() => {
-          copySrc.textContent = "Đã copy";
-          setTimeout(() => { copySrc.textContent = "Copy EN"; }, 1000);
+          copySrc.textContent = "Đã sao chép";
+          setTimeout(() => { copySrc.textContent = "Sao chép EN"; }, 1000);
         }).catch(() => {});
       });
     }
@@ -273,20 +296,6 @@
     }
   }
 
-  /** Accept English words, multi-word phrases, light punctuation. */
-  function isTranslatable(text) {
-    if (!text) return false;
-    const t = text.trim();
-    if (t.length < 2 || t.length > 2000) return false;
-    // Must contain Latin letters
-    if (!/[A-Za-z]/.test(t)) return false;
-    // Reject pure URLs / emails
-    if (/^https?:\/\//i.test(t) || /^[\w.+-]+@[\w.-]+$/.test(t)) return false;
-    // Mostly Latin (allow digits, punctuation, spaces)
-    const latin = (t.match(/[A-Za-z]/g) || []).length;
-    return latin / Math.max(t.replace(/\s/g, "").length, 1) >= 0.45;
-  }
-
   function guessMode(text) {
     const t = text.trim();
     const words = t.split(/\s+/).filter(Boolean);
@@ -350,6 +359,13 @@
 
   // Isolated-world bridge: content.js sends chrome.runtime relay-translate,
   // which the service worker delivers back as translate-selection.
+
+  document.addEventListener("dblclick", () => {
+    const text = (window.getSelection()?.toString() || "").trim();
+    if (!isTranslatable(text)) return;
+    if (text.split(/\s+/).filter(Boolean).length > 6) return;
+    runTranslate(text, "word", selectionRect());
+  });
 
   document.addEventListener("mousedown", (e) => {
     if (translateTooltip && !translateTooltip.contains(e.target)) {

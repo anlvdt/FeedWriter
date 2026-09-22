@@ -1307,11 +1307,15 @@ function extractMainContent(element) {
   );
   unwanted.forEach((el) => el.remove());
 
-  // Get text content
+  // Get text content. Keep paragraph breaks so long articles stay structured.
   let text = clone.innerText || clone.textContent || "";
 
-  // Clean up whitespace
-  text = text.replace(/\s+/g, " ").trim();
+  text = String(text || "")
+    .replace(/\r\n?/g, "\n")
+    .replace(/[^\S\n]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 
   return text;
 }
@@ -1327,7 +1331,12 @@ function cleanText(text) {
       "",
     );
   }
-  return cleaned.replace(/\s+/g, " ").trim();
+  return String(cleaned || "")
+    .replace(/\r\n?/g, "\n")
+    .replace(/[^\S\n]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 const ICON_BASE64 =
@@ -1423,29 +1432,29 @@ function ensureOverlay() {
         '</button>' +
         '<button type="button" class="fbs-tool-btn fbs-regen-btn" title="Viết lại">' +
           '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6"/><path d="M21 13a9 9 0 1 1-3-7.7L21 8"/></svg>' +
-          '<span>Lại</span>' +
+          '<span>Viết lại</span>' +
         '</button>' +
         '<button type="button" class="fbs-tool-btn fbs-stop-btn" title="Dừng">' +
           '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>' +
           '<span>Dừng</span>' +
         '</button>' +
+        '<button type="button" class="fbs-tool-btn fbs-repo-radar-btn" hidden title="Copy JSON cho Repo Radar (dtcn-v2)">' +
+          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18"/></svg>' +
+          '<span>Repo Radar</span>' +
+        '</button>' +
         '<select class="fbs-model-select" title="Provider AI" aria-label="Provider AI">' +
-          '<option value="">Auto</option>' +
+          '<option value="">Tự chọn</option>' +
           '<option value="groq">Groq</option>' +
           '<option value="gemini">Gemini</option>' +
           '<option value="cerebras">Cerebras</option>' +
-          '<option value="sambanova">Samba</option>' +
+          '<option value="sambanova">SambaNova</option>' +
           '<option value="openrouter">OpenRouter</option>' +
         '</select>' +
       '</div>' +
       '<div class="fbs-footer-primary">' +
-        '<button type="button" class="fbs-btn-secondary fbs-copy-btn" title="Copy (' + shortcutMod + '+C)">' +
+        '<button type="button" class="fbs-btn-secondary fbs-copy-btn" title="Sao chép (' + shortcutMod + '+C)">' +
           '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>' +
-          'Copy' +
-        '</button>' +
-        '<button type="button" class="fbs-btn-secondary fbs-repo-radar-btn" title="Copy JSON cho Repo Radar (dtcn-v2)">' +
-          '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18"/></svg>' +
-          'Repo Radar' +
+          'Sao chép' +
         '</button>' +
         '<button type="button" class="fbs-btn-primary fbs-post-status-btn" title="Kiểm tra nguồn & đăng status">' +
           '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>' +
@@ -1732,6 +1741,18 @@ function openOverlay(html, streaming, type = "summary") {
     !isSummarizing && !streaming && html.includes("fbs-result"),
   );
   setVis(".fbs-model-select", !isSummarizing && !streaming);
+  const radarSource =
+    lastPanelRawText ||
+    panelBody?.dataset?.editedText ||
+    panelBody?.innerText ||
+    "";
+  setVis(
+    ".fbs-repo-radar-btn",
+    !isSummarizing &&
+      !streaming &&
+      html.includes("fbs-result") &&
+      !!extractGithubRepoUrl(radarSource),
+  );
 
   const toneRow = panel.querySelector(".fbs-tone-row");
   const showTone =
@@ -1878,7 +1899,7 @@ async function copyForRepoRadar() {
     if (btn) {
       const orig = btn.innerHTML;
       btn.innerHTML =
-        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Đã copy';
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Đã sao chép';
       setTimeout(() => {
         btn.innerHTML = orig;
       }, 1500);
@@ -1930,7 +1951,7 @@ function copyResult() {
     const btn = panel.querySelector(".fbs-copy-btn");
     const orig = btn.innerHTML;
     btn.innerHTML =
-      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Đã copy';
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Đã sao chép';
     setTimeout(() => {
       btn.innerHTML = orig;
     }, 1500);
@@ -2434,8 +2455,10 @@ document.addEventListener("keydown", (e) => {
   const panel = document.querySelector(".fbs-panel.fbs-visible");
   if (!panel) return;
 
-  // Copy with Ctrl+C (when not in input/textarea)
+  // Copy with Ctrl+C (when not in input/textarea and no in-panel selection)
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c" && !["INPUT", "TEXTAREA"].includes(e.target.tagName)) {
+    const sel = window.getSelection();
+    if (sel && sel.toString().trim() && panel.contains(sel.anchorNode)) return;
     e.preventDefault();
     const copyBtn = panel.querySelector(".fbs-copy-btn");
     if (copyBtn) copyBtn.click();
@@ -2454,46 +2477,7 @@ document.addEventListener("keydown", (e) => {
 // ============================================================
 // POST API — shared by the manual composer flow
 // ============================================================
-function cleanSourceUrl(rawUrl) {
-  if (!rawUrl) return "";
-  try {
-    const u = new URL(rawUrl);
-    if (u.hostname.includes("facebook.com")) {
-      if (typeof window.fbsCleanFbUrl === "function") {
-        return window.fbsCleanFbUrl(rawUrl);
-      }
-      const mp = u.searchParams.get("multi_permalinks");
-      if (mp && u.pathname.includes("/groups/"))
-        return (
-          u.origin + u.pathname.replace(/\/$/, "") + "/posts/" + mp + "/"
-        );
-      const sfid = u.searchParams.get("story_fbid");
-      const uid = u.searchParams.get("id");
-      if (sfid && uid) return u.origin + "/" + uid + "/posts/" + sfid + "/";
-      const keep = new Set(["story_fbid", "id", "multi_permalinks", "v", "set", "theater", "fbid"]);
-      for (const key of [...u.searchParams.keys()]) {
-        if (keep.has(key)) continue;
-        if (key.startsWith("utm_") || key.startsWith("__") || ["fbclid", "ref", "comment_id", "reply_comment_id", "mibextid"].includes(key)) {
-          u.searchParams.delete(key);
-        }
-      }
-      return u.toString().replace(/\?$/, "");
-    }
-    for (const k of [...u.searchParams.keys()]) {
-      if (
-        k.startsWith("utm_") ||
-        k.startsWith("__") ||
-        ["fbclid", "gclid", "ref", "comment_id", "reply_comment_id"].includes(
-          k,
-        )
-      )
-        u.searchParams.delete(k);
-    }
-    return u.toString().replace(/\?$/, "");
-  } catch (_) {
-    return rawUrl;
-  }
-}
+
 
 
 
@@ -3264,7 +3248,7 @@ function showBatchResults() {
   html += `
       </div>
       <div class="fbs-batch-actions">
-        <button class="fbs-batch-copy-all btn btn-primary">Copy tất cả</button>
+        <button class="fbs-batch-copy-all btn btn-primary">Sao chép tất cả</button>
         <button class="fbs-batch-close btn btn-secondary">Đóng</button>
       </div>
     </div>
@@ -3282,9 +3266,9 @@ function showBatchResults() {
         .join('\n\n---\n\n');
 
       navigator.clipboard.writeText(allResults).then(() => {
-        copyAllBtn.textContent = 'Đã copy!';
+        copyAllBtn.textContent = 'Đã sao chép!';
         setTimeout(() => {
-          copyAllBtn.textContent = 'Copy tất cả';
+          copyAllBtn.textContent = 'Sao chép tất cả';
         }, 2000);
       });
     });
@@ -3404,7 +3388,7 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
     '<div class="fbs-skeleton fbs-skeleton-text"></div>' +
     '<div class="fbs-skeleton fbs-skeleton-text"></div>' +
     '<div class="fbs-skeleton fbs-skeleton-text"></div>' +
-    '<div style="margin-top:8px;font-size:11px;color:rgba(255,255,255,0.5);">' + title + '</div>' +
+    '<div class="fbs-phase-text">' + title + '</div>' +
     '</div>';
 
   openOverlay(skeletonHtml, false, type);
@@ -3531,9 +3515,18 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
   let first = true;
   let streamBuffer = "";
   let streamRafId = null;
+  let streamPhase = "Đang chuẩn bị bản tin...";
+  function paintPhase(message) {
+    if (message) streamPhase = message;
+    if (!panelBody) return;
+    const phase = panelBody.querySelector(".fbs-phase-text");
+    const label = panelBody.querySelector(".fbs-progress-label-text");
+    if (phase) phase.textContent = streamPhase;
+    if (label) label.textContent = streamPhase;
+  }
   const summaryTimeoutMs = Math.min(
-    300000,
-    90000 + Math.ceil(text.length / 10000) * 30000,
+    480000,
+    90000 + Math.ceil(text.length / 10000) * 30000 + (text.length > 12000 ? 150000 : 0),
   );
   const summaryTimeoutId = setTimeout(() => {
     if (!isSummarizing) return;
@@ -3586,14 +3579,17 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
     else if (tone === "short") expectedLength = 200;
     else if (tone === "bullet") expectedLength = 350;
 
-    const pct = Math.min(Math.floor((streamBuffer.length / expectedLength) * 100), 99);
+    const partMatch = /phần\s+(\d+)\s*\/\s*(\d+)/i.exec(streamPhase);
+    const pct = partMatch
+      ? Math.min(99, Math.round((Number(partMatch[1]) / Number(partMatch[2])) * 100))
+      : Math.min(Math.floor((streamBuffer.length / expectedLength) * 100), 92);
 
     const existingResult = panelBody.querySelector(".fbs-result");
     const progressBar = panelBody.querySelector(".fbs-progress-bar");
     const progressLabel = panelBody.querySelector(".fbs-progress-label-text");
 
     if (progressBar) progressBar.style.width = pct + "%";
-    if (progressLabel) progressLabel.textContent = `Đang tạo... ${pct}%`;
+    if (progressLabel) progressLabel.textContent = streamPhase;
 
     const htmlToInsert = fmt(streamBuffer);
     if (existingResult) {
@@ -3601,7 +3597,7 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
     } else {
       openOverlay(
         '<div class="fbs-progress-container">' +
-          '<div class="fbs-progress-text"><span class="fbs-progress-label-text">Đang tạo... ' + pct + '%</span></div>' +
+          '<div class="fbs-progress-text"><span class="fbs-progress-label-text">' + esc(streamPhase) + '</span></div>' +
           '<div class="fbs-progress-bar-bg"><div class="fbs-progress-bar" style="width:' + pct + '%"></div></div>' +
         '</div>' +
         '<div class="fbs-result">' + htmlToInsert + "</div>",
@@ -3618,7 +3614,7 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
         first = false;
         openOverlay(
           '<div class="fbs-progress-container">' +
-            '<div class="fbs-progress-text"><span class="fbs-progress-label-text">Đang tạo... 0%</span></div>' +
+            '<div class="fbs-progress-text"><span class="fbs-progress-label-text">' + esc(streamPhase) + '</span></div>' +
             '<div class="fbs-progress-bar-bg"><div class="fbs-progress-bar" style="width:0%"></div></div>' +
           '</div>' +
           '<div class="fbs-result"></div>',
@@ -3646,15 +3642,14 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
           '<div class="fbs-skeleton fbs-skeleton-text"></div>' +
           '<div class="fbs-skeleton fbs-skeleton-text"></div>' +
           '<div class="fbs-skeleton fbs-skeleton-text"></div>' +
-          '<div style="margin-top:8px;font-size:11px;color:rgba(255,255,255,0.5);">' +
+          '<div class="fbs-phase-text">' +
           esc(msg.message || "Đang thử provider khác...") +
           "</div></div>",
         true,
         type,
       );
     } else if (msg.action === "status") {
-      const statusEl = panelBody.querySelector(".fbs-loading div:last-child");
-      if (statusEl) statusEl.textContent = msg.message;
+      paintPhase(msg.message || streamPhase);
     } else if (msg.action === "done") {
       clearTimeout(summaryTimeoutId);
       if (streamRafId) {
@@ -3679,33 +3674,20 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
         const issueClass =
           msg.quality === "warn" ? "fbs-quality-warn" : "fbs-quality-info";
         qualityHtml =
-          '<div class="' +
+          '<details class="fbs-quality ' +
           issueClass +
-          '">' +
+          '" open><summary>Ghi chú chất lượng (' +
+          msg.issues.length +
+          ")</summary><div class=\"fbs-quality-body\">" +
           msg.issues.map((i) => esc(i)).join("<br>") +
-          "</div>";
+          "</div></details>";
       }
 
-      // Render final results but keep progress bar showing 100% temporarily
       openOverlay(
-        '<div class="fbs-progress-container">' +
-          '<div class="fbs-progress-text"><span class="fbs-progress-label-text">Hoàn thành! 100%</span></div>' +
-          '<div class="fbs-progress-bar-bg"><div class="fbs-progress-bar" style="width:100%; background:var(--success, #00b894)"></div></div>' +
-        '</div>' +
         '<div class="fbs-result">' + fmt(msg.full) + "</div>" + qualityHtml,
         false,
         type,
       );
-
-      // Smoothly fade out and remove the progress container
-      setTimeout(() => {
-        const progressContainer = panelBody ? panelBody.querySelector(".fbs-progress-container") : null;
-        if (progressContainer) {
-          progressContainer.style.transition = "opacity 0.4s ease";
-          progressContainer.style.opacity = "0";
-          setTimeout(() => progressContainer.remove(), 400);
-        }
-      }, 650);
 
       try {
         currentPort.disconnect();
@@ -4258,7 +4240,9 @@ function handleSelection() {
     // Translate accepts short EN phrases; summary follows the shared semantic
     // policy and the user's configured minimum length.
     const canTranslate =
-      text.length >= 2 && text.length <= 2000 && /[A-Za-z]/.test(text);
+      typeof isTranslatable === "function"
+        ? isTranslatable(text)
+        : text.length >= 2 && text.length <= 24000 && /[A-Za-z]/.test(text);
     const canSummary = getSummaryPolicyDecision(text, "summary").shouldSummarize;
     if (!canTranslate && !canSummary) {
       hideFloatingToolbar();
@@ -4367,7 +4351,6 @@ function queueAutoSummary(post) {
   if (post.dataset.fbsAutoSummary) return;
   if (post.dataset.fbsSponsoredHidden === "1" || _isAlreadyFiltered(post)) return;
   post.dataset.fbsAutoSummary = "queued";
-  autoSummaryCount++;
   autoSummaryChain = autoSummaryChain
     .then(() => new Promise((r) => setTimeout(r, 800)))
     .then(() => runAutoSummary(post))
@@ -4389,8 +4372,14 @@ async function runAutoSummary(post) {
       (SITE !== "x" &&
         !getSummaryPolicyDecision(text, "summary").shouldSummarize)
     ) {
+      post.dataset.fbsAutoSummary = "skip";
       return;
     }
+    if (autoSummaryCount >= AUTO_SUMMARY_SESSION_CAP) {
+      post.dataset.fbsAutoSummary = "skip";
+      return;
+    }
+    autoSummaryCount++;
 
     const box = document.createElement("div");
     box.className = "fbs-auto-summary";

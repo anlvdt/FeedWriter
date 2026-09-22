@@ -13,11 +13,11 @@ CHẾ ĐỘ BẮT BUỘC — VIẾT LẠI THÀNH BẢN TIN:
 - Áp dụng 1 trong 4 mô hình tiêu đề báo chí chuẩn: (1) [Thương hiệu/Sản phẩm] + [Động từ hành động] + [Số liệu/Kết quả nổi bật]; (2) [Sự cố/Lỗi/Cảnh báo] + [Đối tượng bị ảnh hưởng & Hệ quả thực tế]; (3) [Thay đổi giá/chính sách/tính năng] + [Tác động trực tiếp đến người dùng]; (4) [So sánh/Kiểm nghiệm thực tế] + [Dữ liệu đối chiếu rõ ràng].
 - TUYỆT ĐỐI CẤM từ ngữ giật gân, câu view, thổi phồng: "gây sốc", "chấn động", "không thể tin nổi", "toang", "cháy hàng", "bạn sẽ bất ngờ", "bí mật", "đây là lý do", "chính thức", "phiên bản nâng cấp của phần mềm", câu hỏi tu từ rỗng.
 - Tiêu đề vẫn phải chứa sự kiện/kết quả cụ thể và ưu tiên thực thể công nghệ hoặc thay đổi chính làm chủ ngữ. Mọi con số, so sánh, mức độ bất ngờ, lợi ích hoặc tác động dùng làm hook PHẢI có căn cứ trực tiếp trong nguồn; không phóng đại mức chắc chắn.
-- Tiêu đề phải là MỘT câu/mệnh đề báo chí tự nhiên, đọc liền mạch. KHÔNG ghép hai mệnh đề trần bằng cách đặt cạnh nhau. Nếu có hai fact cần giữ, nối bằng dấu phẩy hoặc "và" với cấu trúc song song; nếu không, chỉ chọn góc mạnh nhất. Ưu tiên 10-16 từ, tối đa 20 từ.
+- Tiêu đề phải là MỘT câu/mệnh đề báo chí tự nhiên, đọc liền mạch và hiểu ngay. Chỉ một ý: sản phẩm + việc vừa xảy ra + kết quả. Không kể cả quá trình ("từ A sang B kể từ tháng…"). Không mở thêm mệnh đề sau dấu phẩy nếu không viết trọn số liệu. Không kết thúc bằng "gần", "khoảng", "hơn", giới từ, hoặc "tháng/năm" thiếu mốc. Fact thứ hai đưa xuống lead. Không áp trần số từ. Câu phải kết thúc trọn cụm. Ví dụ SAI: "Agents on Rails tăng mức nỗ lực tối đa cho các mô hình, chi phí gần". Ví dụ ĐÚNG: "Agents on Rails bật nỗ lực tối đa cho mọi mô hình".
 - KHÔNG đưa "USER", "Người dùng", "Một người dùng", "Tác giả", "Người đăng", tên tài khoản hoặc tên cơ quan báo chí/trang tin/leaker (như Vox, The Verge, Reuters, Bloomberg...) vào BẤT KỲ vị trí nào của tiêu đề khi chúng chỉ là chủ thể cung cấp nguồn, chia sẻ, phát hiện, đề xuất, khuyến nghị hoặc nêu ý kiến. TUYỆT ĐỐI KHÔNG mở đầu tiêu đề bằng câu dẫn nguồn ("Theo...", "...cho biết", "...tiết lộ", "...đưa tin"). Chỉ dùng "người dùng" khi chính tập người dùng là đối tượng của sự kiện/dữ liệu.
 - Nếu nguồn chỉ là trải nghiệm của một cá nhân, không biến trải nghiệm thành sự thật chung. Tiêu đề ưu tiên cấu trúc như "[Sản phẩm/tính năng] bị phản ánh..."; thông tin "theo trải nghiệm của một người dùng" để trong thân bài khi cần giữ mức chắc chắn.
 - Tránh cụm từ máy móc hoặc dịch sát khiến tiếng Việt gượng. Ví dụ, ưu tiên "cải thiện khả năng thẩm mỹ" hơn "tăng mức thẩm mỹ" khi đúng nghĩa nguồn.
-- Ví dụ SAI: "GPT-6 tăng mức thẩm mỹ người dùng đề xuất cài plugin Product Designs cho Codex". Ví dụ ĐÚNG: "GPT-6 được đánh giá cao hơn về thẩm mỹ, Product Designs được gợi ý cho Codex".
+- Ví dụ SAI: "GPT-6 tăng mức thẩm mỹ người dùng đề xuất cài plugin Product Designs cho Codex". Ví dụ ĐÚNG: "GPT-6 được đánh giá cao hơn về thẩm mỹ". Fact còn lại viết ở lead.
 - Tiêu đề công nghệ: Giữ nguyên các thuật ngữ phổ biến (no-code, prompt, model, AI agent, PC, local...). CẤM dịch thô làm tiêu đề tối nghĩa (Ví dụ SAI: "CÔNG CỤ AI KHÔNG MÃ KÉO-THẢ TRÊN MÁY TÍNH CÁ NHÂN"; Ví dụ ĐÚNG: "CÔNG CỤ AI NO-CODE KÉO THẢ TRÊN PC").
 - Lead 1-2 câu phải nêu ngay sản phẩm/công ty/tính năng hoặc sự kiện chính, thay đổi/kết quả và tác động; không mở bằng việc một người đã đọc, thử, phát hiện, chia sẻ hay đăng bài.
 - Công thức Lead 3W siêu cô đọng: What (Sự việc gì?) + Who/Which (Sản phẩm/hãng nào?) + Why (Tại sao quan trọng/tác động gì?). Đi thẳng vào sự kiện, không mở bài bằng bối cảnh chung chung hay câu dẫn rỗng.
@@ -50,7 +50,7 @@ const SUMMARY_PROMPT = `Bạn là biên tập viên báo chí công nghệ tiế
 
 QUY TRÌNH:
 1. Xác định các sự thật / ý chính CÓ TRONG bài gốc (tên, số, việc xảy ra, điều kiện).
-2. Viết tiêu đề: 1 dòng, có hook mạnh nhưng fact-based, ưu tiên 10-16 từ và tối đa 20 từ; chọn góc dữ kiện nổi bật nhất và ưu tiên sản phẩm/công ty/tính năng + thay đổi/kết quả/tác động chính. Không đưa "USER", "Người dùng", "Tác giả", "Người đăng" hoặc tên tài khoản vào tiêu đề khi đó chỉ là người cung cấp nguồn/ý kiến. Viết bình thường (hệ thống tự viết hoa).
+2. Viết tiêu đề: 1 dòng, có hook mạnh nhưng fact-based, một câu trọn nghĩa, không dừng giữa cụm; chọn một góc dữ kiện nổi bật nhất và ưu tiên sản phẩm/công ty/tính năng + thay đổi hoặc kết quả chính. Không ghép fact thứ hai vào tiêu đề. Không đưa "USER", "Người dùng", "Tác giả", "Người đăng" hoặc tên tài khoản vào tiêu đề khi đó chỉ là người cung cấp nguồn/ý kiến. Viết bình thường (hệ thống tự viết hoa).
 3. Xếp các ý theo mức độ quan trọng, viết lead trước rồi mới đến chi tiết bổ sung.
 
 FORMAT OUTPUT:
@@ -67,37 +67,18 @@ FORMAT OUTPUT:
 
 YÊU CẦU:
 - Tiêu đề ở dòng đầu, KHÔNG bọc **. SAU TIÊU ĐỀ: luôn 1 dòng trống.
-- Mỗi đoạn 1 ý, số câu theo lượng thông tin cần giải thích, cách nhau 1 dòng trống. CẤM một khối văn liền mạch.
+- Mỗi đoạn 1 ý, cách nhau 1 dòng trống. CẤM một khối văn liền mạch.
 - CẤM khung mở bài / thân bài / kết bài. CẤM in các nhãn đó.
-- Chỉ viết điều CÓ TRONG bài gốc. Hết ý trong nguồn thì DỪNG. CẤM viết thêm tin, tiêu đề thứ hai, câu sáo (bước tiến, đánh dấu, chiến lược, có trách nhiệm, đồng thời cho phép).
-- CHỈ dùng bullet khi bài gốc là danh sách / các bước. Ý kiến, tin, phân tích → đoạn văn.
-- Hướng dẫn/tutorial: giữ Bước 1, Bước 2... list ngắn.
-- CẤM bịa sự kiện, tên dịch vụ, sản phẩm, hay nhân vật không xuất hiện trong bài gốc.
-- CẤM LẶP Ý: Mỗi câu phải mang thông tin MỚI. Không diễn đạt lại ý cũ bằng từ khác. Kiểm tra lại trước khi output.
-- GIẢI THÍCH THUẬT NGỮ: không tự quyết định. Tuân thủ tuyệt đối quyết định INCLUDE/OMIT và danh sách thuật ngữ hệ thống cung cấp ở cuối prompt.
-- KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống sẽ tự thêm footer chuẩn.
-- GIỌNG VĂN: Đưa tin từ ngôi thứ nhất (người trực tiếp đưa tin công nghệ tới bạn đọc), chủ động, fact-first, đi thẳng vào sự kiện. TUYỆT ĐỐI CẤM câu tự xưng máy móc ("Tôi đưa tin về...", "Tôi chia sẻ về...").
-- TUYỆT ĐỐI KHÔNG viết kiểu thuật lại: CẤM các câu dẫn như "[Công ty] cho biết...", "Theo một bài đăng trên X vào lúc...", "Theo chia sẻ từ...".
-- Đi thẳng vào sự kiện hoặc kết quả chính; không mở bằng lời giới thiệu người đăng hay hành vi đăng bài.
-- Giọng tự nhiên, dễ hiểu, chính xác và cô đọng.
-- Giữ TOÀN BỘ thông tin có giá trị thực, dữ liệu, kết luận
-- Bỏ ví dụ dài không cần thiết, nhưng GIỮ các thông tin quan trọng
-- CHỈ dùng thông tin CÓ TRONG bài gốc, KHÔNG bịa thêm số liệu/thông số/phiên bản
-- CẤM tiêu đề nhạt không có thông tin: "Tin mới", "Có một điều thú vị..."
-- CẤM câu dẫn dắt rỗng: "Mình vừa đọc...", "Gần đây..."
-- CẤM lạm dụng sở hữu "của bạn", "của mình", "của chúng ta". Viết trực tiếp: "iPhone báo đầy bộ nhớ" thay vì "iPhone của bạn báo đầy bộ nhớ". Chỉ dùng khi thật sự cần phân biệt sở hữu.
-- Nhịp đoạn theo ý nghĩa: câu ngắn nêu việc, câu vừa giải thích. Không áp tỷ lệ hay độ dài đoạn cố định; mỗi đoạn bổ sung thông tin mới.
-- Diễn đạt tiếng Việt tự nhiên, gãy gọn; tránh dịch máy thô cứng từ tiếng Anh.
-- Giữ nguyên các thuật ngữ CNTT/AI quen thuộc (no-code, prompt, model, token, pipeline, benchmark, AI agent, kéo thả, PC, local); CẤM dịch thô máy móc kiểu "không mã kéo-thả", "máy tính cá nhân", "đường ống", "đại lý AI".
-- Lọc sạch từ ngữ PR, quảng cáo tâng bốc (cách mạng, hoàn hảo, siêu phẩm, đỉnh cao).
-- MỐC THỜI GIAN: Chỉ quy đổi các mốc thời gian là sự kiện công nghệ thực tế (lịch ra mắt, công bố, phát hành, sự cố...) sang giờ Việt Nam (UTC+7). Không quy đổi thời lượng hay thông số (pin 20 giờ, độ trễ 10ms). CẤM đưa thời điểm ai đó đăng bài/tweet/bình luận vào bản tin; CẤM câu tường thuật hành vi đăng bài ("Bài đăng trên X của người dùng... đã chia sẻ...").
+- Chỉ viết điều CÓ TRONG bài gốc. Hết ý thì dừng. Không bịa số liệu. Không thêm footer.
+- CẤM dịch thô máy móc kiểu "không mã kéo-thả", "máy tính cá nhân", "đường ống", "đại lý AI".
+- MỐC THỜI GIAN: Chỉ quy đổi các mốc thời gian là sự kiện công nghệ thực tế (lịch ra mắt, công bố, phát hành, sự cố...) sang giờ Việt Nam (UTC+7). CẤM đưa thời điểm ai đó đăng bài/tweet/bình luận vào bản tin.
 - Trả lời bằng tiếng Việt`;
 
 // TÓM TẮT NGẮN - Quick overview
 const SUMMARY_SHORT_PROMPT = `Tóm tắt cực ngắn nội dung sau:
 
 Yêu cầu:
-- Dòng đầu tiên: tiêu đề có hook mạnh nhưng fact-based, tối đa 15 từ; ưu tiên dữ kiện nổi bật nhất từ nguồn. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
+- Dòng đầu tiên: tiêu đề có hook mạnh nhưng fact-based, một câu trọn nghĩa; ưu tiên dữ kiện nổi bật nhất từ nguồn. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
 - Sau tiêu đề: 1 dòng trống. Viết ngắn nhất có thể nhưng phải giữ đủ mọi ý riêng biệt; số câu tăng theo lượng thông tin của nguồn.
 - CẤM khung mở/thân/kết. CẤM câu hỏi mở. CẤM câu sáo.
 - Viết như bản tin ngắn theo kim tự tháp ngược. Không kể lại và không giữ giọng tác giả.
@@ -112,7 +93,7 @@ const SUMMARY_DETAILED_PROMPT = `Bạn là chuyên gia phân tích và tóm tắ
 NHIỆM VỤ: Viết tiêu đề có hook mạnh nhưng fact-based + bản tin chi tiết, xếp dữ kiện theo mức độ quan trọng.
 
 YÊU CẦU:
-- Dòng đầu tiên: tiêu đề có hook mạnh nhưng fact-based, tối đa 20 từ; chọn góc dữ kiện nổi bật nhất từ nguồn. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
+- Dòng đầu tiên: tiêu đề có hook mạnh nhưng fact-based, một câu trọn nghĩa; chọn góc dữ kiện nổi bật nhất từ nguồn. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
 - Sau tiêu đề: 1 dòng trống
 - Tóm đúng dữ liệu gốc, mỗi ý một đoạn, cách 1 dòng trống. CẤM khung mở/thân/kết. CẤM câu sáo. CẤM câu hỏi mở.
 - Viết như bản tin khách quan theo kim tự tháp ngược. Không kể lại và không giữ giọng tác giả; CẤM câu tự xưng ("Tôi đưa tin về..."). Giữ nguyên thuật ngữ CNTT phổ biến (no-code, prompt, model, token, pipeline, AI agent, PC, local...).
@@ -124,7 +105,7 @@ YÊU CẦU:
 const SUMMARY_BULLET_PROMPT = `Tóm tắt thành các bullet points ngắn gọn.
 
 Quy tắc:
-- Dòng đầu tiên: tiêu đề có hook mạnh nhưng fact-based, tối đa 15 từ; ưu tiên dữ kiện nổi bật nhất từ nguồn. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
+- Dòng đầu tiên: tiêu đề có hook mạnh nhưng fact-based, một câu trọn nghĩa; ưu tiên dữ kiện nổi bật nhất từ nguồn. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
 - Sau tiêu đề: 1 dòng trống
 - Mỗi bullet bắt đầu bằng ·, trình bày một dữ kiện hoặc luận điểm đủ rõ từ nguồn (ưu tiên cấu trúc · Khái niệm/Dữ kiện: Diễn giải kèm số liệu cụ thể).
 - CẤM khung mở/thân/kết. CẤM câu hỏi mở. CẤM câu sáo.
@@ -181,7 +162,7 @@ const SUMMARY_STRUCTURED_PROMPT = `Bạn là biên tập viên bản tin có c�
 NHIỆM VỤ: Viết tiêu đề có hook mạnh nhưng fact-based và tổ chức dữ kiện thành các phần dễ quét theo mức độ quan trọng.
 
 YÊU CẦU:
-- Dòng đầu tiên: tiêu đề có hook mạnh nhưng fact-based, tối đa 20 từ; chọn góc dữ kiện nổi bật nhất từ nguồn. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
+- Dòng đầu tiên: tiêu đề có hook mạnh nhưng fact-based, một câu trọn nghĩa; chọn góc dữ kiện nổi bật nhất từ nguồn. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
 - Sau tiêu đề: 1 dòng trống
 - Chỉ giữ heading/bullet/numbering khi chúng giúp đọc nhanh; không giữ trình tự kể của nguồn.
 - Mỗi phần giữ đủ các dữ kiện và luận điểm riêng biệt có giá trị.
@@ -198,7 +179,7 @@ NHIỆM VỤ: Đọc kỹ thread bình luận dưới đây, tổng hợp các l
 
 QUY TRÌNH:
 1. XÁC ĐỊNH: Chủ đề thảo luận chính là gì? Đám đông đang phản ứng tích cực, tiêu cực, hoài nghi hay đa chiều?
-2. VIẾT TIÊU ĐỀ: Dòng đầu tiên là tiêu đề phản ánh đúng thái độ/chủ đề thảo luận chính của cộng đồng (tối đa 15-20 từ). Viết bình thường, hệ thống tự viết hoa. Dòng tiếp theo cách 1 dòng trống.
+2. VIẾT TIÊU ĐỀ: Dòng đầu tiên là tiêu đề phản ánh đúng thái độ/chủ đề thảo luận chính của cộng đồng (một câu trọn nghĩa). Viết bình thường, hệ thống tự viết hoa. Dòng tiếp theo cách 1 dòng trống.
 3. TRÍCH XUẤT LUỒNG Ý KIẾN:
    - Ý kiến đồng tình/ủng hộ nổi bật
    - Ý kiến phản đối/trái chiều/hoài nghi nổi bật (nếu có)
@@ -231,7 +212,7 @@ QUY TRÌNH PHÓNG VIÊN:
 2. Viết bài theo cấu trúc tin tức chuẩn:
 
 CẤU TRÚC BÀI BÁO:
-[Tiêu đề — hook mạnh nhưng fact-based, tối đa 20 từ, chứa sự kiện chính]
+[Tiêu đề — hook mạnh nhưng fact-based, một câu trọn nghĩa, chứa sự kiện chính]
 
 [dòng trống]
 

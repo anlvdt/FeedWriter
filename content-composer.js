@@ -75,7 +75,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
       typeof window.fbsIsBareFbPhotoShell === "function" &&
       window.fbsIsBareFbPhotoShell(url);
     if (barePhoto) {
-      return { cls: "is-weak", text: "Sai dạng /photo/ — bấm Tìm lại hoặc Paste" };
+      return { cls: "is-weak", text: "Sai dạng /photo/ — bấm Tìm lại hoặc Dán" };
     }
     const family =
       typeof window.fbsPermalinkFamilyRank === "function"
@@ -93,7 +93,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
     if (url && (q === "shell" || (typeof window.fbsIsWeakFbShellUrl === "function" && window.fbsIsWeakFbShellUrl(url)))) {
       return { cls: "is-weak", text: "Chỉ trang group/page — dán link bài" };
     }
-    if (!url) return { cls: "is-missing", text: "Chưa có link — Paste hoặc Tìm lại" };
+    if (!url) return { cls: "is-missing", text: "Chưa có link — Dán hoặc Tìm lại" };
     return { cls: "is-ok", text: "Đã có link — nên kiểm tra" };
   }
 
@@ -114,7 +114,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
   } else if (imageList.length === 1) {
     imgHtml = '<div class="fbs-sp-image"><img src="' +
       escAttrValue(imageList[0]) +
-      '" alt="Ảnh xem trước" crossorigin="anonymous"><button type="button" class="fbs-sp-copy-img"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg> Copy ảnh</button></div>';
+      '" alt="Ảnh xem trước" crossorigin="anonymous"><button type="button" class="fbs-sp-copy-img"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg> Sao chép ảnh</button></div>';
   }
 
   const q0 = qualityLabel(linkQuality, sourceUrl || "");
@@ -140,7 +140,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
     '<input type="text" class="fbs-sp-link-field" placeholder="Dán link bài gốc (permalink)" value="' +
     escAttrValue(sourceUrl || "") +
     '" autocomplete="off" spellcheck="false">' +
-    '<button type="button" class="fbs-sp-paste-link" title="Dán link từ clipboard" aria-label="Dán link nguồn">Paste</button>' +
+    '<button type="button" class="fbs-sp-paste-link" title="Dán link từ clipboard" aria-label="Dán link nguồn">Dán</button>' +
     '<button type="button" class="fbs-sp-redetect-link" title="Tìm lại link từ bài Facebook" aria-label="Tìm lại link">Tìm lại</button>' +
     '<button type="button" class="fbs-sp-open-link" title="Mở link trong tab mới" aria-label="Mở link bài gốc"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></button>' +
     "</div>" +
@@ -158,7 +158,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
     '<summary class="fbs-sp-comment-label">Bình luận nguồn <span>Xem trước</span></summary>' +
     '<div class="fbs-sp-comment-text" tabindex="0" title="Bấm để bôi đen khi cần copy thủ công"></div>' +
     "</details>" +
-    '<button type="button" class="fbs-sp-copy-comment" title="Copy nội dung nguồn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy nguồn</button>' +
+    '<button type="button" class="fbs-sp-copy-comment" title="Sao chép nội dung nguồn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Sao chép nguồn</button>' +
     '<div class="fbs-sp-actions">' +
     '<button type="button" class="fbs-sp-open-fb"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg> ' + (SITE === "x" ? "Đăng lên Facebook" : "Đăng status") + '</button>' +
     "</div>";
@@ -470,7 +470,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
         const pasted = (await navigator.clipboard.readText()).trim();
         if (!pasted) {
           setPasteLinkButtonState("Clipboard trống", "is-error");
-          setTimeout(() => setPasteLinkButtonState("Paste"), 1600);
+          setTimeout(() => setPasteLinkButtonState("Dán"), 1600);
           return;
         }
         const clean = normalizeFbUrl(pasted);
@@ -483,7 +483,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
       } catch (_) {
         setPasteLinkButtonState("Ctrl+V", "is-error");
         setTimeout(() => {
-          setPasteLinkButtonState("Paste");
+          setPasteLinkButtonState("Dán");
           selectSourceField();
         }, 1600);
       }
@@ -576,7 +576,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
       } catch (_) {
         selectCommentText();
         copyCommentBtn.innerHTML =
-          '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> Copy lỗi — đã bôi đen';
+          '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> Không sao chép được — đã bôi đen';
         copyCommentBtn.classList.add("is-error");
       }
       setTimeout(() => {
@@ -606,7 +606,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
           '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Đã copy!';
         setTimeout(() => {
           copyImgBtn.innerHTML =
-            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg> Copy ảnh';
+            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg> Sao chép ảnh';
         }, 2500);
       } catch (_) {
         window.open(imageUrl, "_blank");
@@ -614,7 +614,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
           '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg> Mở tab mới';
         setTimeout(() => {
           copyImgBtn.innerHTML =
-            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg> Copy ảnh';
+            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg> Sao chép ảnh';
         }, 2000);
       }
     });
@@ -640,7 +640,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
           await copySourceComment();
         } catch (error) {
           btn.disabled = false;
-          btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> Không copy được nguồn — bấm Copy nguồn rồi thử lại';
+          btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> Không sao chép được nguồn — bấm Sao chép nguồn rồi thử lại';
           selectCommentText();
           return;
         }
@@ -653,7 +653,11 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
         try {
           await chrome.runtime.sendMessage({
             action: "request-optional-permission",
-            origins: ["https://*/*"],
+            origins:
+              (typeof FeedWriterUrlClean !== "undefined" &&
+                FeedWriterUrlClean.imageOptionalOrigins &&
+                FeedWriterUrlClean.imageOptionalOrigins()) ||
+              ["https://*.fbcdn.net/*", "https://fbcdn.net/*"],
           });
         } catch (_) {}
 
@@ -778,7 +782,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
           try {
             await navigator.clipboard.writeText(sourceLine);
           } catch (_) {
-            setFail("Không copy được nguồn — bấm Copy nguồn rồi thử lại");
+            setFail("Không sao chép được nguồn — bấm Sao chép nguồn rồi thử lại");
             selectCommentText();
             return;
           }
@@ -790,7 +794,11 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
         try {
           await chrome.runtime.sendMessage({
             action: "request-optional-permission",
-            origins: ["https://*/*"],
+            origins:
+              (typeof FeedWriterUrlClean !== "undefined" &&
+                FeedWriterUrlClean.imageOptionalOrigins &&
+                FeedWriterUrlClean.imageOptionalOrigins()) ||
+              ["https://*.fbcdn.net/*", "https://fbcdn.net/*"],
           });
         } catch (_) {}
 

@@ -18,6 +18,8 @@ describe("complete-source news rewrite", () => {
     assert.doesNotMatch(background, /const maxLen = 2000/);
     assert.match(background, /const completeSource = cleanedText/);
     assert.match(background, /const coverageTokens = Math\.ceil\(completeSource\.length \/ 10\)/);
+    assert.match(background, /splitSourceIntoChunks/);
+    assert.match(background, /MAX_COVERAGE_CHUNKS/);
     assert.match(api, /const MAX_OUTPUT_TOKENS = 8192/);
   });
 

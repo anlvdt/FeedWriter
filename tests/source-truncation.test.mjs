@@ -57,6 +57,28 @@ describe("truncateSourceForBudget", () => {
   });
 });
 
+describe("long-source coverage", () => {
+  it("splits a long source on paragraph boundaries", () => {
+    const source = Array.from({ length: 8 }, (_, i) => "Đoạn " + i + " " + "nội dung. ".repeat(40)).join("\n\n");
+    context.__source = source;
+    const chunks = vm.runInContext("splitSourceIntoChunks(__source, 500)", context);
+    assert.ok(chunks.length > 1);
+    assert.ok(chunks.every((chunk) => chunk.length <= 500));
+    assert.equal(chunks.join("").replace(/\s+/g, ""), source.replace(/\s+/g, ""));
+  });
+
+  it("keeps the start, middle and end when the chunk count is capped", () => {
+    const chunks = ["a", "b", "c", "d", "e", "f", "g", "h"];
+    context.__chunks = chunks;
+    const covered = vm.runInContext("coverWithChunkBudget(__chunks, 4)", context);
+    assert.equal(
+      JSON.stringify(Array.from(covered).map((item) => item.text)),
+      JSON.stringify(["a", "c", "f", "h"]),
+    );
+  });
+
+});
+
 describe("buildSourceMessage", () => {
   it("wraps the source in the untrusted-data fence", () => {
     context.__s = "abc";

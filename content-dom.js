@@ -2242,9 +2242,14 @@ function showImagePermissionBanner() {
     };
     grant.addEventListener("click", async () => {
       try {
+        const origins =
+          (typeof FeedWriterUrlClean !== "undefined" &&
+            FeedWriterUrlClean.imageOptionalOrigins &&
+            FeedWriterUrlClean.imageOptionalOrigins()) ||
+          ["https://*.fbcdn.net/*", "https://fbcdn.net/*"];
         const res = await chrome.runtime.sendMessage({
           action: "request-optional-permission",
-          origins: ["<all_urls>", "https://*/*"],
+          origins,
         });
         finish(!!res?.granted);
       } catch (_) {
@@ -2322,12 +2327,18 @@ async function fetchImageBlob(imgSrc, filename = "image.png") {
   try {
     try {
       const origin = new URL(imgSrc).origin + "/*";
+      const extra =
+        (typeof FeedWriterUrlClean !== "undefined" &&
+          FeedWriterUrlClean.imageOptionalOrigins &&
+          FeedWriterUrlClean.imageOptionalOrigins()) ||
+        [];
+      const origins = Array.from(new Set([origin, ...extra]));
       if (chrome.permissions?.request) {
-        await chrome.permissions.request({ origins: [origin, "https://*/*"] });
+        await chrome.permissions.request({ origins });
       } else {
         await chrome.runtime.sendMessage({
           action: "request-optional-permission",
-          origins: [origin, "https://*/*"],
+          origins,
         });
       }
     } catch (_) {}

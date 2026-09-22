@@ -33,6 +33,8 @@ function applyTheme(theme) {
   } else if (theme === "light") {
     isLight = true;
   }
+  document.body.classList.toggle("dark", !isLight);
+  document.documentElement.classList.toggle("dark", !isLight);
   document.body.classList.toggle("light", isLight);
   document.documentElement.classList.toggle("light", isLight);
 }
@@ -401,7 +403,6 @@ const filterEngagementGatesEl = document.getElementById("filterEngagementGates")
 const blockedDomainsEl = document.getElementById("blockedDomains");
 const enableUnicodeBoldEl = document.getElementById("enableUnicodeBold");
 const autoShortenLinksEl = document.getElementById("autoShortenLinks");
-const autoPublishEl = document.getElementById("autoPublish");
 const autoSummarizeEl = document.getElementById("autoSummarize");
 const saveBtn = document.getElementById("saveBtn");
 const status = document.getElementById("status");
@@ -441,7 +442,6 @@ chrome.storage.sync.get(
     "blockedDomains",
     "enableUnicodeBold",
     "autoShortenLinks",
-    "autoPublish",
     "autoSummarize",
     "advancedModeEnabled",
   ],
@@ -458,7 +458,6 @@ chrome.storage.sync.get(
     if (d.blockedDomains) blockedDomainsEl.value = d.blockedDomains;
     if (d.enableUnicodeBold !== false) enableUnicodeBoldEl.checked = true;
     if (autoShortenLinksEl) autoShortenLinksEl.checked = d.autoShortenLinks !== false;
-    if (autoPublishEl) autoPublishEl.checked = d.autoPublish === true;
     if (autoSummarizeEl) autoSummarizeEl.checked = d.autoSummarize === true;
 
     // Set advanced mode toggle state
@@ -471,7 +470,7 @@ chrome.storage.sync.get(
     ensureApiKeysLoaded()
       .then(({ apiKeys }) => {
         if (_countApiKeys(apiKeys) === 0)
-          showStatus('Chưa có API Key. Thêm ở tab "API Keys".', "error");
+          showStatus('Chưa có API Key. Thêm ở tab "Khóa API".', "error");
       })
       .catch(() => {});
   },
@@ -513,7 +512,7 @@ if (saveBtn) saveBtn.addEventListener("click", () => {
       autoShortenLinks: autoShortenLinksEl
         ? autoShortenLinksEl.checked !== false
         : true,
-      autoPublish: !!(autoPublishEl && autoPublishEl.checked),
+      autoPublish: false,
       autoSummarize: !!(autoSummarizeEl && autoSummarizeEl.checked),
       advancedModeEnabled: !!(advancedModeToggle && advancedModeToggle.checked),
       languageAutoDetected: false,
@@ -789,7 +788,7 @@ async function loadKeyLists() {
   _updateKeysTabBadge(totalKeys);
   if (restoredFromBackup && totalKeys > 0) {
     showKeyStatus(
-      "Đã khôi phục " + totalKeys + " key từ backup local",
+      "Đã khôi phục " + totalKeys + " khóa từ bản sao lưu trên máy",
       "success",
     );
   }
@@ -1431,7 +1430,7 @@ document.getElementById("historyDetailCopy").addEventListener("click", () => {
     .writeText(document.getElementById("historyDetailBody").textContent)
     .then(() => {
       const btn = document.getElementById("historyDetailCopy");
-      btn.textContent = "Đã copy";
+      btn.textContent = "Đã sao chép";
       setTimeout(() => {
         btn.textContent = "Sao chép";
       }, 1500);
@@ -1718,7 +1717,7 @@ async function loadTemplates() {
   const { templates = [] } = await chrome.storage.local.get("templates");
 
   if (templates.length === 0) {
-    templateList.innerHTML = '<div class="template-empty">Chưa có template nào. Tạo template đầu tiên của bạn!</div>';
+    templateList.innerHTML = '<div class="template-empty">Chưa có mẫu nào. Tạo mẫu đầu tiên của bạn!</div>';
     return;
   }
 
@@ -1813,32 +1812,32 @@ backupSettingsBtn.addEventListener("click", async () => {
   try {
     const response = await chrome.runtime.sendMessage({ action: "backupSettings" });
     if (response && response.success) {
-      showSettingsManagementStatus("Đã backup cài đặt", "success");
+      showSettingsManagementStatus("Đã sao lưu cài đặt", "success");
       loadBackupList();
     } else {
-      showSettingsManagementStatus("Lỗi backup: " + (response?.error || "Unknown error"), "error");
+      showSettingsManagementStatus("Không sao lưu được: " + (response?.error || "lỗi không rõ"), "error");
     }
   } catch (error) {
-    showSettingsManagementStatus("Lỗi backup: " + error.message, "error");
+    showSettingsManagementStatus("Không sao lưu được: " + error.message, "error");
   }
 });
 
 // Restore settings (restore most recent)
 restoreSettingsBtn.addEventListener("click", async () => {
-  if (!confirm("Restore cài đặt từ backup gần nhất?")) return;
+  if (!confirm("Khôi phục cài đặt từ bản sao lưu gần nhất?")) return;
 
   try {
     const response = await chrome.runtime.sendMessage({ action: "restoreSettings", backupIndex: 0 });
     if (response && response.success) {
-      showSettingsManagementStatus("Đã restore cài đặt. Reload trang để áp dụng.", "success");
+      showSettingsManagementStatus("Đã khôi phục cài đặt. Tải lại trang để áp dụng.", "success");
       setTimeout(() => {
         location.reload();
       }, 1500);
     } else {
-      showSettingsManagementStatus("Lỗi restore: " + (response?.error || "Unknown error"), "error");
+      showSettingsManagementStatus("Không khôi phục được: " + (response?.error || "lỗi không rõ"), "error");
     }
   } catch (error) {
-    showSettingsManagementStatus("Lỗi restore: " + error.message, "error");
+    showSettingsManagementStatus("Không khôi phục được: " + error.message, "error");
   }
 });
 
@@ -1849,7 +1848,7 @@ async function loadBackupList() {
     const backups = data.settingsBackups || [];
 
     if (backups.length === 0) {
-      backupList.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-muted);font-size:11px;">Chưa có backup nào</div>';
+      backupList.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-muted);font-size:11px;">Chưa có bản sao lưu nào</div>';
       return;
     }
 
@@ -1869,10 +1868,10 @@ async function loadBackupList() {
         <div class="backup-item">
           <div class="backup-info">
             <div class="backup-date">${dateStr}</div>
-            <div class="backup-version">Version ${backup.version}</div>
+            <div class="backup-version">Phiên bản ${backup.version}</div>
           </div>
           <div class="backup-actions">
-            <button class="btn btn-secondary backup-restore-btn" data-index="${index}">Restore</button>
+            <button class="btn btn-secondary backup-restore-btn" data-index="${index}">Khôi phục</button>
           </div>
         </div>
       `;
@@ -1889,24 +1888,161 @@ async function loadBackupList() {
 
 // Restore from specific backup
 async function restoreFromBackup(index) {
-  if (!confirm("Restore cài đặt từ backup này?")) return;
+  if (!confirm("Khôi phục cài đặt từ bản sao lưu này?")) return;
 
   try {
     const response = await chrome.runtime.sendMessage({ action: "restoreSettings", backupIndex: index });
     if (response && response.success) {
-      showSettingsManagementStatus("Đã restore cài đặt. Reload trang để áp dụng.", "success");
+      showSettingsManagementStatus("Đã khôi phục cài đặt. Tải lại trang để áp dụng.", "success");
       setTimeout(() => {
         location.reload();
       }, 1500);
     } else {
-      showSettingsManagementStatus("Lỗi restore: " + (response?.error || "Unknown error"), "error");
+      showSettingsManagementStatus("Không khôi phục được: " + (response?.error || "lỗi không rõ"), "error");
     }
   } catch (error) {
-    showSettingsManagementStatus("Lỗi restore: " + error.message, "error");
+    showSettingsManagementStatus("Không khôi phục được: " + error.message, "error");
   }
 }
 
 // Show settings management status
+function initPopupTranslate() {
+  const input = document.getElementById("translateInput");
+  const output = document.getElementById("translateOutput");
+  const status = document.getElementById("translateStatus");
+  const translateBtn = document.getElementById("translateBtn");
+  const copyBtn = document.getElementById("translateCopyBtn");
+  const pasteBtn = document.getElementById("translatePasteBtn");
+  const pageBtn = document.getElementById("translatePageBtn");
+  if (!input || !output || !translateBtn || !copyBtn || !pasteBtn || !pageBtn) return;
+
+  let lastTranslation = "";
+  const setStatus = (message, kind) => {
+    if (!status) return;
+    status.textContent = message || "";
+    status.className = "status" + (kind ? " " + kind : "");
+    status.style.display = message ? "block" : "none";
+  };
+  const setBusy = (busy) => {
+    translateBtn.disabled = busy;
+    pageBtn.disabled = busy;
+    pasteBtn.disabled = busy;
+  };
+  const showTranslation = (text, note) => {
+    lastTranslation = String(text || "").trim();
+    output.hidden = !lastTranslation;
+    output.textContent = lastTranslation;
+    setStatus(note || (lastTranslation ? "Đã dịch." : ""), lastTranslation ? "success" : "error");
+  };
+
+  async function readActivePageText() {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id || !tab.url || /^(chrome|edge|about|chrome-extension):/i.test(tab.url)) {
+      throw new Error("Không dịch được trang này. Hãy mở một trang web bình thường.");
+    }
+    const [result] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => {
+        const root = document.querySelector("article") || document.querySelector("main") || document.body;
+        if (!root) return "";
+        const clone = root.cloneNode(true);
+        clone.querySelectorAll("script,style,noscript,nav,footer,header,aside,svg,form,iframe").forEach((el) => el.remove());
+        return String(clone.innerText || "")
+          .replace(/\r\n?/g, "\n")
+          .replace(/[^\S\n]+/g, " ")
+          .replace(/\n{3,}/g, "\n\n")
+          .trim()
+          .slice(0, 24000);
+      },
+    });
+    return String(result?.result || "").trim();
+  }
+
+  async function runTranslate(text, mode) {
+    const source = String(text || "").trim();
+    if (!source) {
+      setStatus("Chưa có văn bản. Dán một đoạn hoặc bấm Dịch trang.", "error");
+      return;
+    }
+    setBusy(true);
+    setStatus(mode === "page" ? "Đang dịch cả trang…" : "Đang dịch…", "");
+    output.hidden = true;
+    try {
+      const response = await chrome.runtime.sendMessage({
+        action: "translate-text",
+        text: source,
+        mode,
+      });
+      if (!response || response.error) {
+        showTranslation(response?.partial || "", response?.error || "Không dịch được.");
+        return;
+      }
+      const note = response.truncated
+        ? "Đã dịch 24.000 ký tự đầu của trang."
+        : response.parts > 1
+          ? "Đã dịch " + response.parts + " phần."
+          : "Đã dịch.";
+      showTranslation(response.translation, note);
+    } catch (error) {
+      setStatus(error?.message || "Không dịch được.", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  translateBtn.addEventListener("click", () => runTranslate(input.value, "passage"));
+  pageBtn.addEventListener("click", async () => {
+    setBusy(true);
+    setStatus("Đang lấy nội dung trang…", "");
+    try {
+      const pageText = await readActivePageText();
+      if (!pageText) {
+        setStatus("Trang không có đoạn văn để dịch.", "error");
+        setBusy(false);
+        return;
+      }
+      input.value = pageText;
+      setBusy(false);
+      await runTranslate(pageText, "page");
+    } catch (error) {
+      setBusy(false);
+      setStatus(error?.message || "Không đọc được trang.", "error");
+    }
+  });
+  copyBtn.addEventListener("click", async () => {
+    const text = lastTranslation || input.value.trim();
+    if (!text) {
+      setStatus("Chưa có nội dung để copy.", "error");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      setStatus(lastTranslation ? "Đã sao chép bản dịch." : "Đã sao chép văn bản.", "success");
+    } catch (_) {
+      setStatus("Không copy được. Hãy cấp quyền clipboard.", "error");
+    }
+  });
+  pasteBtn.addEventListener("click", async () => {
+    try {
+      if (chrome.permissions?.request) {
+        await chrome.permissions.request({ permissions: ["clipboardRead"] });
+      }
+      const text = await navigator.clipboard.readText();
+      if (!text.trim()) {
+        setStatus("Clipboard đang trống.", "error");
+        return;
+      }
+      input.value = text.trim();
+      input.focus();
+      setStatus("Đã dán vào ô dịch.", "success");
+    } catch (_) {
+      setStatus("Không đọc được clipboard. Hãy cho phép dán.", "error");
+    }
+  });
+}
+
+initPopupTranslate();
+
 function showSettingsManagementStatus(message, type) {
   settingsManagementStatus.textContent = message;
   settingsManagementStatus.className = `status ${type}`;

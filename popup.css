@@ -18,93 +18,7 @@
   --space-5: 20px;
   --space-6: 24px;
 
-  /* Canonical Editorial Ink dark (--fw-*) */
-  --fw-bg: #12171c;
-  --fw-surface: #1a2229;
-  --fw-surface-2: #243039;
-  --fw-elevated: #2a343d;
-  --fw-border: #3a4652;
-  --fw-border-strong: #5a6a78;
-  --fw-text: #eef2f5;
-  --fw-text-2: #a8b4c0;
-  --fw-text-3: #8c99a6;
-  --fw-accent: #2dd4bf;
-  --fw-accent-hover: #5eead4;
-  --fw-accent-soft: rgba(45, 212, 191, 0.18);
-  --fw-accent-glow: rgba(45, 212, 191, 0.28);
-  --fw-danger: #eb5757;
-  --fw-warn: #f0c000;
-  --fw-ok: #3dd68c;
-  --fw-radius: 12px;
-  --fw-radius-sm: 6px;
-  --fw-radius-md: 8px;
-  --fw-radius-pill: 9999px;
-  --fw-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
-  --fw-font: "Be Vietnam Pro", ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --fw-font-display: "Be Vietnam Pro", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
-  --fw-font-mono: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, Consolas, monospace;
-
-  /* Popup aliases → canonical */
-  --bg: var(--fw-bg);
-  --bg-card: var(--fw-surface);
-  --bg-hover: var(--fw-surface-2);
-  --bg-input: #152028;
-  --bg-input-focus: #1e2a33;
-  --bg-nest: var(--fw-elevated);
-
-  --border: var(--fw-border);
-  --border-light: var(--fw-border);
-  --border-hover: var(--fw-border-strong);
-
-  --text: var(--fw-text);
-  --text-secondary: var(--fw-text-2);
-  --text-muted: var(--fw-text-3);
-  --text-heading: #ffffff;
-
-  --accent: var(--fw-accent);
-  --accent-hover: var(--fw-accent-hover);
-  --accent-bg: var(--fw-accent-soft);
-  --accent-ring: var(--fw-accent-glow);
-  --accent-contrast: #071815;
-  --success: var(--fw-ok);
-  --success-bg: rgba(61, 214, 140, 0.14);
-  --danger: var(--fw-danger);
-  --danger-bg: rgba(235, 87, 87, 0.14);
-  --warn: var(--fw-warn);
-  --warn-bg: rgba(240, 192, 0, 0.14);
-  --info: var(--fw-text-2);
-  --info-bg: rgba(168, 180, 192, 0.12);
-
-  --scrollbar: var(--fw-border);
-  --scrollbar-hover: var(--fw-border-strong);
-
-  --tab-active-bg: var(--fw-surface-2);
-  --tab-active-fg: #ffffff;
-
-  --radius: var(--fw-radius-md);
-  --radius-sm: var(--fw-radius-sm);
-  --radius-xs: 4px;
-  --radius-lg: var(--fw-radius);
-  --radius-xl: 16px;
-  --radius-popup: 20px;
-  --radius-pill: var(--fw-radius-pill);
-  --control-h: 32px;
-  --control-h-sm: 28px;
-  --row-h: 36px;
-  --chip-h: 20px;
-  --shadow-modal: var(--fw-shadow);
-
-  --font: var(--fw-font);
-  --font-display: var(--fw-font-display);
-  --font-mono: var(--fw-font-mono);
-  --color-scheme: dark;
-}
-
-/* Editorial light identity — cool paper + teal ink.
- * Re-bind aliases here — :root resolves var(--fw-*) to concrete computed
- * values that inherit, so updating only --fw-* leaves --text/--bg stuck dark. */
-body.light,
-html.light {
+  /* Canonical Editorial Ink light (--fw-*) — default to avoid dark FOUC */
   --fw-bg: #eef2f5;
   --fw-surface: #ffffff;
   --fw-surface-2: #e4eaef;
@@ -121,8 +35,16 @@ html.light {
   --fw-danger: #b91c1c;
   --fw-warn: #92400e;
   --fw-ok: #166534;
-  --fw-shadow: 0 16px 40px rgba(15, 20, 28, 0.12);
+  --fw-radius: 12px;
+  --fw-radius-sm: 6px;
+  --fw-radius-md: 8px;
+  --fw-radius-pill: 9999px;
+  --fw-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
+  --fw-font: "Be Vietnam Pro", ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --fw-font-display: "Be Vietnam Pro", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --fw-font-mono: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, Consolas, monospace;
 
+  /* Popup aliases → canonical */
   --bg: var(--fw-bg);
   --bg-card: var(--fw-surface);
   --bg-hover: var(--fw-surface-2);
@@ -143,23 +65,99 @@ html.light {
   --accent-hover: var(--fw-accent-hover);
   --accent-bg: var(--fw-accent-soft);
   --accent-ring: var(--fw-accent-glow);
-  --success: var(--fw-ok);
-  --success-bg: rgba(22, 101, 52, 0.12);
-  --danger: var(--fw-danger);
   --accent-contrast: #ffffff;
-  --danger-bg: rgba(185, 28, 28, 0.1);
+  --success: var(--fw-ok);
+  --success-bg: rgba(61, 214, 140, 0.14);
+  --danger: var(--fw-danger);
+  --danger-bg: rgba(235, 87, 87, 0.14);
   --warn: var(--fw-warn);
-  --warn-bg: rgba(146, 64, 14, 0.12);
+  --warn-bg: rgba(240, 192, 0, 0.14);
   --info: var(--fw-text-2);
-  --info-bg: rgba(61, 74, 87, 0.1);
+  --info-bg: rgba(168, 180, 192, 0.12);
 
   --scrollbar: var(--fw-border);
   --scrollbar-hover: var(--fw-border-strong);
 
   --tab-active-bg: #ffffff;
   --tab-active-fg: #0f1419;
+
+  --radius: var(--fw-radius-md);
+  --radius-sm: var(--fw-radius-sm);
+  --radius-xs: 4px;
+  --radius-lg: var(--fw-radius);
+  --radius-xl: 16px;
+  --radius-popup: 20px;
+  --radius-pill: var(--fw-radius-pill);
+  --control-h: 32px;
+  --control-h-sm: 28px;
+  --row-h: 36px;
+  --chip-h: 20px;
   --shadow-modal: var(--fw-shadow);
+
+  --font: var(--fw-font);
+  --font-display: var(--fw-font-display);
+  --font-mono: var(--fw-font-mono);
   --color-scheme: light;
+}
+
+/* Dark identity — re-bind aliases so inherited --bg/--text do not stay light. */
+body.dark,
+html.dark {
+  --fw-bg: #12171c;
+  --fw-surface: #1a2229;
+  --fw-surface-2: #243039;
+  --fw-elevated: #2a343d;
+  --fw-border: #3a4652;
+  --fw-border-strong: #5a6a78;
+  --fw-text: #eef2f5;
+  --fw-text-2: #a8b4c0;
+  --fw-text-3: #8c99a6;
+  --fw-accent: #2dd4bf;
+  --fw-accent-hover: #5eead4;
+  --fw-accent-soft: rgba(45, 212, 191, 0.18);
+  --fw-accent-glow: rgba(45, 212, 191, 0.28);
+  --fw-danger: #eb5757;
+  --fw-warn: #f0c000;
+  --fw-ok: #3dd68c;
+  --fw-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
+
+  --bg: var(--fw-bg);
+  --bg-card: var(--fw-surface);
+  --bg-hover: var(--fw-surface-2);
+  --bg-input: #152028;
+  --bg-input-focus: #1e2a33;
+  --bg-nest: var(--fw-elevated);
+
+  --border: var(--fw-border);
+  --border-light: var(--fw-border);
+  --border-hover: var(--fw-border-strong);
+
+  --text: var(--fw-text);
+  --text-secondary: var(--fw-text-2);
+  --text-muted: var(--fw-text-3);
+  --text-heading: #ffffff;
+
+  --accent: var(--fw-accent);
+  --accent-hover: var(--fw-accent-hover);
+  --accent-bg: var(--fw-accent-soft);
+  --accent-ring: var(--fw-accent-glow);
+  --success: var(--fw-ok);
+  --success-bg: rgba(61, 214, 140, 0.14);
+  --danger: var(--fw-danger);
+  --accent-contrast: #071815;
+  --danger-bg: rgba(235, 87, 87, 0.14);
+  --warn: var(--fw-warn);
+  --warn-bg: rgba(240, 192, 0, 0.14);
+  --info: var(--fw-text-2);
+  --info-bg: rgba(168, 180, 192, 0.12);
+
+  --scrollbar: var(--fw-border);
+  --scrollbar-hover: var(--fw-border-strong);
+
+  --tab-active-bg: var(--fw-surface-2);
+  --tab-active-fg: #ffffff;
+  --shadow-modal: var(--fw-shadow);
+  --color-scheme: dark;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -176,10 +174,10 @@ html {
   border-radius: 0;
   overflow: hidden;
   clip-path: none;
-}
-
-html.light {
   color-scheme: light;
+}
+html.dark {
+  color-scheme: dark;
 }
 
 body {
@@ -322,7 +320,7 @@ body {
 .header-titles { min-width: 0; }
 .brand-byline {
   margin-top: 0;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 650;
   line-height: 1.2;
   letter-spacing: 0.02em;
@@ -347,7 +345,7 @@ h1 {
   white-space: normal;
 }
 .header-badge {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -569,10 +567,10 @@ textarea:focus,
   /* Reset global text-input styles completely */
   -webkit-appearance: none !important;
   appearance: none !important;
-  width: 16px !important;
-  height: 16px !important;
-  min-width: 16px !important;
-  max-width: 16px !important;
+  width: 18px !important;
+  height: 18px !important;
+  min-width: 18px !important;
+  max-width: 18px !important;
   margin: 2px 0 0 !important;
   padding: 0 !important;
   flex-shrink: 0;
@@ -748,6 +746,21 @@ textarea:focus,
   margin-bottom: var(--space-3);
 }
 .inline-action-row > .btn { flex: 1; }
+.translate-actions { flex-wrap: wrap; }
+.translate-actions > .btn { flex: 1 1 calc(50% - 8px); min-height: 32px; }
+.translate-output {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 6px);
+  background: var(--bg-card);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  max-height: 220px;
+  overflow: auto;
+}
 .template-list-section { margin-top: var(--space-4); }
 .section-subhead {
   display: block;
@@ -2286,9 +2299,9 @@ textarea.field-input {
   padding-right: 34px !important;
 }
 .keys-reveal-btn {
-  width: 26px !important;
-  height: 26px !important;
-  right: 3px !important;
+  width: 32px !important;
+  height: 32px !important;
+  right: 2px !important;
 }
 .keys-add-btn {
   flex: 0 0 var(--control-h, 32px) !important;
@@ -2354,8 +2367,8 @@ textarea.field-input {
   color: var(--accent) !important;
 }
 .key-item-delete {
-  width: 24px !important;
-  height: 24px !important;
+  width: 32px !important;
+  height: 32px !important;
   border-radius: var(--radius-sm, 6px) !important;
 }
 
@@ -2422,44 +2435,48 @@ textarea.field-input {
   font-weight: 500 !important;
 }
 
-/* —— Switch track denser —— */
+/* —— Switch track —— */
+.switch-label {
+  min-height: 32px;
+}
 .slider-round {
-  width: 32px !important;
-  height: 18px !important;
+  width: 40px !important;
+  height: 22px !important;
 }
 .slider-round::after {
-  width: 12px !important;
-  height: 12px !important;
+  width: 16px !important;
+  height: 16px !important;
   top: 2px !important;
   left: 2px !important;
 }
 .switch-label input[type="checkbox"]:checked + .slider-round::after,
 .switch-label input[type="checkbox"]:checked ~ .slider-round::after {
-  transform: translateX(14px) !important;
+  transform: translateX(18px) !important;
 }
 .switch-text {
   font-size: 12px !important;
   font-weight: 500 !important;
 }
 
-/* —— Checkbox 14px (compact) —— */
 .checkbox-label {
   gap: 8px !important;
   font-size: 13px !important;
   font-weight: 400 !important;
+  min-height: 32px;
+  align-items: center;
 }
 .checkbox-label input[type="checkbox"] {
-  width: 14px !important;
-  height: 14px !important;
-  min-width: 14px !important;
-  max-width: 14px !important;
+  width: 18px !important;
+  height: 18px !important;
+  min-width: 18px !important;
+  max-width: 18px !important;
   border-radius: 4px !important;
 }
 .checkbox-label input[type="checkbox"]:checked::after {
-  left: 3.5px !important;
-  top: 0.5px !important;
-  width: 3.5px !important;
-  height: 7px !important;
+  left: 5px !important;
+  top: 1px !important;
+  width: 5px !important;
+  height: 9px !important;
 }
 
 /* —— Guide rows 36px —— */

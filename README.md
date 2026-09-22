@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.4.2-blue" alt="Version 2.4.2">
+  <img src="https://img.shields.io/badge/version-2.7.0-blue" alt="Version 2.7.0">
   <img src="https://img.shields.io/badge/manifest-v3-blue" alt="Manifest V3">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License">
   <img src="https://img.shields.io/badge/dependencies-zero-brightgreen" alt="Zero deps">
@@ -40,9 +40,11 @@ Tập trung **cách dùng thật** — slang, cụm hay đi kèm, luyện nói:
 
 **Cách gọi:**
 
-- Bôi đen → floating toolbar: **Dịch · Slang · Cụm từ · Shadow**
+- Bôi đen → floating toolbar (Facebook và mạng xã hội): **Dịch · Slang · Cụm từ · Shadow**
+- Double-click một từ tiếng Anh trên mọi trang https → tooltip dịch
 - Chuột phải → FeedWriter → chọn chế độ dịch
 - Phím tắt: `Ctrl+Shift+T` / `Cmd+Shift+T` (dịch auto)
+- Popup: dán đoạn văn hoặc **Dịch trang** đang mở
 
 ### Khác
 
@@ -117,7 +119,7 @@ Sau mỗi lần sửa code trên EXTERNAL, chạy lại `./scripts/sync-local.sh
 | LinkedIn | Thử nghiệm |
 | Reddit | Thử nghiệm |
 | Threads | Thử nghiệm |
-| Mọi trang https | Dịch (toolbar vùng chọn / shortcut) |
+| Mọi trang https | Dịch (shortcut / chuột phải / double-click từ / popup) |
 
 ## Privacy
 

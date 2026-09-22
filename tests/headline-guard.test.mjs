@@ -187,6 +187,53 @@ describe("summary headline deterministic guard", () => {
     assert.match(result.text, /^APPLE RA MẮT IPHONE 17/);
   });
 
+  it("drops an unfinished cost clause instead of ending on gần", () => {
+    const result = process(
+      "Agents on Rails tăng mức nỗ lực tối đa cho các mô hình, chi phí gần\n\nAgents on Rails đã bật mức nỗ lực tối đa.",
+    );
+    const headline = result.text.split("\n")[0];
+    assert.match(headline, /MÔ HÌNH$/);
+    assert.doesNotMatch(headline, /GẦN|CHI PHÍ/);
+    assert.match(result.text, /Agents on Rails đã bật/);
+  });
+
+  it("keeps a finished cost figure that follows gần", () => {
+    const result = process(
+      "Agents on Rails tăng mức nỗ lực tối đa cho các mô hình, chi phí gần 3 USD\n\nNội dung bài viết đủ dài.",
+    );
+    assert.match(result.text.split("\n")[0], /3 USD/);
+  });
+
+  it("keeps a date on the title instead of splitting it into its own paragraph", () => {
+    const result = process(
+      "Cursor phát triển từ VS Code fork có AI sang IDE đa năng kể từ tháng 5/2023\n\nCursor đã ra mắt từ nhánh VS Code.",
+    );
+    const headline = result.text.split("\n")[0];
+    assert.match(headline, /5\/2023/);
+    assert.doesNotMatch(headline, /THÁNG$/);
+    assert.doesNotMatch(result.text, /\n\n5\/2023(?:\n|$)/);
+    assert.match(result.text, /Cursor đã ra mắt/);
+  });
+
+  it("keeps a full sentence instead of cutting it at 16 words", () => {
+    const result = process(
+      "GPT-6 Astra không làm mất bộ nhớ đệm prompt khi thay đổi mức nỗ lực suy luận\n\nGPT-6 Astra cho phép thay đổi mức nỗ lực.",
+    );
+    const headline = result.text.split("\n")[0];
+    assert.match(headline, /SUY LUẬN$/);
+    assert.ok(headline.split(/\s+/).length > 16, headline);
+    assert.match(result.text, /GPT-6 Astra cho phép thay đổi/);
+  });
+
+  it("strips only a dangling last word and keeps the rest of a long title", () => {
+    const title = Array.from({ length: 24 }, (_, i) => "ý" + (i + 1)).join(" ");
+    const result = process(title + " từ\n\nThân bài giữ nguyên.");
+    const headline = result.text.split("\n")[0];
+    assert.match(headline, /Ý24$/);
+    assert.doesNotMatch(headline, /\bTỪ$/);
+    assert.match(result.text, /Thân bài giữ nguyên/);
+  });
+
   it("flags clickbait words in headline as a quality issue", () => {
     const result = process(
       "Tính năng mới gây sốc trên iPhone\n\nNội dung bài viết đủ dài.",

@@ -133,16 +133,17 @@ button.fbs-allpost-btn[data-fbs-ui="v3"],
 button.fbs-allpost-btn {
   all: unset !important;
   pointer-events: auto !important;
-  display: inline !important;
+  display: inline-flex !important;
+  align-items: center !important;
   height: auto !important;
-  min-height: 0 !important;
+  min-height: 28px !important;
   max-height: none !important;
   width: auto !important;
   max-width: 148px !important;
-  padding: 0 !important;
+  padding: 4px 8px !important;
   margin: 0 !important;
-  border: 0 !important;
-  border-radius: 0 !important;
+  border: 1px solid currentColor !important;
+  border-radius: 6px !important;
   background: transparent !important;
   color: #7fc8bd !important;
   font-size: 12px !important;
@@ -152,6 +153,7 @@ button.fbs-allpost-btn {
   writing-mode: horizontal-tb !important;
   cursor: pointer !important;
   box-shadow: none !important;
+  box-sizing: border-box !important;
   position: relative !important;
   inset: auto !important;
   top: auto !important;
@@ -444,7 +446,7 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
 
 .fbs-panel[data-fbs-ui="v3"] .fbs-brand-byline,
 .fbs-panel.fbs-ui-v2 .fbs-brand-byline {
-  font-size: 9px !important;
+  font-size: 11px !important;
   font-weight: 600 !important;
   color: var(--fw-text-3) !important;
   line-height: 1.1 !important;
@@ -492,6 +494,10 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
   background: rgba(255, 255, 255, 0.06) !important;
   color: var(--fw-text) !important;
 }
+.fbs-panel[data-fbs-theme="light"] .fbs-icon-btn:hover {
+  background: rgba(15, 20, 25, 0.06) !important;
+  color: var(--fw-text) !important;
+}
 .fbs-panel[data-fbs-ui="v3"] .fbs-close:hover,
 .fbs-panel.fbs-ui-v2 .fbs-close:hover {
   background: rgba(229, 115, 115, 0.14) !important;
@@ -534,6 +540,7 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
   border-left: 3px solid var(--fw-accent) !important;
   padding-left: 11px !important;
   margin: 0 0 16px !important;
+  text-wrap: balance !important;
 }
 
 .fbs-panel[data-fbs-ui="v3"] .fbs-result .fbs-section-header,
@@ -959,7 +966,7 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
 .fbs-panel[data-fbs-ui="v3"] .fbs-footer-primary,
 .fbs-panel.fbs-ui-v2 .fbs-footer-primary {
   display: grid !important;
-  grid-template-columns: 1fr 1.35fr !important;
+  grid-template-columns: 1fr 1fr !important;
   gap: 8px !important;
   width: 100% !important;
 }
@@ -1264,6 +1271,8 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
   --fw-accent-soft: rgba(15, 118, 110, 0.14);
   --fw-accent-fg: #ffffff;
   --fw-accent-glow: rgba(15, 118, 110, 0.22);
+  --fw-danger: #b91c1c;
+  --fw-warn: #92400e;
 }
 
 .fbs-panel[data-fbs-ui="v3"][data-fbs-theme="light"],
@@ -1334,12 +1343,12 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
   color: var(--fw-text-2) !important;
 }
 .fbs-sp-link-quality.is-weak {
-  background: rgba(212, 162, 76, 0.14) !important;
-  color: #e0bc6e !important;
+  background: var(--fw-warn-soft, rgba(240, 192, 0, 0.14)) !important;
+  color: var(--fw-warn) !important;
 }
 .fbs-sp-link-quality.is-missing {
-  background: rgba(229, 115, 115, 0.12) !important;
-  color: #f0a8a8 !important;
+  background: rgba(235, 87, 87, 0.12) !important;
+  color: var(--fw-danger) !important;
 }
 
 .fbs-sp-author-row {
@@ -1743,7 +1752,7 @@ body:has(:is(
   border: none !important;
   border-radius: 9px !important;
   background: var(--fw-accent) !important;
-  color: #fff !important;
+  color: var(--fw-accent-fg) !important;
   font-weight: 700 !important;
   padding: 8px 14px !important;
   cursor: pointer !important;
@@ -1822,29 +1831,29 @@ body:has(:is(
 .fbs-error {
   padding: 12px 14px !important;
   border-radius: 10px !important;
-  background: rgba(229, 115, 115, 0.1) !important;
-  border: 1px solid rgba(229, 115, 115, 0.25) !important;
-  color: #f0c0c0 !important;
+  background: rgba(235, 87, 87, 0.12) !important;
+  border: 1px solid rgba(235, 87, 87, 0.28) !important;
+  color: var(--fw-danger) !important;
   font-size: 13px !important;
   line-height: 1.5 !important;
 }
 .fbs-error .fbs-error-title {
   font-weight: 750 !important;
-  color: #f5b4b4 !important;
+  color: var(--fw-danger) !important;
   margin-bottom: 4px !important;
 }
 .fbs-error .fbs-error-detail,
 .fbs-error .fbs-error-action {
   font-size: 12px !important;
-  color: rgba(240, 192, 192, 0.85) !important;
+  color: var(--fw-text-2) !important;
   margin-top: 4px !important;
 }
 .fbs-error.fbs-error-warning {
-  background: rgba(217, 176, 92, 0.1) !important;
-  border-color: rgba(217, 176, 92, 0.28) !important;
-  color: #e8d0a0 !important;
+  background: rgba(240, 192, 0, 0.12) !important;
+  border-color: rgba(240, 192, 0, 0.28) !important;
+  color: var(--fw-warn) !important;
 }
-.fbs-error.fbs-error-warning .fbs-error-title { color: #e8d0a0 !important; }
+.fbs-error.fbs-error-warning .fbs-error-title { color: var(--fw-warn) !important; }
 
 .fbs-spinner {
   width: 18px !important;

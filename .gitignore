@@ -26,6 +26,9 @@ cropper.py
 # Repomix
 repomix-output.*
 
+# Editorial sample corpus (not part of the extension runtime)
+ctv-samples/
+
 # API keys — never commit
 env.js
 

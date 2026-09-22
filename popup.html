@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark light">
+  <meta name="color-scheme" content="light dark">
   <title>FeedWriter</title>
   <link rel="stylesheet" href="fonts/be-vietnam-pro.css">
   <link rel="stylesheet" href="popup.css">
@@ -20,7 +20,7 @@
           <p class="header-sub">Tóm tắt · Status · Dịch EN→VI</p>
         </div>
       </div>
-      <span class="header-badge" title="Phiên bản">v2.6.0</span>
+      <span class="header-badge" title="Phiên bản">v2.7.0</span>
     </header>
 
     <nav class="tabs" role="tablist" aria-label="Mục chính">
@@ -33,6 +33,26 @@
     <main class="popup-scroll" tabindex="-1">
     <!-- Settings Tab -->
     <div class="tab-content active" id="tab-settings" role="tabpanel" aria-labelledby="tabbtn-settings">
+      <section class="card" id="translate-card">
+        <div class="card-head">
+          <h2 class="card-title">Dịch EN → VI</h2>
+          <p class="card-sub">Đoạn văn hoặc cả trang đang mở</p>
+        </div>
+        <div class="card-body">
+          <div class="field">
+            <label for="translateInput">Văn bản tiếng Anh</label>
+            <textarea id="translateInput" rows="3" placeholder="Dán đoạn cần dịch, hoặc bấm Dịch trang"></textarea>
+          </div>
+          <div class="inline-action-row translate-actions">
+            <button id="translateBtn" class="btn btn-primary" type="button">Dịch</button>
+            <button id="translateCopyBtn" class="btn btn-secondary" type="button">Sao chép</button>
+            <button id="translatePasteBtn" class="btn btn-secondary" type="button">Dán</button>
+            <button id="translatePageBtn" class="btn btn-secondary" type="button">Dịch trang</button>
+          </div>
+          <div id="translateStatus" class="status" role="status" aria-live="polite"></div>
+          <div id="translateOutput" class="translate-output" hidden></div>
+        </div>
+      </section>
       <section class="card card-settings" id="accordion-basic">
         <div class="card-head card-head-row">
           <div>
@@ -60,12 +80,13 @@
               <div class="field-hint">Tiếng Việt — prompt hệ thống được tối ưu riêng cho văn phong báo chí Việt.</div>
             </div>
           </div>
+          <p class="field-hint">Bài dài được đọc hết từng phần, gộp dữ kiện, rồi viết một bản tin. Không bỏ đoạn giữa.</p>
           <div class="field">
             <label for="promptStyle">Phong cách</label>
             <select id="promptStyle" class="field-select" title="Mỗi phong cách dùng prompt AI khác nhau">
               <option value="default">Mặc định</option>
               <option value="summary_reporter">Phóng viên tin tức</option>
-              <option value="summary_bullet">Bullet points</option>
+              <option value="summary_bullet">Gạch đầu dòng</option>
               <option value="summary_detailed">Chi tiết có cấu trúc</option>
               <option value="summary_structured">Bản tin có cấu trúc</option>
             </select>
@@ -77,8 +98,16 @@
           <div class="field field-check">
             <label class="checkbox-label">
               <input type="checkbox" id="enableUnicodeBold" checked>
-              <span>Chữ đậm Unicode khi copy / đăng</span>
+              <span>Chữ đậm Unicode khi sao chép / đăng</span>
             </label>
+          </div>
+          <div class="field">
+            <label for="themeSelect">Giao diện</label>
+            <select id="themeSelect" class="field-select">
+              <option value="light" selected>Sáng</option>
+              <option value="auto">Theo hệ thống</option>
+              <option value="dark">Tối</option>
+            </select>
           </div>
         </div>
       </section>
@@ -146,15 +175,7 @@
             </label>
             <div class="field-hint">Áp dụng cho link gốc trong phần Nguồn tham khảo khi đăng bài.</div>
           </div>
-          <div class="field field-check">
-            <label class="checkbox-label">
-              <input type="checkbox" id="autoPublish">
-              <span>Tự đăng Facebook sau khi điền composer</span>
-            </label>
-            <div class="field-hint">Hiện đếm ngược 5 giây để huỷ trước khi bấm Đăng.</div>
-          </div>
-
-          <label class="section-subhead">Template Library</label>
+          <label class="section-subhead">Thư viện mẫu</label>
           <div class="field">
             <label for="templateName">Tên template</label>
             <input type="text" id="templateName" placeholder="VD: Review sản phẩm ngắn gọn">
@@ -181,13 +202,13 @@
             <div id="templateList" class="template-list"></div>
           </div>
 
-          <label class="section-subhead">Backup &amp; Restore</label>
+          <label class="section-subhead">Sao lưu &amp; khôi phục</label>
           <div class="field">
             <div class="inline-action-row">
-              <button id="backupSettingsBtn" class="btn btn-secondary">Backup ngay</button>
-              <button id="restoreSettingsBtn" class="btn btn-secondary">Restore</button>
+              <button id="backupSettingsBtn" class="btn btn-secondary">Sao lưu ngay</button>
+              <button id="restoreSettingsBtn" class="btn btn-secondary">Khôi phục</button>
             </div>
-            <div class="field-hint">Tự động backup khi cài đặt thay đổi. Giữ 5 backup gần nhất.</div>
+            <div class="field-hint">Tự động sao lưu khi cài đặt thay đổi. Giữ 5 bản gần nhất.</div>
           </div>
           <div id="backupList" class="backup-list"></div>
           <div id="settingsManagementStatus" class="status" role="status" aria-live="polite"></div>
@@ -393,7 +414,7 @@
         <div class="about-card about-shortcuts">
           <div class="about-shortcut"><span>Tóm tắt vùng chọn</span><kbd class="about-shortcut-key" data-shortcut-key="S">Ctrl+Shift+S</kbd></div>
           <div class="about-shortcut"><span>Dịch EN→VI</span><kbd class="about-shortcut-key" data-shortcut-key="T">Ctrl+Shift+T</kbd></div>
-          <div class="about-shortcut"><span>Double-click từ EN</span><span class="about-shortcut-note">Tooltip dịch</span></div>
+          <div class="about-shortcut"><span>Double-click từ EN</span><span class="about-shortcut-note">Tooltip dịch từ</span></div>
           <div class="about-shortcut"><span>Toolbar trên FB</span><span class="about-shortcut-note">Slang · Cụm · Shadow</span></div>
           <p class="field-hint about-hint">Đổi phím: chrome://extensions/shortcuts</p>
         </div>
@@ -405,26 +426,14 @@
           <ol class="about-ol">
             <li>Bôi đen text → toolbar hoặc chuột phải</li>
             <li>Tóm tắt / Dịch / Slang / Cụm từ / Shadow</li>
-            <li>Sửa → Copy Status → Đăng + nguồn</li>
+            <li>Sửa → Sao chép status → Đăng + nguồn</li>
           </ol>
           <p class="field-hint">Facebook · Threads · X · LinkedIn · Reddit · dịch mọi trang https</p>
         </div>
       </section>
 
-      <section class="about-section">
-        <div class="about-section-title">Giao diện</div>
-        <div class="about-card theme-toggle-row">
-          <label for="themeSelect">Theme</label>
-          <select id="themeSelect" class="field-select">
-            <option value="light" selected>Light</option>
-            <option value="auto">Tự động</option>
-            <option value="dark">Dark</option>
-          </select>
-        </div>
-      </section>
-
       <div class="about-footer">
-        <a id="aboutVersion" href="https://github.com/anlvdt/fb-post-summarizer" target="_blank" rel="noopener">FeedWriter v2.6.0</a>
+        <a id="aboutVersion" href="https://github.com/anlvdt/fb-post-summarizer" target="_blank" rel="noopener">FeedWriter v2.7.0</a>
       </div>
     </div>
     </main>
@@ -465,7 +474,7 @@
         </li>
         <li class="wizard-feature-item">
           <span class="wizard-feature-icon" aria-hidden="true">✓</span>
-          <span>Hỗ trợ đa ngôn ngữ (Việt, Anh, Trung, Nhật...)</span>
+          <span>Viết lại thành status tiếng Việt, sẵn sàng đăng</span>
         </li>
       </ul>
 

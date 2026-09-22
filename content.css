@@ -823,26 +823,52 @@ button.fbs-btn:focus-visible,
 }
 
 /* Post-processing quality warnings */
-.fbs-quality-warn {
-  color: #ffa502;
-  padding: 10px 14px;
-  margin-top: 12px;
-  background: rgba(255, 165, 2, 0.08);
-  border-radius: 10px;
-  font-size: 12px;
-  line-height: 1.55;
-  border-left: 3px solid #0F766E;
-}
-
+.fbs-quality-warn,
 .fbs-quality-info {
-  color: #A8C0B4;
-  padding: 10px 14px;
-  margin-top: 12px;
-  background: rgba(161, 161, 170, 0.06);
-  border-radius: 10px;
-  font-size: 12px;
-  line-height: 1.55;
-  border-left: 3px solid rgba(161, 161, 170, 0.5);
+  margin-top: 14px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.fbs-quality summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.fbs-quality summary::-webkit-details-marker { display: none; }
+.fbs-quality-warn summary {
+  color: #f0c000;
+  background: rgba(240, 192, 0, 0.1);
+}
+.fbs-quality-info summary {
+  color: var(--fw-text-2, #a8b4c0);
+  background: rgba(168, 180, 192, 0.1);
+}
+.fbs-quality-body {
+  padding: 8px 12px 2px;
+  color: var(--fw-text-2, #a8b4c0);
+}
+.fbs-panel[data-fbs-theme="light"] .fbs-quality-warn summary {
+  color: #92400e;
+  background: rgba(146, 64, 14, 0.1);
+}
+.fbs-panel[data-fbs-theme="light"] .fbs-quality-info summary,
+.fbs-panel[data-fbs-theme="light"] .fbs-quality-body {
+  color: #3d4a57;
+}
+.fbs-phase-text {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--fw-text-2, #a8b4c0);
+}
+.fbs-panel[data-fbs-theme="light"] .fbs-phase-text {
+  color: #3d4a57;
 }
 
 /* === TRANSLATE TOOLTIP === */
@@ -3390,14 +3416,14 @@ button.fbs-allpost-btn:hover,
 .fbs-progress-bar {
   height: 100%;
   width: 0%;
-  background: linear-gradient(90deg, #2A3D33, #1C2B23);
+  background: var(--fw-accent, #0f766e);
   border-radius: 3px;
   transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .fbs-progress-text {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--fw-text-2, #a8b4c0);
   display: flex;
   justify-content: space-between;
   align-items: center;

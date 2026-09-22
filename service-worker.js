@@ -1,6 +1,6 @@
 /* ==========================================================================
  * FeedWriter service-worker.js (GENERATED — do not edit by hand)
- * Bundle of: lib/error-boundary.js + utils.js + lib/message-schema.js + lib/summary-policy.js + lib/model-registry.js + bg-prompts.js + bg-api.js + background.js
+ * Bundle of: lib/error-boundary.js + utils.js + lib/message-schema.js + lib/summary-policy.js + lib/model-registry.js + lib/provider-rotation.js + lib/url-clean.js + bg-prompts.js + bg-api.js + background.js
  * Rebuild: python3 scripts/build-sw.py
  * ========================================================================== */
 
@@ -1404,6 +1404,327 @@ if (typeof globalThis !== "undefined") {
 })(typeof globalThis !== "undefined" ? globalThis : this);
 /* ===== END lib/model-registry.js ===== */
 
+/* ===== BEGIN lib/provider-rotation.js ===== */
+/**
+ * Pure provider/API-key selection logic for unit testing.
+ *
+ * Keep in sync with bg-api.js (selectAvailableKey / parseRetryAfter).
+ * CommonJS so Node tests can require() without a bundler.
+ * Extension SW cannot import this module; bg-api.js hosts the same algorithm.
+ */
+"use strict";
+
+const PROVIDER_PRIORITY = [
+  "groq",
+  "cerebras",
+  "sambanova",
+  "gemini",
+  "openrouter",
+];
+
+const EMPTY_API_KEYS = {
+  groq: [],
+  gemini: [],
+  cerebras: [],
+  sambanova: [],
+  openrouter: [],
+};
+
+/**
+ * Select the next available API key across providers (pure).
+ *
+ * @param {object} opts
+ * @param {object|null|undefined} opts.apiKeys - { groq: string[], ... }
+ * @param {string|null|undefined} opts.legacyApiKey - old single-key storage
+ * @param {string|null|undefined} opts.legacyProvider - provider for legacy key
+ * @param {object} [opts.keyStatus] - { [key]: { rateLimitedUntil, lastUsed } }
+ * @param {object} [opts.rotationIndex] - { [provider]: number }
+ * @param {object} [opts.providerStatus] - { [provider]: { downUntil } } circuit breaker
+ * @param {string|null} [opts.preferredProvider]
+ * @param {number} opts.now - epoch ms
+ * @returns {{ key: string, provider: string, index: number, newRotationIndex: object, newKeyStatus: object }
+ *   | { noKeys: true, key?: null, provider?: null }
+ *   | { allLimited: true, waitMinutes: number, retryInMs: number, total: number, key?: null, provider?: null }}
+ */
+function selectAvailableKey(opts) {
+  const {
+    legacyApiKey = null,
+    legacyProvider = "groq",
+    preferredProvider = null,
+    providerStatus = null,
+    now,
+  } = opts;
+
+  let apiKeys = opts.apiKeys;
+  let hasAnyKey = false;
+  if (apiKeys) {
+    for (const p in apiKeys) {
+      if (apiKeys[p] && apiKeys[p].length > 0) hasAnyKey = true;
+    }
+  }
+
+  if (!apiKeys) {
+    apiKeys = { ...EMPTY_API_KEYS };
+  } else {
+    // Shallow-clone so we can push legacy keys without mutating caller state
+    apiKeys = { ...apiKeys };
+    for (const p of Object.keys(apiKeys)) {
+      if (Array.isArray(apiKeys[p])) apiKeys[p] = apiKeys[p].slice();
+    }
+  }
+
+  // Fallback to legacy single key when no multi-key entries
+  if (!hasAnyKey && legacyApiKey) {
+    const provider = legacyProvider || "groq";
+    if (!apiKeys[provider]) apiKeys[provider] = [];
+    if (!apiKeys[provider].includes(legacyApiKey)) {
+      apiKeys[provider].push(legacyApiKey);
+    }
+  }
+
+  const keyStatus = { ...(opts.keyStatus || {}) };
+  const rotationIndex = { ...(opts.rotationIndex || {}) };
+
+  const orderedProviders =
+    preferredProvider && PROVIDER_PRIORITY.includes(preferredProvider)
+      ? [
+          preferredProvider,
+          ...PROVIDER_PRIORITY.filter((p) => p !== preferredProvider),
+        ]
+      : PROVIDER_PRIORITY;
+
+  // Pass 1: providers whose circuit breaker is closed. Pass 2 (fallback):
+  // down providers too — when every configured provider is tripped the user
+  // should still get a best-effort attempt rather than a dead end.
+  for (const ignoreBreaker of [false, true]) {
+    for (const provider of orderedProviders) {
+      const keys = apiKeys[provider] || [];
+      if (keys.length === 0) continue;
+
+      const ps = providerStatus && providerStatus[provider];
+      const isDown = ps && ps.downUntil && now < ps.downUntil;
+      if (isDown && !ignoreBreaker) continue;
+
+      const startIdx = (rotationIndex[provider] || 0) % keys.length;
+      for (let i = 0; i < keys.length; i++) {
+        const idx = (startIdx + i) % keys.length;
+        const key = keys[idx];
+        const status = keyStatus[key] || {};
+
+        if (!status.rateLimitedUntil || now >= status.rateLimitedUntil) {
+          const newRotationIndex = {
+            ...rotationIndex,
+            [provider]: (idx + 1) % keys.length,
+          };
+          const newKeyStatus = {
+            ...keyStatus,
+            [key]: { ...(keyStatus[key] || {}), lastUsed: now },
+          };
+          return {
+            key,
+            provider,
+            index: idx,
+            newRotationIndex,
+            newKeyStatus,
+          };
+        }
+      }
+    }
+  }
+
+  // All keys across all providers are rate-limited (or empty)
+  let soonestTime = Infinity;
+  let totalKeys = 0;
+  for (const provider of PROVIDER_PRIORITY) {
+    const keys = apiKeys[provider] || [];
+    totalKeys += keys.length;
+    for (const key of keys) {
+      const until = (keyStatus[key] || {}).rateLimitedUntil || 0;
+      if (until < soonestTime) soonestTime = until;
+    }
+  }
+
+  if (totalKeys === 0) {
+    return { key: null, provider: null, noKeys: true };
+  }
+  const waitMinutes = Math.max(1, Math.ceil((soonestTime - now) / 60000));
+  return {
+    key: null,
+    provider: null,
+    allLimited: true,
+    waitMinutes,
+    retryInMs: Math.max(0, soonestTime - now),
+    total: totalKeys,
+  };
+}
+
+/**
+ * Parse retry-after duration from provider error messages (ms).
+ * Keep in sync with bg-api.js parseRetryAfter.
+ */
+function parseRetryAfter(errorMessage) {
+  const match = errorMessage?.match(/try again in (\d+)m([\d.]+)s/i);
+  if (match) return (parseInt(match[1], 10) * 60 + parseFloat(match[2])) * 1000;
+  const secMatch = errorMessage?.match(/retry.?after:?\s*(\d+)/i);
+  if (secMatch) return parseInt(secMatch[1], 10) * 1000;
+  const m2 = errorMessage?.match(/in\s+(\d+)\s*m(?:in(?:ute)?s?)?/i);
+  if (m2) return parseInt(m2[1], 10) * 60 * 1000;
+  return 15 * 60 * 1000;
+}
+
+async function hashKeyId(key) {
+  if (!key) return "";
+  const subtle = globalThis.crypto && globalThis.crypto.subtle;
+  if (!subtle) return "legacy:" + String(key).slice(0, 12);
+  const buf = await subtle.digest("SHA-256", new TextEncoder().encode(String(key)));
+  return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, "0"))
+    .join("")
+    .slice(0, 20);
+}
+
+const FeedWriterProviderRotation = {
+  PROVIDER_PRIORITY,
+  EMPTY_API_KEYS,
+  selectAvailableKey,
+  parseRetryAfter,
+  hashKeyId,
+};
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = FeedWriterProviderRotation;
+}
+if (typeof globalThis !== "undefined") {
+  globalThis.FeedWriterProviderRotation = FeedWriterProviderRotation;
+}
+/* ===== END lib/provider-rotation.js ===== */
+
+/* ===== BEGIN lib/url-clean.js ===== */
+/**
+ * Source-URL cleanup shared by content scripts and Node tests.
+ * Content scripts load this file from the manifest; tests require() it.
+ */
+"use strict";
+
+const TRACKING_PARAM_EXACT = [
+  "fbclid",
+  "gclid",
+  "ref",
+  "comment_id",
+  "reply_comment_id",
+];
+
+const ALLOWED_IMAGE_HOST_SUFFIXES = [
+  "fbcdn.net",
+  "cdninstagram.com",
+  "twimg.com",
+  "redd.it",
+  "redditmedia.com",
+  "redditstatic.com",
+  "licdn.com",
+  "linkedin.com",
+  "googleusercontent.com",
+];
+
+function imageOptionalOrigins() {
+  return ALLOWED_IMAGE_HOST_SUFFIXES.flatMap((suffix) => [
+    "https://*." + suffix + "/*",
+    "https://" + suffix + "/*",
+  ]);
+}
+
+function isAllowedImageHost(hostname) {
+  const host = String(hostname || "").toLowerCase();
+  return ALLOWED_IMAGE_HOST_SUFFIXES.some(
+    (suffix) => host === suffix || host.endsWith("." + suffix),
+  );
+}
+
+function stripTrackingParams(rawUrl) {
+  if (!rawUrl) return "";
+  try {
+    const u = new URL(rawUrl);
+    for (const k of [...u.searchParams.keys()]) {
+      if (
+        k.startsWith("utm_") ||
+        k.startsWith("__") ||
+        TRACKING_PARAM_EXACT.includes(k)
+      ) {
+        u.searchParams.delete(k);
+      }
+    }
+    return u.toString().replace(/\?$/, "");
+  } catch (_) {
+    return rawUrl;
+  }
+}
+
+function cleanSourceUrl(rawUrl) {
+  if (!rawUrl) return "";
+  try {
+    const u = new URL(rawUrl);
+    if (u.hostname.includes("facebook.com")) {
+      const cleanFb =
+        (typeof globalThis !== "undefined" &&
+          typeof globalThis.fbsCleanFbUrl === "function" &&
+          globalThis.fbsCleanFbUrl) ||
+        (typeof window !== "undefined" &&
+          typeof window.fbsCleanFbUrl === "function" &&
+          window.fbsCleanFbUrl);
+      if (cleanFb) return cleanFb(rawUrl);
+      const mp = u.searchParams.get("multi_permalinks");
+      if (mp && u.pathname.includes("/groups/")) {
+        return u.origin + u.pathname.replace(/\/$/, "") + "/posts/" + mp + "/";
+      }
+      const sfid = u.searchParams.get("story_fbid");
+      const uid = u.searchParams.get("id");
+      if (sfid && uid) return u.origin + "/" + uid + "/posts/" + sfid + "/";
+      const keep = new Set([
+        "story_fbid",
+        "id",
+        "multi_permalinks",
+        "v",
+        "set",
+        "theater",
+        "fbid",
+      ]);
+      for (const key of [...u.searchParams.keys()]) {
+        if (keep.has(key)) continue;
+        if (
+          key.startsWith("utm_") ||
+          key.startsWith("__") ||
+          TRACKING_PARAM_EXACT.includes(key) ||
+          key === "mibextid"
+        ) {
+          u.searchParams.delete(key);
+        }
+      }
+      return u.toString().replace(/\?$/, "");
+    }
+    return stripTrackingParams(rawUrl);
+  } catch (_) {
+    return rawUrl;
+  }
+}
+
+const FeedWriterUrlClean = {
+  TRACKING_PARAM_EXACT,
+  ALLOWED_IMAGE_HOST_SUFFIXES,
+  imageOptionalOrigins,
+  isAllowedImageHost,
+  stripTrackingParams,
+  cleanSourceUrl,
+};
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = FeedWriterUrlClean;
+}
+if (typeof globalThis !== "undefined") {
+  globalThis.FeedWriterUrlClean = FeedWriterUrlClean;
+  globalThis.stripTrackingParams = stripTrackingParams;
+  globalThis.cleanSourceUrl = cleanSourceUrl;
+}
+/* ===== END lib/url-clean.js ===== */
+
 /* ===== BEGIN bg-prompts.js ===== */
 // === IMPROVED PROMPTS based on Vietnamese NLP research ===
 // References: VietAI ViT5, Underthesea, Vietnamese summarization best practices
@@ -1420,11 +1741,11 @@ CHẾ ĐỘ BẮT BUỘC — VIẾT LẠI THÀNH BẢN TIN:
 - Áp dụng 1 trong 4 mô hình tiêu đề báo chí chuẩn: (1) [Thương hiệu/Sản phẩm] + [Động từ hành động] + [Số liệu/Kết quả nổi bật]; (2) [Sự cố/Lỗi/Cảnh báo] + [Đối tượng bị ảnh hưởng & Hệ quả thực tế]; (3) [Thay đổi giá/chính sách/tính năng] + [Tác động trực tiếp đến người dùng]; (4) [So sánh/Kiểm nghiệm thực tế] + [Dữ liệu đối chiếu rõ ràng].
 - TUYỆT ĐỐI CẤM từ ngữ giật gân, câu view, thổi phồng: "gây sốc", "chấn động", "không thể tin nổi", "toang", "cháy hàng", "bạn sẽ bất ngờ", "bí mật", "đây là lý do", "chính thức", "phiên bản nâng cấp của phần mềm", câu hỏi tu từ rỗng.
 - Tiêu đề vẫn phải chứa sự kiện/kết quả cụ thể và ưu tiên thực thể công nghệ hoặc thay đổi chính làm chủ ngữ. Mọi con số, so sánh, mức độ bất ngờ, lợi ích hoặc tác động dùng làm hook PHẢI có căn cứ trực tiếp trong nguồn; không phóng đại mức chắc chắn.
-- Tiêu đề phải là MỘT câu/mệnh đề báo chí tự nhiên, đọc liền mạch. KHÔNG ghép hai mệnh đề trần bằng cách đặt cạnh nhau. Nếu có hai fact cần giữ, nối bằng dấu phẩy hoặc "và" với cấu trúc song song; nếu không, chỉ chọn góc mạnh nhất. Ưu tiên 10-16 từ, tối đa 20 từ.
+- Tiêu đề phải là MỘT câu/mệnh đề báo chí tự nhiên, đọc liền mạch và hiểu ngay. Chỉ một ý: sản phẩm + việc vừa xảy ra + kết quả. Không kể cả quá trình ("từ A sang B kể từ tháng…"). Không mở thêm mệnh đề sau dấu phẩy nếu không viết trọn số liệu. Không kết thúc bằng "gần", "khoảng", "hơn", giới từ, hoặc "tháng/năm" thiếu mốc. Fact thứ hai đưa xuống lead. Không áp trần số từ. Câu phải kết thúc trọn cụm. Ví dụ SAI: "Agents on Rails tăng mức nỗ lực tối đa cho các mô hình, chi phí gần". Ví dụ ĐÚNG: "Agents on Rails bật nỗ lực tối đa cho mọi mô hình".
 - KHÔNG đưa "USER", "Người dùng", "Một người dùng", "Tác giả", "Người đăng", tên tài khoản hoặc tên cơ quan báo chí/trang tin/leaker (như Vox, The Verge, Reuters, Bloomberg...) vào BẤT KỲ vị trí nào của tiêu đề khi chúng chỉ là chủ thể cung cấp nguồn, chia sẻ, phát hiện, đề xuất, khuyến nghị hoặc nêu ý kiến. TUYỆT ĐỐI KHÔNG mở đầu tiêu đề bằng câu dẫn nguồn ("Theo...", "...cho biết", "...tiết lộ", "...đưa tin"). Chỉ dùng "người dùng" khi chính tập người dùng là đối tượng của sự kiện/dữ liệu.
 - Nếu nguồn chỉ là trải nghiệm của một cá nhân, không biến trải nghiệm thành sự thật chung. Tiêu đề ưu tiên cấu trúc như "[Sản phẩm/tính năng] bị phản ánh..."; thông tin "theo trải nghiệm của một người dùng" để trong thân bài khi cần giữ mức chắc chắn.
 - Tránh cụm từ máy móc hoặc dịch sát khiến tiếng Việt gượng. Ví dụ, ưu tiên "cải thiện khả năng thẩm mỹ" hơn "tăng mức thẩm mỹ" khi đúng nghĩa nguồn.
-- Ví dụ SAI: "GPT-6 tăng mức thẩm mỹ người dùng đề xuất cài plugin Product Designs cho Codex". Ví dụ ĐÚNG: "GPT-6 được đánh giá cao hơn về thẩm mỹ, Product Designs được gợi ý cho Codex".
+- Ví dụ SAI: "GPT-6 tăng mức thẩm mỹ người dùng đề xuất cài plugin Product Designs cho Codex". Ví dụ ĐÚNG: "GPT-6 được đánh giá cao hơn về thẩm mỹ". Fact còn lại viết ở lead.
 - Tiêu đề công nghệ: Giữ nguyên các thuật ngữ phổ biến (no-code, prompt, model, AI agent, PC, local...). CẤM dịch thô làm tiêu đề tối nghĩa (Ví dụ SAI: "CÔNG CỤ AI KHÔNG MÃ KÉO-THẢ TRÊN MÁY TÍNH CÁ NHÂN"; Ví dụ ĐÚNG: "CÔNG CỤ AI NO-CODE KÉO THẢ TRÊN PC").
 - Lead 1-2 câu phải nêu ngay sản phẩm/công ty/tính năng hoặc sự kiện chính, thay đổi/kết quả và tác động; không mở bằng việc một người đã đọc, thử, phát hiện, chia sẻ hay đăng bài.
 - Công thức Lead 3W siêu cô đọng: What (Sự việc gì?) + Who/Which (Sản phẩm/hãng nào?) + Why (Tại sao quan trọng/tác động gì?). Đi thẳng vào sự kiện, không mở bài bằng bối cảnh chung chung hay câu dẫn rỗng.
@@ -1457,7 +1778,7 @@ const SUMMARY_PROMPT = `Bạn là biên tập viên báo chí công nghệ tiế
 
 QUY TRÌNH:
 1. Xác định các sự thật / ý chính CÓ TRONG bài gốc (tên, số, việc xảy ra, điều kiện).
-2. Viết tiêu đề: 1 dòng, có hook mạnh nhưng fact-based, ưu tiên 10-16 từ và tối đa 20 từ; chọn góc dữ kiện nổi bật nhất và ưu tiên sản phẩm/công ty/tính năng + thay đổi/kết quả/tác động chính. Không đưa "USER", "Người dùng", "Tác giả", "Người đăng" hoặc tên tài khoản vào tiêu đề khi đó chỉ là người cung cấp nguồn/ý kiến. Viết bình thường (hệ thống tự viết hoa).
+2. Viết tiêu đề: 1 dòng, có hook mạnh nhưng fact-based, một câu trọn nghĩa, không dừng giữa cụm; chọn một góc dữ kiện nổi bật nhất và ưu tiên sản phẩm/công ty/tính năng + thay đổi hoặc kết quả chính. Không ghép fact thứ hai vào tiêu đề. Không đưa "USER", "Người dùng", "Tác giả", "Người đăng" hoặc tên tài khoản vào tiêu đề khi đó chỉ là người cung cấp nguồn/ý kiến. Viết bình thường (hệ thống tự viết hoa).
 3. Xếp các ý theo mức độ quan trọng, viết lead trước rồi mới đến chi tiết bổ sung.
 
 FORMAT OUTPUT:
@@ -1474,37 +1795,18 @@ FORMAT OUTPUT:
 
 YÊU CẦU:
 - Tiêu đề ở dòng đầu, KHÔNG bọc **. SAU TIÊU ĐỀ: luôn 1 dòng trống.
-- Mỗi đoạn 1 ý, số câu theo lượng thông tin cần giải thích, cách nhau 1 dòng trống. CẤM một khối văn liền mạch.
+- Mỗi đoạn 1 ý, cách nhau 1 dòng trống. CẤM một khối văn liền mạch.
 - CẤM khung mở bài / thân bài / kết bài. CẤM in các nhãn đó.
-- Chỉ viết điều CÓ TRONG bài gốc. Hết ý trong nguồn thì DỪNG. CẤM viết thêm tin, tiêu đề thứ hai, câu sáo (bước tiến, đánh dấu, chiến lược, có trách nhiệm, đồng thời cho phép).
-- CHỈ dùng bullet khi bài gốc là danh sách / các bước. Ý kiến, tin, phân tích → đoạn văn.
-- Hướng dẫn/tutorial: giữ Bước 1, Bước 2... list ngắn.
-- CẤM bịa sự kiện, tên dịch vụ, sản phẩm, hay nhân vật không xuất hiện trong bài gốc.
-- CẤM LẶP Ý: Mỗi câu phải mang thông tin MỚI. Không diễn đạt lại ý cũ bằng từ khác. Kiểm tra lại trước khi output.
-- GIẢI THÍCH THUẬT NGỮ: không tự quyết định. Tuân thủ tuyệt đối quyết định INCLUDE/OMIT và danh sách thuật ngữ hệ thống cung cấp ở cuối prompt.
-- KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống sẽ tự thêm footer chuẩn.
-- GIỌNG VĂN: Đưa tin từ ngôi thứ nhất (người trực tiếp đưa tin công nghệ tới bạn đọc), chủ động, fact-first, đi thẳng vào sự kiện. TUYỆT ĐỐI CẤM câu tự xưng máy móc ("Tôi đưa tin về...", "Tôi chia sẻ về...").
-- TUYỆT ĐỐI KHÔNG viết kiểu thuật lại: CẤM các câu dẫn như "[Công ty] cho biết...", "Theo một bài đăng trên X vào lúc...", "Theo chia sẻ từ...".
-- Đi thẳng vào sự kiện hoặc kết quả chính; không mở bằng lời giới thiệu người đăng hay hành vi đăng bài.
-- Giọng tự nhiên, dễ hiểu, chính xác và cô đọng.
-- Giữ TOÀN BỘ thông tin có giá trị thực, dữ liệu, kết luận
-- Bỏ ví dụ dài không cần thiết, nhưng GIỮ các thông tin quan trọng
-- CHỈ dùng thông tin CÓ TRONG bài gốc, KHÔNG bịa thêm số liệu/thông số/phiên bản
-- CẤM tiêu đề nhạt không có thông tin: "Tin mới", "Có một điều thú vị..."
-- CẤM câu dẫn dắt rỗng: "Mình vừa đọc...", "Gần đây..."
-- CẤM lạm dụng sở hữu "của bạn", "của mình", "của chúng ta". Viết trực tiếp: "iPhone báo đầy bộ nhớ" thay vì "iPhone của bạn báo đầy bộ nhớ". Chỉ dùng khi thật sự cần phân biệt sở hữu.
-- Nhịp đoạn theo ý nghĩa: câu ngắn nêu việc, câu vừa giải thích. Không áp tỷ lệ hay độ dài đoạn cố định; mỗi đoạn bổ sung thông tin mới.
-- Diễn đạt tiếng Việt tự nhiên, gãy gọn; tránh dịch máy thô cứng từ tiếng Anh.
-- Giữ nguyên các thuật ngữ CNTT/AI quen thuộc (no-code, prompt, model, token, pipeline, benchmark, AI agent, kéo thả, PC, local); CẤM dịch thô máy móc kiểu "không mã kéo-thả", "máy tính cá nhân", "đường ống", "đại lý AI".
-- Lọc sạch từ ngữ PR, quảng cáo tâng bốc (cách mạng, hoàn hảo, siêu phẩm, đỉnh cao).
-- MỐC THỜI GIAN: Chỉ quy đổi các mốc thời gian là sự kiện công nghệ thực tế (lịch ra mắt, công bố, phát hành, sự cố...) sang giờ Việt Nam (UTC+7). Không quy đổi thời lượng hay thông số (pin 20 giờ, độ trễ 10ms). CẤM đưa thời điểm ai đó đăng bài/tweet/bình luận vào bản tin; CẤM câu tường thuật hành vi đăng bài ("Bài đăng trên X của người dùng... đã chia sẻ...").
+- Chỉ viết điều CÓ TRONG bài gốc. Hết ý thì dừng. Không bịa số liệu. Không thêm footer.
+- CẤM dịch thô máy móc kiểu "không mã kéo-thả", "máy tính cá nhân", "đường ống", "đại lý AI".
+- MỐC THỜI GIAN: Chỉ quy đổi các mốc thời gian là sự kiện công nghệ thực tế (lịch ra mắt, công bố, phát hành, sự cố...) sang giờ Việt Nam (UTC+7). CẤM đưa thời điểm ai đó đăng bài/tweet/bình luận vào bản tin.
 - Trả lời bằng tiếng Việt`;
 
 // TÓM TẮT NGẮN - Quick overview
 const SUMMARY_SHORT_PROMPT = `Tóm tắt cực ngắn nội dung sau:
 
 Yêu cầu:
-- Dòng đầu tiên: tiêu đề có hook mạnh nhưng fact-based, tối đa 15 từ; ưu tiên dữ kiện nổi bật nhất từ nguồn. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
+- Dòng đầu tiên: tiêu đề có hook mạnh nhưng fact-based, một câu trọn nghĩa; ưu tiên dữ kiện nổi bật nhất từ nguồn. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
 - Sau tiêu đề: 1 dòng trống. Viết ngắn nhất có thể nhưng phải giữ đủ mọi ý riêng biệt; số câu tăng theo lượng thông tin của nguồn.
 - CẤM khung mở/thân/kết. CẤM câu hỏi mở. CẤM câu sáo.
 - Viết như bản tin ngắn theo kim tự tháp ngược. Không kể lại và không giữ giọng tác giả.
@@ -1519,7 +1821,7 @@ const SUMMARY_DETAILED_PROMPT = `Bạn là chuyên gia phân tích và tóm tắ
 NHIỆM VỤ: Viết tiêu đề có hook mạnh nhưng fact-based + bản tin chi tiết, xếp dữ kiện theo mức độ quan trọng.
 
 YÊU CẦU:
-- Dòng đầu tiên: tiêu đề có hook mạnh nhưng fact-based, tối đa 20 từ; chọn góc dữ kiện nổi bật nhất từ nguồn. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
+- Dòng đầu tiên: tiêu đề có hook mạnh nhưng fact-based, một câu trọn nghĩa; chọn góc dữ kiện nổi bật nhất từ nguồn. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
 - Sau tiêu đề: 1 dòng trống
 - Tóm đúng dữ liệu gốc, mỗi ý một đoạn, cách 1 dòng trống. CẤM khung mở/thân/kết. CẤM câu sáo. CẤM câu hỏi mở.
 - Viết như bản tin khách quan theo kim tự tháp ngược. Không kể lại và không giữ giọng tác giả; CẤM câu tự xưng ("Tôi đưa tin về..."). Giữ nguyên thuật ngữ CNTT phổ biến (no-code, prompt, model, token, pipeline, AI agent, PC, local...).
@@ -1531,7 +1833,7 @@ YÊU CẦU:
 const SUMMARY_BULLET_PROMPT = `Tóm tắt thành các bullet points ngắn gọn.
 
 Quy tắc:
-- Dòng đầu tiên: tiêu đề có hook mạnh nhưng fact-based, tối đa 15 từ; ưu tiên dữ kiện nổi bật nhất từ nguồn. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
+- Dòng đầu tiên: tiêu đề có hook mạnh nhưng fact-based, một câu trọn nghĩa; ưu tiên dữ kiện nổi bật nhất từ nguồn. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
 - Sau tiêu đề: 1 dòng trống
 - Mỗi bullet bắt đầu bằng ·, trình bày một dữ kiện hoặc luận điểm đủ rõ từ nguồn (ưu tiên cấu trúc · Khái niệm/Dữ kiện: Diễn giải kèm số liệu cụ thể).
 - CẤM khung mở/thân/kết. CẤM câu hỏi mở. CẤM câu sáo.
@@ -1588,7 +1890,7 @@ const SUMMARY_STRUCTURED_PROMPT = `Bạn là biên tập viên bản tin có c�
 NHIỆM VỤ: Viết tiêu đề có hook mạnh nhưng fact-based và tổ chức dữ kiện thành các phần dễ quét theo mức độ quan trọng.
 
 YÊU CẦU:
-- Dòng đầu tiên: tiêu đề có hook mạnh nhưng fact-based, tối đa 20 từ; chọn góc dữ kiện nổi bật nhất từ nguồn. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
+- Dòng đầu tiên: tiêu đề có hook mạnh nhưng fact-based, một câu trọn nghĩa; chọn góc dữ kiện nổi bật nhất từ nguồn. Viết bình thường, KHÔNG bọc **, hệ thống tự viết hoa.
 - Sau tiêu đề: 1 dòng trống
 - Chỉ giữ heading/bullet/numbering khi chúng giúp đọc nhanh; không giữ trình tự kể của nguồn.
 - Mỗi phần giữ đủ các dữ kiện và luận điểm riêng biệt có giá trị.
@@ -1605,7 +1907,7 @@ NHIỆM VỤ: Đọc kỹ thread bình luận dưới đây, tổng hợp các l
 
 QUY TRÌNH:
 1. XÁC ĐỊNH: Chủ đề thảo luận chính là gì? Đám đông đang phản ứng tích cực, tiêu cực, hoài nghi hay đa chiều?
-2. VIẾT TIÊU ĐỀ: Dòng đầu tiên là tiêu đề phản ánh đúng thái độ/chủ đề thảo luận chính của cộng đồng (tối đa 15-20 từ). Viết bình thường, hệ thống tự viết hoa. Dòng tiếp theo cách 1 dòng trống.
+2. VIẾT TIÊU ĐỀ: Dòng đầu tiên là tiêu đề phản ánh đúng thái độ/chủ đề thảo luận chính của cộng đồng (một câu trọn nghĩa). Viết bình thường, hệ thống tự viết hoa. Dòng tiếp theo cách 1 dòng trống.
 3. TRÍCH XUẤT LUỒNG Ý KIẾN:
    - Ý kiến đồng tình/ủng hộ nổi bật
    - Ý kiến phản đối/trái chiều/hoài nghi nổi bật (nếu có)
@@ -1638,7 +1940,7 @@ QUY TRÌNH PHÓNG VIÊN:
 2. Viết bài theo cấu trúc tin tức chuẩn:
 
 CẤU TRÚC BÀI BÁO:
-[Tiêu đề — hook mạnh nhưng fact-based, tối đa 20 từ, chứa sự kiện chính]
+[Tiêu đề — hook mạnh nhưng fact-based, một câu trọn nghĩa, chứa sự kiện chính]
 
 [dòng trống]
 
@@ -1693,14 +1995,6 @@ const PROMPT_TEMPLATES = {
 // Supports multiple API keys per provider with automatic rotation on rate limit
 // Cross-provider fallback: if all keys of one provider are limited, try another provider
 
-const PROVIDER_PRIORITY = [
-  "groq",
-  "cerebras",
-  "sambanova",
-  "gemini",
-  "openrouter",
-];
-
 // === MODEL CONFIGURATION ===
 // Model IDs resolve through lib/model-registry.js (bundled into the SW).
 // Users override per-provider via chrome.storage.sync.modelOverrides.
@@ -1737,8 +2031,21 @@ function isModelError(errMsg, status) {
   );
 }
 
+/**
+ * Groq free tier rejects an oversized request with HTTP 413 and
+ * "tokens per minute (TPM)" — that is a per-minute quota miss, not a
+ * context-window overflow. Shrinking the payload and waiting helps;
+ * treating it as a bad key does not.
+ */
+function isTpmError(errMsg, status) {
+  const m = String(errMsg || "").toLowerCase();
+  if (!/tokens per minute|\btpm\b/.test(m)) return false;
+  return status === 413 || /too large|requested|limit|exceed|rate_limit/.test(m);
+}
+
 /** True when the input/output size exceeds what the model accepts. */
 function isContextError(errMsg, status) {
+  if (isTpmError(errMsg, status)) return false;
   const m = String(errMsg || "").toLowerCase();
   return (
     status === 413 ||
@@ -1746,6 +2053,14 @@ function isContextError(errMsg, status) {
       m,
     )
   );
+}
+
+/** gpt-oss and Qwen3 spend the output budget on hidden reasoning unless told not to. */
+function withLowReasoning(model, body) {
+  if (/gpt-oss|qwen3/i.test(String(model || ""))) {
+    body.reasoning_effort = "low";
+  }
+  return body;
 }
 
 /**
@@ -1842,143 +2157,10 @@ async function markProviderFailureStats(provider) {
   } catch (_) {}
 }
 
-/**
- * Pure key selection — keep in sync with lib/provider-rotation.js
- * (SW cannot import CommonJS modules; this is the production copy).
- */
-function selectAvailableKey(opts) {
-  const {
-    legacyApiKey = null,
-    legacyProvider = "groq",
-    preferredProvider = null,
-    providerStatus = null,
-    now,
-  } = opts;
-
-  let apiKeys = opts.apiKeys;
-  let hasAnyKey = false;
-  if (apiKeys) {
-    for (const p in apiKeys) {
-      if (apiKeys[p] && apiKeys[p].length > 0) hasAnyKey = true;
-    }
-  }
-
-  if (!apiKeys) {
-    apiKeys = {
-      groq: [],
-      gemini: [],
-      cerebras: [],
-      sambanova: [],
-      openrouter: [],
-    };
-  } else {
-    apiKeys = { ...apiKeys };
-    for (const p of Object.keys(apiKeys)) {
-      if (Array.isArray(apiKeys[p])) apiKeys[p] = apiKeys[p].slice();
-    }
-  }
-
-  // Fallback to legacy single key when no multi-key entries
-  if (!hasAnyKey && legacyApiKey) {
-    const provider = legacyProvider || "groq";
-    if (!apiKeys[provider]) apiKeys[provider] = [];
-    if (!apiKeys[provider].includes(legacyApiKey)) {
-      apiKeys[provider].push(legacyApiKey);
-    }
-  }
-
-  const keyStatus = { ...(opts.keyStatus || {}) };
-  const rotationIndex = { ...(opts.rotationIndex || {}) };
-
-  const orderedProviders =
-    preferredProvider && PROVIDER_PRIORITY.includes(preferredProvider)
-      ? [
-          preferredProvider,
-          ...PROVIDER_PRIORITY.filter((p) => p !== preferredProvider),
-        ]
-      : PROVIDER_PRIORITY;
-
-  // Pass 1: providers whose circuit breaker is closed. Pass 2 (fallback):
-  // down providers too — when every configured provider is tripped the user
-  // should still get a best-effort attempt rather than a dead end.
-  for (const ignoreBreaker of [false, true]) {
-    for (const provider of orderedProviders) {
-      const keys = apiKeys[provider] || [];
-      if (keys.length === 0) continue;
-
-      const ps = providerStatus && providerStatus[provider];
-      const isDown = ps && ps.downUntil && now < ps.downUntil;
-      if (isDown && !ignoreBreaker) continue;
-
-      const startIdx = (rotationIndex[provider] || 0) % keys.length;
-      for (let i = 0; i < keys.length; i++) {
-        const idx = (startIdx + i) % keys.length;
-        const key = keys[idx];
-        const status = keyStatus[key] || {};
-
-        if (!status.rateLimitedUntil || now >= status.rateLimitedUntil) {
-          const newRotationIndex = {
-            ...rotationIndex,
-            [provider]: (idx + 1) % keys.length,
-          };
-          const newKeyStatus = {
-            ...keyStatus,
-            [key]: { ...(keyStatus[key] || {}), lastUsed: now },
-          };
-          return {
-            key,
-            provider,
-            index: idx,
-            newRotationIndex,
-            newKeyStatus,
-          };
-        }
-      }
-    }
-  }
-
-  let soonestTime = Infinity;
-  let totalKeys = 0;
-  for (const provider of PROVIDER_PRIORITY) {
-    const keys = apiKeys[provider] || [];
-    totalKeys += keys.length;
-    for (const key of keys) {
-      const until = (keyStatus[key] || {}).rateLimitedUntil || 0;
-      if (until < soonestTime) soonestTime = until;
-    }
-  }
-
-  if (totalKeys === 0) return { key: null, provider: null, noKeys: true };
-  const waitMinutes = Math.max(1, Math.ceil((soonestTime - now) / 60000));
-  return {
-    key: null,
-    provider: null,
-    allLimited: true,
-    waitMinutes,
-    retryInMs: Math.max(0, soonestTime - now),
-    total: totalKeys,
-  };
-}
-
 // Key selection reads and updates rotation state. Serialize it so concurrent
 // summaries from separate tabs cannot select the same next key before either
 // request persists its new rotation index.
 let keySelectionQueue = Promise.resolve();
-
-async function hashKeyId(key) {
-  if (!key) return "";
-  try {
-    const buf = await crypto.subtle.digest(
-      "SHA-256",
-      new TextEncoder().encode(String(key)),
-    );
-    return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, "0"))
-      .join("")
-      .slice(0, 20);
-  } catch (_) {
-    return "";
-  }
-}
 
 function remapKeyStatus(statusMap, key, hashed) {
   const next = { ...(statusMap || {}) };
@@ -2159,17 +2341,6 @@ async function clearAllKeyCooldowns() {
   return changed;
 }
 
-function parseRetryAfter(errorMessage) {
-  const match = errorMessage?.match(/try again in (\d+)m([\d.]+)s/i);
-  if (match) return (parseInt(match[1]) * 60 + parseFloat(match[2])) * 1000;
-  const secMatch = errorMessage?.match(/retry.?after:?\s*(\d+)/i);
-  if (secMatch) return parseInt(secMatch[1]) * 1000;
-  // "Please try again in 2m30s" style
-  const m2 = errorMessage?.match(/in\s+(\d+)\s*m(?:in(?:ute)?s?)?/i);
-  if (m2) return parseInt(m2[1], 10) * 60 * 1000;
-  return 15 * 60 * 1000; // default 15 min (was 30 — less sticky)
-}
-
 /** Classify provider error for cooldown + user message */
 function classifyProviderError(errMsg = "", status = 0) {
   const m = String(errMsg || "").toLowerCase();
@@ -2177,6 +2348,9 @@ function classifyProviderError(errMsg = "", status = 0) {
   // key gets a 1h cooldown and the user sees a fake "out of quota" lockout.
   if (isModelError(errMsg, status)) {
     return { kind: "model", cooldownMs: 15 * 1000 };
+  }
+  if (isTpmError(errMsg, status)) {
+    return { kind: "tpm", cooldownMs: 20 * 1000 };
   }
   if (isContextError(errMsg, status)) {
     return { kind: "context", cooldownMs: 30 * 1000 };
@@ -2299,10 +2473,8 @@ async function getSystemPrompt(
   // Output language is always Vietnamese (journalistic standard).
   // Source language is irrelevant — the AI must translate and rewrite in Vietnamese.
   prompt +=
-    "\n- Luôn trả lời bằng tiếng Việt chuẩn báo chí. Nếu bài viết bằng tiếng Anh hoặc bất kỳ ngôn ngữ nào khác, PHẢI dịch và viết lại thành tiếng Việt dễ hiểu, tự nhiên, chuẩn văn phong công nghệ." +
-    "\n- Đưa tin từ ngôi thứ nhất (chủ thể trực tiếp đưa tin): Phát biểu trực tiếp sự kiện công nghệ, TUYỆT ĐỐI KHÔNG viết kiểu thuật lại (CẤM '[Công ty] cho biết...', CẤM 'Theo một bài đăng trên X vào lúc...'). TUYỆT ĐỐI CẤM các câu tự xưng máy móc (CẤM 'Tôi đưa tin về...', 'Tôi xin chia sẻ...', 'Hôm nay tôi...'). Bản tin đi thẳng vào sản phẩm hoặc sự kiện." +
-    "\n- Chuẩn hóa thuật ngữ CNTT/AI: Giữ nguyên các thuật ngữ tiếng Anh phổ biến (no-code, low-code, prompt, token, model, pipeline, workflow, framework, runtime, benchmark, fine-tune, AI agent, repo, UI/UX, plugin, cache, PC, local...). TUYỆT ĐỐI CẤM dịch máy thô cứng (CẤM 'không mã', CẤM 'không mã kéo-thả', CẤM 'máy tính cá nhân' khi nói về PC/local, CẤM 'đường ống', CẤM 'đại lý AI'). Cụm 'no-code drag-and-drop' dịch là 'công cụ no-code kéo thả' hoặc 'kéo thả không cần code'." +
-    "\n- Múi giờ chuẩn của bản tin: Giờ Việt Nam (ICT, UTC+7). Chỉ quy đổi mốc thời gian khi gắn với SỰ KIỆN CÔNG NGHỆ THỰC TẾ (lịch ra mắt, công bố, mở bán, cập nhật phần mềm, sự cố kỹ thuật, deadline). Tuyệt đối KHÔNG đưa thời điểm ai đó đăng bài/tweet trên mạng xã hội vào bản tin (CẤM 'vào lúc 00...', 'lúc ... trên X') và KHÔNG viết các câu tường thuật hành vi đăng bài.";
+    "\n- Luôn trả lời bằng tiếng Việt chuẩn báo chí. CẤM 'Tôi đưa tin về...'." +
+    "\n- Múi giờ chuẩn của bản tin: Giờ Việt Nam (ICT, UTC+7). Chỉ quy đổi mốc thời gian khi gắn với SỰ KIỆN CÔNG NGHỆ THỰC TẾ (lịch ra mắt, công bố, mở bán, cập nhật phần mềm, sự cố kỹ thuật, deadline). Tuyệt đối KHÔNG đưa thời điểm ai đó đăng bài/tweet trên mạng xã hội vào bản tin.";
 
   // Source metadata is attribution data, never an instruction or independent proof.
   const sourceMetadata = {
@@ -2414,9 +2586,12 @@ async function processStream(
     const dataStr = trimmed.replace(/^data:\s*/, "");
     if (dataStr === "[DONE]" || !dataStr) return;
     try {
-      const token = parseLine(JSON.parse(dataStr));
-      if (!token) return;
+      const parsed = parseLine(JSON.parse(dataStr));
+      const token = typeof parsed === "string" ? parsed : parsed?.text || "";
+      const activity = !!token || !!(parsed && typeof parsed === "object" && parsed.activity);
+      if (!activity) return;
       if (onToken) onToken();
+      if (!token) return;
       fullText += token;
       queueChunk(token);
     } catch (_) {}
@@ -2469,7 +2644,7 @@ async function callGroqStream(
     callStreamAPI({
     url: "https://api.groq.com/openai/v1/chat/completions",
     headers: { Authorization: "Bearer " + apiKey },
-    body: {
+    body: withLowReasoning(model, {
       model,
       stream: true,
       messages: [
@@ -2478,8 +2653,15 @@ async function callGroqStream(
       ],
       temperature: 0.3,
       max_tokens: maxTokens,
+    }),
+    extractFn: (d) => {
+      const delta = d.choices?.[0]?.delta || {};
+      const text = delta.content || "";
+      if (!text && (delta.reasoning || delta.reasoning_content)) {
+        return { activity: true, text: "" };
+      }
+      return text;
     },
-    extractFn: (d) => d.choices?.[0]?.delta?.content || "",
     port,
     signal,
     maxTokens,
@@ -2529,7 +2711,7 @@ async function callCerebrasStream(
     callStreamAPI({
     url: "https://api.cerebras.ai/v1/chat/completions",
     headers: { Authorization: "Bearer " + apiKey },
-    body: {
+    body: withLowReasoning(model, {
       model,
       stream: true,
       messages: [
@@ -2538,8 +2720,15 @@ async function callCerebrasStream(
       ],
       temperature: 0.3,
       max_tokens: maxTokens,
+    }),
+    extractFn: (d) => {
+      const delta = d.choices?.[0]?.delta || {};
+      const text = delta.content || "";
+      if (!text && (delta.reasoning || delta.reasoning_content)) {
+        return { activity: true, text: "" };
+      }
+      return text;
     },
-    extractFn: (d) => d.choices?.[0]?.delta?.content || "",
     port,
     signal,
     maxTokens,
@@ -2637,7 +2826,7 @@ async function callOpenrouterStream(
       "HTTP-Referer": "https://github.com/anlvdt/fb-post-summarizer",
       "X-Title": "FeedWriter",
     },
-    body: {
+    body: withLowReasoning(model, {
       model,
       stream: true,
       messages: [
@@ -2646,8 +2835,15 @@ async function callOpenrouterStream(
       ],
       temperature: 0.3,
       max_tokens: maxTokens,
+    }),
+    extractFn: (d) => {
+      const delta = d.choices?.[0]?.delta || {};
+      const text = delta.content || "";
+      if (!text && (delta.reasoning || delta.reasoning_content)) {
+        return { activity: true, text: "" };
+      }
+      return text;
     },
-    extractFn: (d) => d.choices?.[0]?.delta?.content || "",
     port,
     signal,
     maxTokens,
@@ -3194,25 +3390,41 @@ function isSafePublicHttpsUrl(rawUrl) {
   }
 }
 
-const ALLOWED_IMAGE_HOST_SUFFIXES = [
-  "fbcdn.net",
-  "cdninstagram.com",
-  "twimg.com",
-  "redd.it",
-  "redditmedia.com",
-  "redditstatic.com",
-  "licdn.com",
-  "linkedin.com",
-  "googleusercontent.com",
-];
+const ALLOWED_OPTIONAL_PERMISSIONS = new Set(["clipboardRead"]);
+
+function senderHostname(senderLike) {
+  try {
+    return new URL(senderLike?.tab?.url || senderLike?.url || "").hostname.toLowerCase();
+  } catch (_) {
+    return "";
+  }
+}
+
+function isXScreenshotHost(host) {
+  return (
+    host === "x.com" ||
+    host === "twitter.com" ||
+    host.endsWith(".x.com") ||
+    host.endsWith(".twitter.com")
+  );
+}
+
+function isAllowedOptionalOrigin(origin, senderLike) {
+  if (typeof origin !== "string" || !origin) return false;
+  if (origin === "<all_urls>" || origin === "https://*/*") {
+    return isXScreenshotHost(senderHostname(senderLike));
+  }
+  if (!origin.startsWith("https://") || !origin.endsWith("/*")) return false;
+  let host = origin.slice("https://".length, -2);
+  if (host.startsWith("*.")) host = host.slice(2);
+  host = host.split("/")[0].toLowerCase();
+  return FeedWriterUrlClean.isAllowedImageHost(host);
+}
 
 function isAllowedImageUrl(rawUrl) {
   if (!isSafePublicHttpsUrl(rawUrl)) return false;
   try {
-    const host = new URL(rawUrl).hostname.toLowerCase();
-    return ALLOWED_IMAGE_HOST_SUFFIXES.some(
-      (suffix) => host === suffix || host.endsWith("." + suffix),
-    );
+    return FeedWriterUrlClean.isAllowedImageHost(new URL(rawUrl).hostname);
   } catch (_) {
     return false;
   }
@@ -3656,8 +3868,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.action === "request-optional-permission") {
     (async () => {
-      const permissions = Array.isArray(request.permissions) ? request.permissions : [];
-      const origins = Array.isArray(request.origins) ? request.origins : [];
+      const permissions = (Array.isArray(request.permissions) ? request.permissions : [])
+        .filter((item) => ALLOWED_OPTIONAL_PERMISSIONS.has(item));
+      const origins = (Array.isArray(request.origins) ? request.origins : [])
+        .filter((item) => isAllowedOptionalOrigin(item, sender));
+      if (!permissions.length && !origins.length) {
+        throw new Error("Quyền yêu cầu không nằm trong danh sách cho phép.");
+      }
       const granted = await chrome.permissions.request({
         ...(permissions.length ? { permissions } : {}),
         ...(origins.length ? { origins } : {}),
@@ -3696,9 +3913,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       if (Array.isArray(raw.images) && images.length !== Math.min(raw.images.length, 10)) {
         throw new Error("Có ảnh bài viết không hợp lệ hoặc quá lớn để chuyển sang Facebook.");
       }
-      const prefs = await chrome.storage.sync
-        .get(["autoPublish"])
-        .catch(() => ({}));
       const postData = {
         title: String(raw.title || "").slice(0, 500),
         content,
@@ -3708,7 +3922,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sourceUrl: String(raw.sourceUrl || "").slice(0, 8000),
         author: String(raw.author || "").slice(0, 200),
         source: String(raw.source || "").slice(0, 200),
-        autoPublish: prefs.autoPublish === true,
+        autoPublish: false,
       };
       const storageKey = "pendingFacebookPost:" + id;
       await chrome.storage.local.set({
@@ -4098,8 +4312,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // Capture screenshot of visible tab and crop to element bounds
   if (request.action === "capture-screenshot") {
     (async () => {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!tab) throw new Error("No active tab");
+      const tab = sender.tab;
+      if (!tab?.id || tab.windowId == null) throw new Error("No sender tab");
+      if (!isXScreenshotHost(senderHostname(sender))) {
+        throw new Error("Screenshot chỉ dùng trên X");
+      }
+      const [active] = await chrome.tabs.query({
+        active: true,
+        windowId: tab.windowId,
+      });
+      if (!active || active.id !== tab.id) {
+        throw new Error("Tab X phải đang hiện để chụp");
+      }
 
       // Capture visible tab as data URL
       const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
@@ -4186,6 +4410,16 @@ function buildTranslatePrompt(text, mode) {
     "Be concise. Use Vietnamese for explanations. No emoji." +
     TECH_TRANSLATION_GUIDE;
 
+  if (mode === "page") {
+    return {
+      system: systemBase,
+      prompt:
+        `Dịch đoạn sau sang tiếng Việt tự nhiên, giữ nguyên đoạn văn và thuật ngữ kỹ thuật quen dùng.\n` +
+        `Chỉ trả về bản dịch. Không tiêu đề, không ghi chú, không lặp lại tiếng Anh.\n\n` +
+        `"""${src}"""`,
+    };
+  }
+
   if (mode === "passage") {
     return {
       system: systemBase,
@@ -4271,9 +4505,27 @@ function buildTranslatePrompt(text, mode) {
   };
 }
 
+async function translateInParts(source, mode) {
+  const capped = source.length > 24000 ? source.slice(0, 24000) : source;
+  const chunks = splitSourceIntoChunks(capped, 2200);
+  const parts = [];
+  for (const chunk of chunks) {
+    const piece = await translateText(chunk, mode);
+    if (piece.error) return { error: piece.error, partial: parts.join("\n\n") };
+    parts.push(String(piece.translation || "").trim());
+  }
+  return {
+    word: capped.slice(0, 80),
+    translation: parts.filter(Boolean).join("\n\n"),
+    mode,
+    truncated: source.length > 24000,
+    parts: chunks.length,
+  };
+}
+
 function resolveTranslateMode(text, mode) {
   const m = (mode || "auto").toLowerCase();
-  if (["word", "passage", "slang", "collocation", "shadowing"].includes(m)) {
+  if (["word", "passage", "page", "slang", "collocation", "shadowing"].includes(m)) {
     return m;
   }
   // auto
@@ -4285,8 +4537,14 @@ function resolveTranslateMode(text, mode) {
 }
 
 async function translateText(text, mode = "auto") {
-  const source = String(text || "").replace(/\s+/g, " ").trim();
+  const resolvedHint = resolveTranslateMode(text, mode);
+  const source = resolvedHint === "page"
+    ? String(text || "").replace(/\r\n?/g, "\n").replace(/[^\S\n]+/g, " ").replace(/\n{3,}/g, "\n\n").trim()
+    : String(text || "").replace(/\s+/g, " ").trim();
   if (!source) return { error: "Không có văn bản để dịch." };
+  if ((resolvedHint === "page" || resolvedHint === "passage") && source.length > 2400) {
+    return translateInParts(source, resolvedHint === "page" ? "page" : "passage");
+  }
   if (source.length > 2500) return { error: "Đoạn quá dài (tối đa khoảng 2.500 ký tự)." };
 
   const resolved = resolveTranslateMode(source, mode);
@@ -4338,8 +4596,15 @@ async function translateText(text, mode = "auto") {
 
 // === HELPER: Intelligent text cleaning ===
 function cleanInputText(text) {
-  // Normalize whitespace only — don't remove content words
-  return text.replace(/\s+/g, " ").trim();
+  // Keep paragraph breaks. Collapsing every newline into one space made long
+  // articles look like a single blob, so the model dumped several facts into
+  // the headline and lost section boundaries.
+  return String(text || "")
+    .replace(/\r\n?/g, "\n")
+    .replace(/[^\S\n]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 // ============================================================
@@ -4365,8 +4630,8 @@ function validateInput(text) {
   const trimmed = text.trim();
   if (trimmed.length < 30)
     return { valid: false, error: "Nội dung quá ngắn (cần ít nhất 30 ký tự)." };
-  if (trimmed.length > 100000)
-    return { valid: false, error: "Nội dung quá dài (tối đa 100.000 ký tự)." };
+  if (trimmed.length > 480000)
+    return { valid: false, error: "Nội dung quá dài (tối đa 480.000 ký tự)." };
   return { valid: true, text: trimmed };
 }
 
@@ -4491,6 +4756,49 @@ function normalizeVietnameseNumericNotation(text) {
     .replace(/\b(\d[\d.]*(?:,\d+)?)\s*(?:EUR)\b/giu, "$1 euro")
     .replace(/\b(\d[\d.]*(?:,\d+)?)\s*(?:GBP)\b/giu, "$1 bảng Anh");
   return normalized;
+}
+
+const MAX_HEADLINE_WORDS = 16;
+const HEADLINE_DANGLING = /^(?:từ|sang|của|kể|cho|với|và|đến|tới|trong|trên|về|vào|ra|thành|theo|bởi|khi|nếu|hoặc|hay|một|các|những|là|đã|sẽ|đang|được|bị|ở|tại|có|mang|giữa|sau|trước|tháng|năm)$/iu;
+
+function isHeadlineDateToken(word) {
+  return /^(?:\d{1,2}[/.-]\d{2,4}|\d{4}|tháng|năm|q[1-4])$/iu.test(String(word || ""));
+}
+
+function headlineTokens(title) {
+  return String(title || "").trim().split(/\s+/).filter(Boolean);
+}
+
+function tokenCore(word) {
+  return String(word || "").replace(/[,:;.]+$/u, "");
+}
+
+function headlineUnfinished(word) {
+  const core = tokenCore(word);
+  return HEADLINE_DANGLING.test(core) || /^(?:gần|khoảng|chừng)$/iu.test(core);
+}
+
+function clampHeadlineWords(title) {
+  const raw = String(title || "").trim();
+  const words = headlineTokens(raw);
+  if (!words.length) return "";
+  // Do not slice a finished sentence to a word budget. A 16-word cap was
+  // cutting phrases in half ("suy luận" → "suy", "chi phí gần 3 USD" → "gần").
+  const comma = raw.lastIndexOf(",");
+  if (comma > 0) {
+    const head = raw.slice(0, comma).trim();
+    const tail = raw.slice(comma + 1).trim();
+    const headWords = headlineTokens(head);
+    const tailWords = headlineTokens(tail);
+    const headOk = headWords.length >= 4 && !headlineUnfinished(headWords[headWords.length - 1]);
+    const tailUnfinished = !tailWords.length || headlineUnfinished(tailWords[tailWords.length - 1]);
+    if (headOk && tailUnfinished && !/\d/.test(tail)) return head;
+  }
+  let end = words.length;
+  while (end > 4 && headlineUnfinished(words[end - 1]) && !isHeadlineDateToken(tokenCore(words[end - 1]))) {
+    end -= 1;
+  }
+  return words.slice(0, end).join(" ").replace(/[,:;.]+$/u, "").trim();
 }
 
 // Main post-processing function
@@ -4685,7 +4993,13 @@ function postProcessOutput(output, sourceText, type) {
         ) {
           issues.push("Tiêu đề còn từ giật gân — nên viết lại thủ công.");
         }
-        lines[i] = guardedTitle || "Cập nhật";
+        const cappedTitle = clampHeadlineWords(guardedTitle, MAX_HEADLINE_WORDS);
+        const titleWords = guardedTitle.trim().split(/\s+/).filter(Boolean);
+        const keptWords = cappedTitle.split(/\s+/).filter(Boolean);
+        if (cappedTitle && keptWords.length < titleWords.length) {
+          issues.push("Đã rút tiêu đề cho trọn ý, phần chi tiết nằm ở đoạn sau.");
+        }
+        lines[i] = cappedTitle || "Cập nhật";
         // Viết hoa toàn bộ tiêu đề
         lines[i] = lines[i].toUpperCase();
         break;
@@ -5026,6 +5340,134 @@ function truncateSourceForBudget(source, budget) {
   return source.slice(0, headLen) + marker + source.slice(source.length - tailLen);
 }
 
+// Groq free-tier gpt-oss-120b is 8,000 tokens/minute per organization.
+// Stay under that for a single request (input + reserved output).
+const TPM_SAFE_TOKENS = 7000;
+const groqTpmLedger = { spent: 0, windowStart: 0 };
+
+async function waitForGroqTpm(cost, port, signal) {
+  const now = Date.now();
+  if (now - groqTpmLedger.windowStart >= 60000) {
+    groqTpmLedger.windowStart = now;
+    groqTpmLedger.spent = 0;
+  }
+  if (groqTpmLedger.spent + cost <= TPM_SAFE_TOKENS) {
+    groqTpmLedger.spent += cost;
+    return;
+  }
+  const wait = Math.max(1000, 61000 - (now - groqTpmLedger.windowStart));
+  try {
+    port.postMessage({
+      action: "status",
+      message:
+        "Hết lượt token trong phút này — chờ " +
+        Math.ceil(wait / 1000) +
+        " giây rồi đọc tiếp...",
+    });
+  } catch (_) {}
+  await sleepAbortable(wait, signal);
+  groqTpmLedger.windowStart = Date.now();
+  groqTpmLedger.spent = cost;
+}
+// Fold this many extracted sections at a time when the fact sheet is still
+// too big. Sections are compressed, never dropped.
+const MAX_COVERAGE_CHUNKS = 6;
+
+const CHUNK_EXTRACT_PROMPT = `Trích dữ kiện từ đoạn bài dưới đây. Viết tiếng Việt, mỗi ý một bullet bắt đầu bằng "· ".
+- Chỉ ghi sự kiện, số liệu, tên, điều kiện và kết quả CÓ trong đoạn. Không tiêu đề, không mở bài, không suy diễn.
+- Tối đa 12 bullet. Mỗi bullet một ý, tối đa 25 từ.
+- Giữ nguyên thuật ngữ kỹ thuật và tên sản phẩm.`;
+
+const COMPACT_NEWS_PROMPT = `Bạn là biên tập viên báo chí công nghệ tiếng Việt. Viết lại nguồn thành MỘT bản tin fact-first theo kim tự tháp ngược.
+- Dòng đầu là tiêu đề trọn ý: sản phẩm + việc vừa xảy ra + kết quả. Viết hết cụm, không dừng giữa từ. Không bọc **. Hệ thống tự viết hoa.
+- Sau tiêu đề một dòng trống. Lead nêu sản phẩm/công ty/tính năng, thay đổi hoặc kết quả, và tác động. Mỗi ý một đoạn. Không được bỏ ý chỉ để ép độ dài.
+- Chỉ viết điều có trong nguồn. Hết ý thì dừng. Không bịa số liệu, không kể chuyện, không "cho biết", không "Tôi đưa tin về".
+- Giữ thuật ngữ quen (no-code, prompt, model, AI agent, PC). Cấm dịch "không mã", "đại lý AI".
+- Tiêu đề không chứa USER, người dùng, tác giả, người đăng hay tên báo khi họ chỉ là nguồn.
+- Chỉ quy đổi mốc giờ của sự kiện công nghệ sang giờ Việt Nam (UTC+7). Không đưa giờ đăng bài mạng xã hội vào bản tin.`;
+
+function estimateTokens(text) {
+  const s = String(text || "");
+  if (!s) return 0;
+  // ~4 characters per token matches observed Groq counts closely enough to
+  // decide whether a request fits the free-tier minute budget.
+  return Math.ceil(s.length / 4);
+}
+
+function requestFits(prompt, source, outTokens) {
+  return estimateTokens(prompt) + estimateTokens(source) + Number(outTokens || 0) + 200 <= TPM_SAFE_TOKENS;
+}
+
+function compactNewsPrompt(fullPrompt) {
+  const prompt = String(fullPrompt || "");
+  const toneAt = prompt.lastIndexOf("\n\nGHI ĐÈ TONE —");
+  const glossAt = prompt.lastIndexOf("CHÍNH SÁCH HỆ THỐNG —");
+  let tail = "";
+  if (glossAt >= 0) {
+    const end = toneAt > glossAt ? toneAt : prompt.length;
+    tail += "\n\n" + prompt.slice(glossAt, end).trim();
+  }
+  if (toneAt >= 0) tail += prompt.slice(toneAt);
+  return COMPACT_NEWS_PROMPT + tail;
+}
+
+function splitSourceIntoChunks(source, chunkChars) {
+  const text = String(source || "").trim();
+  const budget = Math.max(800, Number(chunkChars) || 800);
+  if (!text) return [];
+  if (text.length <= budget) return [text];
+  const units = [];
+  for (const part of text.split(/\n+/).map((s) => s.trim()).filter(Boolean)) {
+    if (part.length <= budget) {
+      units.push(part);
+      continue;
+    }
+    let rest = part;
+    while (rest.length > budget) {
+      let cut = rest.lastIndexOf(". ", budget);
+      if (cut < budget * 0.5) cut = budget;
+      else cut += 1;
+      units.push(rest.slice(0, cut).trim());
+      rest = rest.slice(cut).trim();
+    }
+    if (rest) units.push(rest);
+  }
+  const chunks = [];
+  let buf = "";
+  for (const unit of units) {
+    if (!buf) {
+      buf = unit;
+      continue;
+    }
+    if (buf.length + 2 + unit.length <= budget) buf += "\n\n" + unit;
+    else {
+      chunks.push(buf);
+      buf = unit;
+    }
+  }
+  if (buf) chunks.push(buf);
+  return chunks;
+}
+
+function coverWithChunkBudget(chunks, maxChunks) {
+  const list = Array.isArray(chunks) ? chunks : [];
+  const limit = Math.max(1, Number(maxChunks) || 1);
+  if (list.length <= limit) {
+    return list.map((text, index) => ({ text, index }));
+  }
+  const picks = new Set([0, list.length - 1]);
+  const inner = Math.max(0, limit - 2);
+  for (let i = 1; i <= inner; i++) {
+    picks.add(Math.round((i * (list.length - 1)) / (inner + 1)));
+  }
+  return [...picks].sort((a, b) => a - b).map((index) => ({ text: list[index], index }));
+}
+
+function chunkCharBudget() {
+  const room = TPM_SAFE_TOKENS - estimateTokens(CHUNK_EXTRACT_PROMPT) - 700 - 200;
+  return Math.max(2500, Math.floor(Math.max(500, room) * 2.2));
+}
+
 function sleepAbortable(ms, signal) {
   return new Promise((resolve) => {
     const timer = setTimeout(done, ms);
@@ -5124,297 +5566,403 @@ async function handleStream(
 
   const maxTokensMap = { short: 1024, medium: 2048, long: 4096 };
   const baseMaxTokens = maxTokensMap[summaryLength] || 2048;
-  // Length presets control verbosity, never coverage. Long sources receive a
-  // larger output budget so the model can retain every distinct valuable idea.
+  // Length presets control verbosity, never coverage. coverageTokens still
+  // grows with the source; the per-request cap keeps input + output inside
+  // the free-tier tokens-per-minute budget. Coverage of a long source is
+  // handled by reading it in parts, not by one huge completion.
   const coverageTokens = Math.ceil(completeSource.length / 10);
+  const perRequestOutputCap = summaryLength === "short" ? 1024 : summaryLength === "long" ? 2048 : 1280;
   let maxTokens = Math.min(
     MAX_OUTPUT_TOKENS,
+    perRequestOutputCap,
     Math.max(baseMaxTokens, coverageTokens),
   );
 
-  // Try enough times to rotate through keys + a couple of shrink/wait rounds
-  // (was hard-capped at 4 → stuck early).
-  const maxAttempts = 10;
-  const attemptErrors = [];
-  const attemptKinds = [];
-  const triedKeys = new Set();
-  let limitedWaits = 0;
+  let activePort = port;
+  let activePrompt = systemPrompt;
+  let activeType = type;
+  let shrinkBase = completeSource;
+  let recordResult = true;
+  let jobMaxTokens = maxTokens;
+  let coverageNote = "";
+  let cooldownCleared = false;
 
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    if (signal.aborted) return { error: "Đã hủy." };
+  function statusOnlyPort(realPort) {
+    return {
+      postMessage(message) {
+        if (message && message.action === "chunk") return;
+        try { realPort.postMessage(message); } catch (_) {}
+      },
+    };
+  }
 
-    // Get best available key across all providers
-    const keyInfo = await getAvailableKey(attempt === 0 ? preferredProvider : null);
-    if (!keyInfo.key) {
-      if (keyInfo.noKeys)
-        return { error: "Chưa có API Key. Thêm ở tab API Keys." };
-      if (keyInfo.allLimited) {
-        // One more chance: clear soft cooldowns and retry once
-        if (attempt === 0) {
-          await clearAllKeyCooldowns();
-          continue;
+  async function generateWithRotation() {
+    sourceBudget = shrinkBase.length;
+    sourceMessage = buildSourceMessage(shrinkBase);
+    sourceWasTruncated = false;
+    let localMax = jobMaxTokens;
+    const maxAttempts = 10;
+    const attemptErrors = [];
+    const attemptKinds = [];
+    const triedKeys = new Set();
+    let limitedWaits = 0;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      if (signal.aborted) return { error: "Đã hủy." };
+
+      const keyInfo = await getAvailableKey(attempt === 0 ? preferredProvider : null);
+      if (!keyInfo.key) {
+        if (keyInfo.noKeys)
+          return { error: "Chưa có API Key. Thêm ở tab Khóa API." };
+        if (keyInfo.allLimited) {
+          if (attempt === 0 && !cooldownCleared) {
+            cooldownCleared = true;
+            await clearAllKeyCooldowns();
+            continue;
+          }
+          const retryInMs = Number.isFinite(keyInfo.retryInMs)
+            ? keyInfo.retryInMs
+            : keyInfo.waitMinutes * 60000;
+          if (limitedWaits < MAX_LIMITED_WAITS && retryInMs <= LIMITED_WAIT_CAP_MS) {
+            limitedWaits++;
+            try {
+              activePort.postMessage({
+                action: "status",
+                message:
+                  "Tất cả key đang nghỉ — tự thử lại sau ~" +
+                  Math.ceil(retryInMs / 1000) +
+                  " giây...",
+              });
+            } catch (_) {}
+            await sleepAbortable(retryInMs + 400, signal);
+            continue;
+          }
+          const softLock = keyInfo.waitMinutes <= 3;
+          return {
+            error: softLock
+              ? "Tất cả " +
+                keyInfo.total +
+                " key đang tạm khóa sau lỗi vừa rồi (không phải hết quota). Bấm tab Khóa API → Test kết nối để reset ngay, hoặc thử lại sau ~" +
+                keyInfo.waitMinutes +
+                " phút."
+              : "Tất cả " +
+                keyInfo.total +
+                " key đang cooldown/rate-limit. Thử lại sau ~" +
+                keyInfo.waitMinutes +
+                " phút, hoặc tab Khóa API → Test kết nối (xóa cooldown).",
+          };
         }
-        // Free-tier limits are per-minute, so a short lock is worth waiting
-        // out inside this request instead of telling the user to come back.
-        const retryInMs = Number.isFinite(keyInfo.retryInMs)
-          ? keyInfo.retryInMs
-          : keyInfo.waitMinutes * 60000;
-        if (limitedWaits < MAX_LIMITED_WAITS && retryInMs <= LIMITED_WAIT_CAP_MS) {
-          limitedWaits++;
-          try {
-            port.postMessage({
-              action: "status",
-              message:
-                "Tất cả key đang nghỉ — tự thử lại sau ~" +
-                Math.ceil(retryInMs / 1000) +
-                " giây...",
-            });
-          } catch (_) {}
-          await sleepAbortable(retryInMs + 400, signal);
-          continue;
-        }
-        const softLock = keyInfo.waitMinutes <= 3;
-        return {
-          error: softLock
-            ? "Tất cả " +
-              keyInfo.total +
-              " key đang tạm khóa sau lỗi vừa rồi (không phải hết quota). Bấm tab Khóa API → Test kết nối để reset ngay, hoặc thử lại sau ~" +
-              keyInfo.waitMinutes +
-              " phút."
-            : "Tất cả " +
-              keyInfo.total +
-              " key đang cooldown/rate-limit. Thử lại sau ~" +
-              keyInfo.waitMinutes +
-              " phút, hoặc tab Khóa API → Test kết nối (xóa cooldown).",
-        };
+        break;
       }
-      break;
-    }
 
-    // Avoid infinite loop on same key within this request
-    const keyId = keyInfo.provider + ":" + (keyInfo.index ?? keyInfo.key.slice(0, 8));
-    if (triedKeys.has(keyInfo.key)) {
-      // Force short skip already-tried key
-      await markKeyCooldown(keyInfo.key, 20_000, "already-tried");
-      continue;
-    }
-    triedKeys.add(keyInfo.key);
+      if (triedKeys.has(keyInfo.key)) {
+        await markKeyCooldown(keyInfo.key, 20_000, "already-tried");
+        continue;
+      }
+      triedKeys.add(keyInfo.key);
 
-    const callFn = streamFns[keyInfo.provider];
-    if (!callFn) return { error: "Provider không hợp lệ: " + keyInfo.provider };
+      const callFn = streamFns[keyInfo.provider];
+      if (!callFn) return { error: "Provider không hợp lệ: " + keyInfo.provider };
 
-    try {
-      port.postMessage({
-        action: "status",
-        message: `Đang kết nối ${keyInfo.provider} (${attempt + 1}/${maxAttempts})...`,
-      });
-    } catch (_) {}
-
-    const t0 = Date.now();
-    const result = await callFn(
-      keyInfo.key,
-      sourceMessage,
-      systemPrompt,
-      port,
-      signal,
-      maxTokens,
-      type,
-    );
-
-    if (result.rateLimited) {
-      const retryMs = parseRetryAfter(result.rateLimitError || "");
-      await markKeyRateLimited(keyInfo.key, retryMs);
-      // Rate limits are per-key quota, not a provider outage — count the
-      // failure for stats but never toward the circuit breaker.
-      await markProviderFailureStats(keyInfo.provider);
-      attemptErrors.push(`${keyInfo.provider}: rate limit`);
-      attemptKinds.push("rate");
       try {
-        port.postMessage({
+        activePort.postMessage({
           action: "status",
-          message: `${keyInfo.provider} rate limit — thử key/provider khác...`,
+          message: `Đang kết nối ${keyInfo.provider} (${attempt + 1}/${maxAttempts})...`,
         });
       } catch (_) {}
-      continue;
-    }
 
-    if (result.error) {
-      const cls = classifyProviderError(result.error, result.status || 0);
-      console.warn(
-        "[Stream] Provider",
-        keyInfo.provider,
-        "error:",
-        result.error,
-        "kind:",
-        cls.kind,
-        "→ trying next",
+      const t0 = Date.now();
+      const result = await callFn(
+        keyInfo.key,
+        sourceMessage,
+        activePrompt,
+        activePort,
+        signal,
+        localMax,
+        activeType,
       );
-      // Context/size errors: don't punish the key — retry with a smaller
-      // output budget. Long sources previously died here and every rotated
-      // key got a cooldown, which looked to the user like "hết quota".
-      if (cls.kind === "context") {
-        attemptKinds.push("context");
-        if (maxTokens > 1024) {
-          maxTokens = Math.max(1024, Math.floor(maxTokens / 2));
+
+      if (result.rateLimited) {
+        const retryMs = parseRetryAfter(result.rateLimitError || "");
+        await markKeyRateLimited(keyInfo.key, retryMs);
+        await markProviderFailureStats(keyInfo.provider);
+        attemptErrors.push(`${keyInfo.provider}: rate limit`);
+        attemptKinds.push("rate");
+        try {
+          activePort.postMessage({
+            action: "status",
+            message: `${keyInfo.provider} rate limit — thử key/provider khác...`,
+          });
+        } catch (_) {}
+        continue;
+      }
+
+      if (result.error) {
+        const cls = classifyProviderError(result.error, result.status || 0);
+        console.warn(
+          "[Stream] Provider",
+          keyInfo.provider,
+          "error:",
+          result.error,
+          "kind:",
+          cls.kind,
+          "→ trying next",
+        );
+        if (cls.kind === "context" || cls.kind === "tpm") {
+          attemptKinds.push(cls.kind);
+          const canShrinkSource = sourceBudget > MIN_SOURCE_BUDGET;
+          const canShrinkOutput = localMax > 768;
+          if (canShrinkSource || canShrinkOutput) {
+            if (canShrinkSource) {
+              sourceBudget = Math.max(
+                MIN_SOURCE_BUDGET,
+                Math.floor(sourceBudget * 0.55),
+              );
+              sourceMessage = buildSourceMessage(
+                truncateSourceForBudget(shrinkBase, sourceBudget),
+              );
+              sourceWasTruncated = true;
+            }
+            if (canShrinkOutput) {
+              localMax = Math.max(768, Math.floor(localMax * 0.7));
+            }
+            triedKeys.delete(keyInfo.key);
+            attemptErrors.push(
+              canShrinkSource
+                ? `${keyInfo.provider}: vượt hạn mức — rút nguồn còn ~${sourceBudget} ký tự`
+                : `${keyInfo.provider}: vượt hạn mức — giảm max_tokens còn ${localMax}`,
+            );
+            try {
+              activePort.postMessage({
+                action: "status",
+                message: canShrinkSource
+                  ? "Bài dài — rút nguồn còn ~" + Math.round(sourceBudget / 1000) + "k ký tự rồi thử lại..."
+                  : "Bài dài — giảm giới hạn đầu ra và thử lại...",
+              });
+            } catch (_) {}
+            if (cls.kind === "tpm") await sleepAbortable(8000, signal);
+            continue;
+          }
+          await markKeyCooldown(keyInfo.key, cls.cooldownMs, result.error);
+          await markProviderFailureStats(keyInfo.provider);
           attemptErrors.push(
-            `${keyInfo.provider}: quá tải độ dài — giảm max_tokens còn ${maxTokens}`,
+            `${keyInfo.provider}: nội dung vượt hạn mức free tier — thử provider khác`,
           );
           try {
-            port.postMessage({
+            activePort.postMessage({
               action: "status",
-              message: `Bài dài — giảm giới hạn đầu ra và thử lại...`,
+              message: `${keyInfo.provider}: bài quá lớn cho free tier — thử provider khác...`,
             });
           } catch (_) {}
           continue;
         }
-        // Per-minute token limits are dominated by the input, not the output
-        // budget — retry with a smaller source before punishing the key.
-        if (sourceBudget > MIN_SOURCE_BUDGET) {
-          sourceBudget = Math.max(
-            MIN_SOURCE_BUDGET,
-            Math.floor(sourceBudget * 0.55),
-          );
-          sourceMessage = buildSourceMessage(
-            truncateSourceForBudget(completeSource, sourceBudget),
-          );
-          sourceWasTruncated = true;
-          attemptErrors.push(
-            `${keyInfo.provider}: vượt giới hạn free tier — rút nguồn còn ~${sourceBudget} ký tự`,
-          );
-          try {
-            port.postMessage({
-              action: "status",
-              message:
-                "Bài dài — rút ngắn nguồn còn ~" +
-                Math.round(sourceBudget / 1000) +
-                "k ký tự rồi thử lại...",
-            });
-          } catch (_) {}
-          continue;
-        }
-        // Already at floor — the source itself exceeds context; cooling this
-        // key briefly still lets other providers/keys try.
+
         await markKeyCooldown(keyInfo.key, cls.cooldownMs, result.error);
         await markProviderFailureStats(keyInfo.provider);
-        attemptErrors.push(
-          `${keyInfo.provider}: nội dung vượt giới hạn free tier — thử lại sau ~1 phút hoặc rút ngắn bài`,
-        );
+        if (cls.kind === "timeout" || cls.kind === "server" || cls.kind === "error") {
+          await markProviderFailure(keyInfo.provider, result.error);
+        }
+        attemptErrors.push(`${keyInfo.provider}: ${String(result.error).substring(0, 100)}`);
+        attemptKinds.push(cls.kind);
+        const statusMsg =
+          cls.kind === "invalid"
+            ? `${keyInfo.provider}: key không hợp lệ — thử key khác...`
+            : cls.kind === "billing"
+              ? `${keyInfo.provider}: tài khoản cần thanh toán — thử key khác...`
+              : cls.kind === "model"
+              ? `${keyInfo.provider}: model không hỗ trợ — thử model mặc định...`
+              : cls.kind === "timeout"
+                ? `${keyInfo.provider} chậm — thử provider khác...`
+                : `${keyInfo.provider} lỗi — thử tiếp...`;
         try {
-          port.postMessage({
-            action: "status",
-            message: `${keyInfo.provider}: bài quá lớn cho free tier — thử provider khác...`,
-          });
+          activePort.postMessage({ action: "status", message: statusMsg });
         } catch (_) {}
         continue;
       }
 
-      await markKeyCooldown(keyInfo.key, cls.cooldownMs, result.error);
-      await markProviderFailureStats(keyInfo.provider);
-      // Only infrastructure-level failures (timeout/5xx) point at a provider
-      // outage. "invalid" means a bad key and "model" a bad model id — neither
-      // should trip the breaker for everyone.
-      if (cls.kind === "timeout" || cls.kind === "server" || cls.kind === "error") {
-        await markProviderFailure(keyInfo.provider, result.error);
+      if (result.summary) {
+        if (recordResult && typeof FeedWriterSummaryPolicy !== "undefined") {
+          result.summary = FeedWriterSummaryPolicy.sanitizeGlossaryOutput(
+            result.summary,
+            summaryPolicy.glossary,
+          );
+        }
+        const postResult = recordResult
+          ? postProcessOutput(result.summary, text, type)
+          : postProcessOutput(result.summary, text, activeType);
+        if (postResult.failure) {
+          const reason = postResult.failure === "provider_refusal"
+            ? "provider-refusal"
+            : "invalid-output";
+          await markKeyCooldown(keyInfo.key, 30_000, reason);
+          attemptErrors.push(`${keyInfo.provider}: ${reason}`);
+          attemptKinds.push("refusal");
+          try {
+            activePort.postMessage({
+              action: "retry",
+              message: `${keyInfo.provider} không tạo được bản tóm tắt — thử provider khác...`,
+            });
+          } catch (_) {}
+          continue;
+        }
+
+        result.summary = postResult.text;
+        result.quality = postResult.quality;
+        result.issues = postResult.issues;
+        if (sourceWasTruncated) {
+          result.quality = result.quality === "good" ? "warn" : result.quality;
+          result.issues = [
+            "Nguồn gửi lên model đã được rút để vừa hạn mức free tier — bản tóm tắt có thể thiếu một số ý.",
+            ...(result.issues || []),
+          ];
+        }
+        if (result.recoveredFromTimeout) {
+          result.quality = "warn";
+          result.issues = [
+            "Provider đã ngừng phản hồi; FeedWriter giữ lại phần nội dung đã nhận được.",
+            ...(result.issues || []),
+          ];
+        }
+        await markProviderSuccess(keyInfo.provider, Date.now() - t0);
+        if (recordResult) {
+          await incrementTelemetry('summaries');
+          trackEvent("summary_completed", { provider: keyInfo.provider, type });
+          incrementBadge();
+          await saveHistory(
+            text,
+            result.summary,
+            site,
+            type,
+            sourceUrl,
+            imageUrl,
+            author,
+            postTitle,
+            postDate,
+          );
+        }
       }
-      attemptErrors.push(`${keyInfo.provider}: ${String(result.error).substring(0, 100)}`);
-      attemptKinds.push(cls.kind);
-      const statusMsg =
-        cls.kind === "invalid"
-          ? `${keyInfo.provider}: key không hợp lệ — thử key khác...`
-          : cls.kind === "billing"
-            ? `${keyInfo.provider}: tài khoản cần thanh toán — thử key khác...`
-            : cls.kind === "model"
-            ? `${keyInfo.provider}: model không hỗ trợ — thử model mặc định...`
-            : cls.kind === "timeout"
-              ? `${keyInfo.provider} chậm — thử provider khác...`
-              : `${keyInfo.provider} lỗi — thử tiếp...`;
-      try {
-        port.postMessage({ action: "status", message: statusMsg });
-      } catch (_) {}
-      continue;
+      return result;
     }
 
-    if (result.summary) {
-      if (typeof FeedWriterSummaryPolicy !== "undefined") {
-        result.summary = FeedWriterSummaryPolicy.sanitizeGlossaryOutput(
-          result.summary,
-          summaryPolicy.glossary,
-        );
-      }
-      const postResult = postProcessOutput(result.summary, text, type);
-      if (postResult.failure) {
-        const reason = postResult.failure === "provider_refusal"
-          ? "provider-refusal"
-          : "invalid-output";
-        await markKeyCooldown(keyInfo.key, 30_000, reason);
-        attemptErrors.push(`${keyInfo.provider}: ${reason}`);
-        attemptKinds.push("refusal");
-        try {
-          port.postMessage({
-            action: "retry",
-            message: `${keyInfo.provider} không tạo được bản tóm tắt — thử provider khác...`,
-          });
-        } catch (_) {}
-        continue;
-      }
+    const uniqErrors = [...new Set(attemptErrors)];
+    const detail = uniqErrors.length
+      ? " Chi tiết: " + uniqErrors.slice(-3).join(" · ")
+      : "";
+    const kindSet = new Set(attemptKinds);
+    let headline =
+      "Tất cả API đều lỗi hoặc quá tải. Kiểm tra API Key (tab Keys → Test kết nối).";
+    if (kindSet.size > 0 && [...kindSet].every((k) => k === "billing")) {
+      headline =
+        "Tất cả API key đều hết credit/cần thanh toán. Kiểm tra billing của provider hoặc thêm key khác (tab Keys).";
+    } else if (kindSet.has("context") || kindSet.has("tpm")) {
+      headline = kindSet.has("billing")
+        ? "Bài quá dài cho free tier của một số provider, và key còn lại cần thanh toán. Thử lại sau khoảng 1 phút, hoặc thêm/nâng cấp key (tab Keys)."
+        : sourceWasTruncated
+          ? "Bài quá dài so với hạn mức free tier — đã rút nguồn nhưng request vẫn vượt. Thử lại sau khoảng 1 phút, hoặc thêm key provider khác."
+          : "Request vượt hạn mức token/phút của free tier. Thử lại sau khoảng 1 phút, hoặc thêm key provider khác.";
+    } else if (kindSet.size > 0 && [...kindSet].every((k) => k === "rate" || k === "timeout" || k === "server")) {
+      headline =
+        "Tất cả API đang quá tải hoặc hết quota tạm thời — thử lại sau vài phút.";
+    }
+    return { error: headline + detail };
+  }
 
-      result.summary = postResult.text;
-      result.quality = postResult.quality;
-      result.issues = postResult.issues;
-      if (sourceWasTruncated) {
-        result.quality = result.quality === "good" ? "warn" : result.quality;
-        result.issues = [
-          "Nguồn đã được tự rút gọn để vừa giới hạn free tier — bản tóm tắt có thể thiếu ý ở phần giữa bài.",
-          ...(result.issues || []),
-        ];
-      }
-      if (result.recoveredFromTimeout) {
-        result.quality = "warn";
-        result.issues = [
-          "Provider đã ngừng phản hồi; FeedWriter giữ lại phần nội dung đã nhận được.",
-          ...(result.issues || []),
-        ];
-      }
-      // Count and persist only a usable summary. Provider refusals and empty
-      // outputs rotate to another key above instead of becoming fake success.
-      await markProviderSuccess(keyInfo.provider, Date.now() - t0);
-      await incrementTelemetry('summaries');
-      trackEvent('summary_completed', { provider: keyInfo.provider, type });
-      incrementBadge();
-      await saveHistory(
-        text,
-        result.summary,
-        site,
-        type,
-        sourceUrl,
-        imageUrl,
-        author,
-        postTitle,
-        postDate,
+  async function waitForTpm(cost) {
+    await waitForGroqTpm(cost, port, signal);
+  }
+
+  async function extractPiece(text, label) {
+    if (signal.aborted) return "";
+    const cost = estimateTokens(CHUNK_EXTRACT_PROMPT) + estimateTokens(text) + 700 + 200;
+    await waitForTpm(cost);
+    if (signal.aborted) return "";
+    shrinkBase = text;
+    activePrompt = CHUNK_EXTRACT_PROMPT;
+    activeType = "extract";
+    activePort = statusOnlyPort(port);
+    recordResult = false;
+    jobMaxTokens = 700;
+    try {
+      port.postMessage({ action: "status", message: label });
+    } catch (_) {}
+    const part = await generateWithRotation();
+    return part && part.summary ? String(part.summary).trim() : "";
+  }
+
+  activePrompt = systemPrompt;
+
+  if (!requestFits(systemPrompt, completeSource, maxTokens)) {
+    const pieces = splitSourceIntoChunks(completeSource, chunkCharBudget());
+    const savedMax = maxTokens;
+    let notes = [];
+    for (let i = 0; i < pieces.length; i++) {
+      const note = await extractPiece(
+        pieces[i],
+        `Bài dài — đọc phần ${i + 1}/${pieces.length}...`,
       );
+      if (note) notes.push(note);
     }
-    return result;
+    if (!notes.length) {
+      return {
+        error: "Không đọc được bài dài. Thử lại sau khoảng 1 phút hoặc chọn provider khác.",
+      };
+    }
+    let missed = pieces.length - notes.length;
+    let folded = false;
+    for (let round = 0; round < 4 && notes.length > 1; round++) {
+      const sheet = notes.map((note, index) => "Phần " + (index + 1) + ":\n" + note).join("\n\n");
+      if (requestFits(systemPrompt, sheet, savedMax)) break;
+      folded = true;
+      const groups = [];
+      for (let i = 0; i < notes.length; i += MAX_COVERAGE_CHUNKS) {
+        groups.push(notes.slice(i, i + MAX_COVERAGE_CHUNKS).join("\n"));
+      }
+      if (groups.length >= notes.length) break;
+      const merged = [];
+      for (let i = 0; i < groups.length; i++) {
+        const note = await extractPiece(
+          groups[i],
+          `Đang gộp dữ kiện ${i + 1}/${groups.length}...`,
+        );
+        if (note) merged.push(note);
+        else missed += 1;
+      }
+      if (!merged.length) break;
+      notes = merged;
+    }
+    let factSheet = notes.map((note, index) => "Phần " + (index + 1) + ":\n" + note).join("\n\n");
+    let synthesisBase = systemPrompt;
+    if (!requestFits(synthesisBase, factSheet, savedMax)) {
+      synthesisBase = compactNewsPrompt(systemPrompt);
+    }
+    if (!requestFits(synthesisBase, factSheet, savedMax)) {
+      const room = Math.max(
+        1500,
+        (TPM_SAFE_TOKENS - estimateTokens(synthesisBase) - savedMax - 200) * 4,
+      );
+      factSheet = truncateSourceForBudget(factSheet, room);
+      coverageNote = "Bài cực dài — dữ kiện đã được gộp và rút để vừa hạn mức free tier.";
+    } else if (missed > 0) {
+      coverageNote = "Đã đọc toàn bộ bài theo từng phần. " + missed + " phần không trích được dữ kiện.";
+    } else if (folded) {
+      coverageNote = "Đã đọc toàn bộ bài theo từng phần, rồi gộp dữ kiện trước khi viết bản tin.";
+    }
+    shrinkBase = factSheet;
+    activePrompt = synthesisBase +
+      "\n\nNguồn dưới đây là dữ kiện đã trích từ TOÀN BỘ bài gốc, theo thứ tự. Viết một bản tin từ mọi phần, không bỏ phần giữa.";
+    activeType = type;
+    activePort = port;
+    recordResult = true;
+    jobMaxTokens = savedMax;
+    await waitForTpm(estimateTokens(activePrompt) + estimateTokens(factSheet) + savedMax + 200);
   }
 
-  const uniqErrors = [...new Set(attemptErrors)];
-  const detail = uniqErrors.length
-    ? " Chi tiết: " + uniqErrors.slice(-3).join(" · ")
-    : "";
-  const kindSet = new Set(attemptKinds);
-  let headline =
-    "Tất cả API đều lỗi hoặc quá tải. Kiểm tra API Key (tab Keys → Test kết nối).";
-  if (kindSet.size > 0 && [...kindSet].every((k) => k === "billing")) {
-    headline =
-      "Tất cả API key đều hết credit/cần thanh toán. Kiểm tra billing của provider hoặc thêm key khác (tab Keys).";
-  } else if (kindSet.has("context")) {
-    headline = kindSet.has("billing")
-      ? "Bài quá dài cho free tier của một số provider, và key còn lại cần thanh toán. Bôi đen đoạn ngắn hơn, hoặc thêm/nâng cấp key (tab Keys)."
-      : "Bài quá dài so với giới hạn free tier — đã tự rút ngắn nhưng vẫn vượt. Bôi đen đoạn ngắn hơn, hoặc thêm key provider khác.";
-  } else if (kindSet.size > 0 && [...kindSet].every((k) => k === "rate" || k === "timeout" || k === "server")) {
-    headline =
-      "Tất cả API đang quá tải hoặc hết quota tạm thời — thử lại sau vài phút.";
+  const finalResult = await generateWithRotation();
+  if (finalResult && finalResult.summary && coverageNote) {
+    finalResult.quality = finalResult.quality === "good" ? "info" : finalResult.quality;
+    finalResult.issues = [coverageNote, ...(finalResult.issues || [])];
   }
-  return { error: headline + detail };
+  return finalResult;
 }
 // === HISTORY ===
 const HISTORY_MAX_ITEMS = 200;
@@ -5507,17 +6055,18 @@ async function callStreamAPI(config) {
     provider = "unknown",
     firstTokenTimeoutMs = 22000,
     totalTimeoutMs = null,
-    streamIdleTimeoutMs = 20000,
+    streamIdleTimeoutMs = 45000,
   } = config;
 
   // Large inputs take longer to reach the first token (providers process the
-  // whole prompt first). Scale the first-token deadline with payload size so
-  // long posts don't get killed at 22s and mislabeled as provider timeouts.
+  // whole prompt first, and reasoning models may think before content).
+  // Scale the first-token deadline with payload size so long posts don't get
+  // killed at 22s and mislabeled as provider timeouts.
   const bodyJson = JSON.stringify(body || {});
   const bodySize = bodyJson.length;
   const effectiveFirstTokenMs = Math.min(
-    90000,
-    Math.max(firstTokenTimeoutMs, 22000 + Math.floor(bodySize / 2500)),
+    120000,
+    Math.max(firstTokenTimeoutMs, 22000 + Math.floor(bodySize / 1800)),
   );
 
   const effectiveTotalTimeoutMs = totalTimeoutMs || Math.min(
@@ -5591,7 +6140,7 @@ async function callStreamAPI(config) {
     if (error.name === "AbortError" && !signal.aborted) {
       const timeoutSeconds = receivedToken
         ? effectiveTotalTimeoutMs / 1000
-        : firstTokenTimeoutMs / 1000;
+        : effectiveFirstTokenMs / 1000;
       return {
         error: `${provider} phản hồi quá chậm. Đã dừng sau ${timeoutSeconds} giây.`,
       };

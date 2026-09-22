@@ -52,6 +52,15 @@ describe("classifyProviderError — no fake quota lockout", () => {
     assert.equal(r.kind, "context");
   });
 
+  it("classifies Groq TPM 413 as tpm, not context or a bad key", () => {
+    const r = classify(
+      "Request too large for model `openai/gpt-oss-120b` on tokens per minute (TPM): Limit 8000, Requested 14368",
+      413,
+    );
+    assert.equal(r.kind, "tpm");
+    assert.ok(r.cooldownMs <= 30_000);
+  });
+
   it("still classifies real bad keys as invalid (1h)", () => {
     const r = classify("Incorrect API key provided: gsk_xxx", 401);
     assert.equal(r.kind, "invalid");

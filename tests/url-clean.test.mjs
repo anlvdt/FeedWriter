@@ -8,11 +8,11 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const require = createRequire(import.meta.url);
-const pure = require(
-  path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "lib", "pure-logic.js"),
+const urlClean = require(
+  path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "lib", "url-clean.js"),
 );
 
-const { stripTrackingParams, cleanSourceUrl } = pure;
+const { stripTrackingParams, cleanSourceUrl } = urlClean;
 
 describe("stripTrackingParams", () => {
   it("strips utm_* and fbclid", () => {

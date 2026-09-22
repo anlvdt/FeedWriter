@@ -21,6 +21,8 @@ ORDER = [
     "lib/message-schema.js",
     "lib/summary-policy.js",
     "lib/model-registry.js",
+    "lib/provider-rotation.js",
+    "lib/url-clean.js",
     "bg-prompts.js",
     "bg-api.js",
     "background.js",
@@ -29,7 +31,7 @@ OUT = ROOT / "service-worker.js"
 
 HEADER = """/* ==========================================================================
  * FeedWriter service-worker.js (GENERATED — do not edit by hand)
- * Bundle of: lib/error-boundary.js + utils.js + lib/message-schema.js + lib/summary-policy.js + lib/model-registry.js + bg-prompts.js + bg-api.js + background.js
+ * Bundle of: lib/error-boundary.js + utils.js + lib/message-schema.js + lib/summary-policy.js + lib/model-registry.js + lib/provider-rotation.js + lib/url-clean.js + bg-prompts.js + bg-api.js + background.js
  * Rebuild: python3 scripts/build-sw.py
  * ========================================================================== */
 """

@@ -22,6 +22,7 @@ describe("Facebook composer panel layout", () => {
     assert.match(css, /max-height:\s*min\(68vh, 640px\)\s*!important/);
     assert.match(css, /transform:\s*translateY\(-50%\)\s*!important/);
     assert.match(css, /grid-template-columns:\s*1fr 1fr 31px\s*!important/);
+    assert.match(css, /\.fbs-footer-primary[\s\S]*?grid-template-columns:\s*1fr 1fr\s*!important/);
     assert.match(css, /grid-column:\s*1 \/ -1\s*!important/);
   });
 
@@ -442,12 +443,14 @@ describe("UI system v3 contracts", () => {
   });
 
   it("rebinds popup light-theme aliases so inputs are not white-on-white", () => {
-    const lightBlock = popupCss.match(/body\.light,\s*html\.light\s*\{([\s\S]*?)\n\}/);
-    assert.ok(lightBlock, "expected body.light, html.light token block");
-    assert.match(lightBlock[1], /--bg:\s*var\(--fw-bg\)/);
-    assert.match(lightBlock[1], /--text:\s*var\(--fw-text\)/);
-    assert.match(lightBlock[1], /--bg-input:\s*#ffffff/);
+    const rootBlock = popupCss.match(/:root\s*\{([\s\S]*?)\n\}/);
+    assert.ok(rootBlock, "expected :root light token block");
+    assert.match(rootBlock[1], /--fw-accent:\s*#0f766e/i);
+    assert.match(rootBlock[1], /--bg:\s*var\(--fw-bg\)/);
+    assert.match(rootBlock[1], /--text:\s*var\(--fw-text\)/);
+    assert.match(rootBlock[1], /--bg-input:\s*#ffffff/);
     assert.match(popupCss, /background-color:\s*var\(--bg-input\)/);
+    assert.match(popupCss, /body\.dark,\s*html\.dark\s*\{/);
   });
 
   it("rounds the popup shell while bounding it to the viewport", () => {
@@ -492,6 +495,16 @@ describe("UI system v3 contracts", () => {
     assert.match(content, /fbs-floating-more-menu/);
     assert.match(content, /fbs-batch-progress-live/);
     assert.match(css, /fwSheetIn/);
+  });
+
+  it("keeps popup translation inside the settings tab", () => {
+    const settings = popup.slice(
+      popup.indexOf('id="tab-settings"'),
+      popup.indexOf('id="tab-apikeys"'),
+    );
+    assert.match(settings, /id="translate-card"/);
+    assert.match(settings, /id="themeSelect"/);
+    assert.doesNotMatch(popup, />Theme</);
   });
 
   it("uses Vietnamese tab labels and keys-first empty state", () => {
@@ -695,6 +708,11 @@ describe("No autonomous Facebook publishing", () => {
     assert.match(composer, /class="fbs-sp-open-fb"/);
     assert.doesNotMatch(composer, /window\.fbsAgentPost\s*=/);
     assert.doesNotMatch(composer, /agent-posted|legacyAutopostRemoved/);
+    assert.doesNotMatch(popup, /id="autoPublish"/);
+    const poster = fs.readFileSync(path.join(root, "poster-facebook.js"), "utf8");
+    assert.doesNotMatch(poster, /autoPublishFacebookPost/);
+    assert.doesNotMatch(poster, /btn\.click\(\)/);
+    assert.match(poster, /needsManualPublish:\s*true/);
   });
 
   it("does not ship archived automation code to social pages", () => {

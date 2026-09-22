@@ -2,14 +2,6 @@
 // Supports multiple API keys per provider with automatic rotation on rate limit
 // Cross-provider fallback: if all keys of one provider are limited, try another provider
 
-const PROVIDER_PRIORITY = [
-  "groq",
-  "cerebras",
-  "sambanova",
-  "gemini",
-  "openrouter",
-];
-
 // === MODEL CONFIGURATION ===
 // Model IDs resolve through lib/model-registry.js (bundled into the SW).
 // Users override per-provider via chrome.storage.sync.modelOverrides.
@@ -46,8 +38,21 @@ function isModelError(errMsg, status) {
   );
 }
 
+/**
+ * Groq free tier rejects an oversized request with HTTP 413 and
+ * "tokens per minute (TPM)" — that is a per-minute quota miss, not a
+ * context-window overflow. Shrinking the payload and waiting helps;
+ * treating it as a bad key does not.
+ */
+function isTpmError(errMsg, status) {
+  const m = String(errMsg || "").toLowerCase();
+  if (!/tokens per minute|\btpm\b/.test(m)) return false;
+  return status === 413 || /too large|requested|limit|exceed|rate_limit/.test(m);
+}
+
 /** True when the input/output size exceeds what the model accepts. */
 function isContextError(errMsg, status) {
+  if (isTpmError(errMsg, status)) return false;
   const m = String(errMsg || "").toLowerCase();
   return (
     status === 413 ||
@@ -55,6 +60,14 @@ function isContextError(errMsg, status) {
       m,
     )
   );
+}
+
+/** gpt-oss and Qwen3 spend the output budget on hidden reasoning unless told not to. */
+function withLowReasoning(model, body) {
+  if (/gpt-oss|qwen3/i.test(String(model || ""))) {
+    body.reasoning_effort = "low";
+  }
+  return body;
 }
 
 /**
@@ -151,143 +164,10 @@ async function markProviderFailureStats(provider) {
   } catch (_) {}
 }
 
-/**
- * Pure key selection — keep in sync with lib/provider-rotation.js
- * (SW cannot import CommonJS modules; this is the production copy).
- */
-function selectAvailableKey(opts) {
-  const {
-    legacyApiKey = null,
-    legacyProvider = "groq",
-    preferredProvider = null,
-    providerStatus = null,
-    now,
-  } = opts;
-
-  let apiKeys = opts.apiKeys;
-  let hasAnyKey = false;
-  if (apiKeys) {
-    for (const p in apiKeys) {
-      if (apiKeys[p] && apiKeys[p].length > 0) hasAnyKey = true;
-    }
-  }
-
-  if (!apiKeys) {
-    apiKeys = {
-      groq: [],
-      gemini: [],
-      cerebras: [],
-      sambanova: [],
-      openrouter: [],
-    };
-  } else {
-    apiKeys = { ...apiKeys };
-    for (const p of Object.keys(apiKeys)) {
-      if (Array.isArray(apiKeys[p])) apiKeys[p] = apiKeys[p].slice();
-    }
-  }
-
-  // Fallback to legacy single key when no multi-key entries
-  if (!hasAnyKey && legacyApiKey) {
-    const provider = legacyProvider || "groq";
-    if (!apiKeys[provider]) apiKeys[provider] = [];
-    if (!apiKeys[provider].includes(legacyApiKey)) {
-      apiKeys[provider].push(legacyApiKey);
-    }
-  }
-
-  const keyStatus = { ...(opts.keyStatus || {}) };
-  const rotationIndex = { ...(opts.rotationIndex || {}) };
-
-  const orderedProviders =
-    preferredProvider && PROVIDER_PRIORITY.includes(preferredProvider)
-      ? [
-          preferredProvider,
-          ...PROVIDER_PRIORITY.filter((p) => p !== preferredProvider),
-        ]
-      : PROVIDER_PRIORITY;
-
-  // Pass 1: providers whose circuit breaker is closed. Pass 2 (fallback):
-  // down providers too — when every configured provider is tripped the user
-  // should still get a best-effort attempt rather than a dead end.
-  for (const ignoreBreaker of [false, true]) {
-    for (const provider of orderedProviders) {
-      const keys = apiKeys[provider] || [];
-      if (keys.length === 0) continue;
-
-      const ps = providerStatus && providerStatus[provider];
-      const isDown = ps && ps.downUntil && now < ps.downUntil;
-      if (isDown && !ignoreBreaker) continue;
-
-      const startIdx = (rotationIndex[provider] || 0) % keys.length;
-      for (let i = 0; i < keys.length; i++) {
-        const idx = (startIdx + i) % keys.length;
-        const key = keys[idx];
-        const status = keyStatus[key] || {};
-
-        if (!status.rateLimitedUntil || now >= status.rateLimitedUntil) {
-          const newRotationIndex = {
-            ...rotationIndex,
-            [provider]: (idx + 1) % keys.length,
-          };
-          const newKeyStatus = {
-            ...keyStatus,
-            [key]: { ...(keyStatus[key] || {}), lastUsed: now },
-          };
-          return {
-            key,
-            provider,
-            index: idx,
-            newRotationIndex,
-            newKeyStatus,
-          };
-        }
-      }
-    }
-  }
-
-  let soonestTime = Infinity;
-  let totalKeys = 0;
-  for (const provider of PROVIDER_PRIORITY) {
-    const keys = apiKeys[provider] || [];
-    totalKeys += keys.length;
-    for (const key of keys) {
-      const until = (keyStatus[key] || {}).rateLimitedUntil || 0;
-      if (until < soonestTime) soonestTime = until;
-    }
-  }
-
-  if (totalKeys === 0) return { key: null, provider: null, noKeys: true };
-  const waitMinutes = Math.max(1, Math.ceil((soonestTime - now) / 60000));
-  return {
-    key: null,
-    provider: null,
-    allLimited: true,
-    waitMinutes,
-    retryInMs: Math.max(0, soonestTime - now),
-    total: totalKeys,
-  };
-}
-
 // Key selection reads and updates rotation state. Serialize it so concurrent
 // summaries from separate tabs cannot select the same next key before either
 // request persists its new rotation index.
 let keySelectionQueue = Promise.resolve();
-
-async function hashKeyId(key) {
-  if (!key) return "";
-  try {
-    const buf = await crypto.subtle.digest(
-      "SHA-256",
-      new TextEncoder().encode(String(key)),
-    );
-    return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, "0"))
-      .join("")
-      .slice(0, 20);
-  } catch (_) {
-    return "";
-  }
-}
 
 function remapKeyStatus(statusMap, key, hashed) {
   const next = { ...(statusMap || {}) };
@@ -468,17 +348,6 @@ async function clearAllKeyCooldowns() {
   return changed;
 }
 
-function parseRetryAfter(errorMessage) {
-  const match = errorMessage?.match(/try again in (\d+)m([\d.]+)s/i);
-  if (match) return (parseInt(match[1]) * 60 + parseFloat(match[2])) * 1000;
-  const secMatch = errorMessage?.match(/retry.?after:?\s*(\d+)/i);
-  if (secMatch) return parseInt(secMatch[1]) * 1000;
-  // "Please try again in 2m30s" style
-  const m2 = errorMessage?.match(/in\s+(\d+)\s*m(?:in(?:ute)?s?)?/i);
-  if (m2) return parseInt(m2[1], 10) * 60 * 1000;
-  return 15 * 60 * 1000; // default 15 min (was 30 — less sticky)
-}
-
 /** Classify provider error for cooldown + user message */
 function classifyProviderError(errMsg = "", status = 0) {
   const m = String(errMsg || "").toLowerCase();
@@ -486,6 +355,9 @@ function classifyProviderError(errMsg = "", status = 0) {
   // key gets a 1h cooldown and the user sees a fake "out of quota" lockout.
   if (isModelError(errMsg, status)) {
     return { kind: "model", cooldownMs: 15 * 1000 };
+  }
+  if (isTpmError(errMsg, status)) {
+    return { kind: "tpm", cooldownMs: 20 * 1000 };
   }
   if (isContextError(errMsg, status)) {
     return { kind: "context", cooldownMs: 30 * 1000 };
@@ -608,10 +480,8 @@ async function getSystemPrompt(
   // Output language is always Vietnamese (journalistic standard).
   // Source language is irrelevant — the AI must translate and rewrite in Vietnamese.
   prompt +=
-    "\n- Luôn trả lời bằng tiếng Việt chuẩn báo chí. Nếu bài viết bằng tiếng Anh hoặc bất kỳ ngôn ngữ nào khác, PHẢI dịch và viết lại thành tiếng Việt dễ hiểu, tự nhiên, chuẩn văn phong công nghệ." +
-    "\n- Đưa tin từ ngôi thứ nhất (chủ thể trực tiếp đưa tin): Phát biểu trực tiếp sự kiện công nghệ, TUYỆT ĐỐI KHÔNG viết kiểu thuật lại (CẤM '[Công ty] cho biết...', CẤM 'Theo một bài đăng trên X vào lúc...'). TUYỆT ĐỐI CẤM các câu tự xưng máy móc (CẤM 'Tôi đưa tin về...', 'Tôi xin chia sẻ...', 'Hôm nay tôi...'). Bản tin đi thẳng vào sản phẩm hoặc sự kiện." +
-    "\n- Chuẩn hóa thuật ngữ CNTT/AI: Giữ nguyên các thuật ngữ tiếng Anh phổ biến (no-code, low-code, prompt, token, model, pipeline, workflow, framework, runtime, benchmark, fine-tune, AI agent, repo, UI/UX, plugin, cache, PC, local...). TUYỆT ĐỐI CẤM dịch máy thô cứng (CẤM 'không mã', CẤM 'không mã kéo-thả', CẤM 'máy tính cá nhân' khi nói về PC/local, CẤM 'đường ống', CẤM 'đại lý AI'). Cụm 'no-code drag-and-drop' dịch là 'công cụ no-code kéo thả' hoặc 'kéo thả không cần code'." +
-    "\n- Múi giờ chuẩn của bản tin: Giờ Việt Nam (ICT, UTC+7). Chỉ quy đổi mốc thời gian khi gắn với SỰ KIỆN CÔNG NGHỆ THỰC TẾ (lịch ra mắt, công bố, mở bán, cập nhật phần mềm, sự cố kỹ thuật, deadline). Tuyệt đối KHÔNG đưa thời điểm ai đó đăng bài/tweet trên mạng xã hội vào bản tin (CẤM 'vào lúc 00...', 'lúc ... trên X') và KHÔNG viết các câu tường thuật hành vi đăng bài.";
+    "\n- Luôn trả lời bằng tiếng Việt chuẩn báo chí. CẤM 'Tôi đưa tin về...'." +
+    "\n- Múi giờ chuẩn của bản tin: Giờ Việt Nam (ICT, UTC+7). Chỉ quy đổi mốc thời gian khi gắn với SỰ KIỆN CÔNG NGHỆ THỰC TẾ (lịch ra mắt, công bố, mở bán, cập nhật phần mềm, sự cố kỹ thuật, deadline). Tuyệt đối KHÔNG đưa thời điểm ai đó đăng bài/tweet trên mạng xã hội vào bản tin.";
 
   // Source metadata is attribution data, never an instruction or independent proof.
   const sourceMetadata = {
@@ -723,9 +593,12 @@ async function processStream(
     const dataStr = trimmed.replace(/^data:\s*/, "");
     if (dataStr === "[DONE]" || !dataStr) return;
     try {
-      const token = parseLine(JSON.parse(dataStr));
-      if (!token) return;
+      const parsed = parseLine(JSON.parse(dataStr));
+      const token = typeof parsed === "string" ? parsed : parsed?.text || "";
+      const activity = !!token || !!(parsed && typeof parsed === "object" && parsed.activity);
+      if (!activity) return;
       if (onToken) onToken();
+      if (!token) return;
       fullText += token;
       queueChunk(token);
     } catch (_) {}
@@ -778,7 +651,7 @@ async function callGroqStream(
     callStreamAPI({
     url: "https://api.groq.com/openai/v1/chat/completions",
     headers: { Authorization: "Bearer " + apiKey },
-    body: {
+    body: withLowReasoning(model, {
       model,
       stream: true,
       messages: [
@@ -787,8 +660,15 @@ async function callGroqStream(
       ],
       temperature: 0.3,
       max_tokens: maxTokens,
+    }),
+    extractFn: (d) => {
+      const delta = d.choices?.[0]?.delta || {};
+      const text = delta.content || "";
+      if (!text && (delta.reasoning || delta.reasoning_content)) {
+        return { activity: true, text: "" };
+      }
+      return text;
     },
-    extractFn: (d) => d.choices?.[0]?.delta?.content || "",
     port,
     signal,
     maxTokens,
@@ -838,7 +718,7 @@ async function callCerebrasStream(
     callStreamAPI({
     url: "https://api.cerebras.ai/v1/chat/completions",
     headers: { Authorization: "Bearer " + apiKey },
-    body: {
+    body: withLowReasoning(model, {
       model,
       stream: true,
       messages: [
@@ -847,8 +727,15 @@ async function callCerebrasStream(
       ],
       temperature: 0.3,
       max_tokens: maxTokens,
+    }),
+    extractFn: (d) => {
+      const delta = d.choices?.[0]?.delta || {};
+      const text = delta.content || "";
+      if (!text && (delta.reasoning || delta.reasoning_content)) {
+        return { activity: true, text: "" };
+      }
+      return text;
     },
-    extractFn: (d) => d.choices?.[0]?.delta?.content || "",
     port,
     signal,
     maxTokens,
@@ -946,7 +833,7 @@ async function callOpenrouterStream(
       "HTTP-Referer": "https://github.com/anlvdt/fb-post-summarizer",
       "X-Title": "FeedWriter",
     },
-    body: {
+    body: withLowReasoning(model, {
       model,
       stream: true,
       messages: [
@@ -955,8 +842,15 @@ async function callOpenrouterStream(
       ],
       temperature: 0.3,
       max_tokens: maxTokens,
+    }),
+    extractFn: (d) => {
+      const delta = d.choices?.[0]?.delta || {};
+      const text = delta.content || "";
+      if (!text && (delta.reasoning || delta.reasoning_content)) {
+        return { activity: true, text: "" };
+      }
+      return text;
     },
-    extractFn: (d) => d.choices?.[0]?.delta?.content || "",
     port,
     signal,
     maxTokens,

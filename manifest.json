@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "FeedWriter",
-  "version": "2.6.0",
+  "version": "2.7.0",
   "description": "Tóm tắt bài viết bằng AI, chỉnh sửa & copy thành status. Dịch EN→VI: từ, đoạn văn, slang, collocations, shadowing.",
   "author": "Le An (anlvdt)",
   "homepage_url": "https://github.com/anlvdt/fb-post-summarizer",
@@ -47,6 +47,8 @@
         "lib/error-boundary.js",
         "utils.js",
         "lib/summary-policy.js",
+        "lib/url-clean.js",
+        "lib/translate-eligibility.js",
         "dom-helpers.js",
         "post-data.js",
         "status-formatter.js",
@@ -65,25 +67,25 @@
     },
     {
       "matches": ["https://*.threads.net/*"],
-      "js": ["lib/error-boundary.js", "utils.js", "lib/summary-policy.js", "dom-helpers.js", "post-data.js", "status-formatter.js", "content-dom-runtime.js", "poster-threads.js", "cross-poster.js", "content-composer-runtime.js", "content.js"],
+      "js": ["lib/error-boundary.js", "utils.js", "lib/summary-policy.js", "lib/url-clean.js", "lib/translate-eligibility.js", "dom-helpers.js", "post-data.js", "status-formatter.js", "content-dom-runtime.js", "poster-threads.js", "cross-poster.js", "content-composer-runtime.js", "content.js"],
       "css": ["fonts/be-vietnam-pro.css", "content.css", "ui.css"],
       "run_at": "document_end"
     },
     {
       "matches": ["https://x.com/*", "https://twitter.com/*"],
-      "js": ["lib/error-boundary.js", "utils.js", "lib/summary-policy.js", "dom-helpers.js", "post-data.js", "status-formatter.js", "content-dom-runtime.js", "poster-x.js", "cross-poster.js", "content-composer-runtime.js", "content.js"],
+      "js": ["lib/error-boundary.js", "utils.js", "lib/summary-policy.js", "lib/url-clean.js", "lib/translate-eligibility.js", "dom-helpers.js", "post-data.js", "status-formatter.js", "content-dom-runtime.js", "poster-x.js", "cross-poster.js", "content-composer-runtime.js", "content.js"],
       "css": ["fonts/be-vietnam-pro.css", "content.css", "ui.css"],
       "run_at": "document_end"
     },
     {
       "matches": ["https://www.linkedin.com/*"],
-      "js": ["lib/error-boundary.js", "utils.js", "lib/summary-policy.js", "dom-helpers.js", "post-data.js", "status-formatter.js", "content-dom-runtime.js", "poster-linkedin.js", "cross-poster.js", "content-composer-runtime.js", "content.js"],
+      "js": ["lib/error-boundary.js", "utils.js", "lib/summary-policy.js", "lib/url-clean.js", "lib/translate-eligibility.js", "dom-helpers.js", "post-data.js", "status-formatter.js", "content-dom-runtime.js", "poster-linkedin.js", "cross-poster.js", "content-composer-runtime.js", "content.js"],
       "css": ["fonts/be-vietnam-pro.css", "content.css", "ui.css"],
       "run_at": "document_end"
     },
     {
       "matches": ["https://www.reddit.com/*"],
-      "js": ["lib/error-boundary.js", "utils.js", "lib/summary-policy.js", "dom-helpers.js", "post-data.js", "status-formatter.js", "content-dom-runtime.js", "poster-reddit.js", "cross-poster.js", "content-composer-runtime.js", "content.js"],
+      "js": ["lib/error-boundary.js", "utils.js", "lib/summary-policy.js", "lib/url-clean.js", "lib/translate-eligibility.js", "dom-helpers.js", "post-data.js", "status-formatter.js", "content-dom-runtime.js", "poster-reddit.js", "cross-poster.js", "content-composer-runtime.js", "content.js"],
       "css": ["fonts/be-vietnam-pro.css", "content.css", "ui.css"],
       "run_at": "document_end"
     },
@@ -91,6 +93,7 @@
       "matches": ["https://*/*"],
       "js": [
         "lib/error-boundary.js",
+        "lib/translate-eligibility.js",
         "translate.js"
       ],
       "css": [
