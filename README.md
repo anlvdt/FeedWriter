@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  Chrome Extension — Tóm tắt bài viết, viết status bằng AI, dịch EN→VI (từ · đoạn · slang · collocations · shadowing).<br>
+  Chrome Extension — Biến bài viết dài thành status tiếng Việt có nguồn để bạn kiểm tra và đăng. Dịch EN→VI (từ · đoạn · slang · collocations · shadowing).<br>
   Hỗ trợ workflow nguồn thủ công.
 </p>
 

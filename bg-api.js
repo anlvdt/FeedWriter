@@ -178,52 +178,40 @@ function remapKeyStatus(statusMap, key, hashed) {
 }
 
 async function loadApiKeyStore() {
-  const data = await chrome.storage.sync.get(["apiKeys", "apiKey", "provider"]);
+  if (!(await localStorageAccessReady)) throw new Error("Không bảo vệ được kho API key.");
+  const migrated = await FeedWriterApiKeyStore.migrate(chrome.storage);
   const localData = await chrome.storage.local.get([
-    "apiKeys",
     "keyStatus",
     "keyRotationIndex",
-    "backupApiKeys",
     "providerStatus",
   ]);
-
-  let apiKeys = localData.apiKeys || data.apiKeys;
-  let hasAnyKey = false;
-  if (apiKeys) {
-    for (const p in apiKeys) {
-      if (apiKeys[p] && apiKeys[p].length > 0) hasAnyKey = true;
-    }
-  }
-
-  if (!hasAnyKey && localData.backupApiKeys) {
-    apiKeys = localData.backupApiKeys;
-    hasAnyKey = true;
-  }
-
-  if (hasAnyKey) {
-    chrome.storage.local.set({ apiKeys, backupApiKeys: apiKeys }).catch(() => {});
-    if (data.apiKeys) chrome.storage.sync.remove("apiKeys").catch(() => {});
-  }
+  const apiKeys = migrated.apiKeys;
+  const hasAnyKey = FeedWriterApiKeyStore.count(apiKeys) > 0;
 
   return {
     apiKeys,
     hasAnyKey,
-    legacyApiKey: hasAnyKey ? null : data.apiKey || null,
-    legacyProvider: data.provider || "groq",
+    legacyApiKey: null,
+    legacyProvider: "groq",
     keyStatus: localData.keyStatus || {},
     rotationIndex: localData.keyRotationIndex || {},
     providerStatus: localData.providerStatus || {},
   };
 }
 
-function getAvailableKey(preferredProvider = null) {
-  const task = keySelectionQueue.then(() => selectAvailableKeyForRequest(preferredProvider));
+function getAvailableKey(preferredProvider = null, excludeProviders = null) {
+  const task = keySelectionQueue.then(() =>
+    selectAvailableKeyForRequest(preferredProvider, excludeProviders),
+  );
   keySelectionQueue = task.catch(() => {});
   return task;
 }
 
 // Get the best available key across ALL providers.
-async function selectAvailableKeyForRequest(preferredProvider = null) {
+async function selectAvailableKeyForRequest(
+  preferredProvider = null,
+  excludeProviders = null,
+) {
   const store = await loadApiKeyStore();
   const hashedStatus = { ...(store.keyStatus || {}) };
   const validHashes = new Set();
@@ -264,6 +252,7 @@ async function selectAvailableKeyForRequest(preferredProvider = null) {
     rotationIndex: store.rotationIndex,
     providerStatus: store.providerStatus,
     preferredProvider,
+    excludeProviders,
     now: Date.now(),
   });
 
@@ -289,6 +278,9 @@ async function selectAvailableKeyForRequest(preferredProvider = null) {
       .catch(() => {});
   }
   if (result.noKeys) return { key: null, provider: null, noKeys: true };
+  if (result.allExcluded) {
+    return { key: null, provider: null, allExcluded: true, total: result.total };
+  }
   return {
     key: null,
     provider: null,

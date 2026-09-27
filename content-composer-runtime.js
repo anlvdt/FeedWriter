@@ -3,12 +3,22 @@
 // Auto-shorten the source link through the background shorten-url bridge.
 // Cached per URL; falls back to the original on any failure.
 const _shortUrlCache = new Map();
-let _autoShortenLinks = true;
+let _autoShortenLinks = false;
 try {
-  chrome.storage?.sync?.get(["autoShortenLinks"], (d) => {
-    if (!chrome.runtime?.lastError) _autoShortenLinks = d.autoShortenLinks !== false;
+  chrome.runtime.sendMessage({ action: "get-content-settings" }, (response) => {
+    if (!chrome.runtime?.lastError && response?.ok) {
+      _autoShortenLinks = response.settings?.autoShortenConsent === true;
+    }
   });
 } catch (_) {}
+
+chrome.runtime.onMessage.addListener((message, sender) => {
+  if (message?.action !== "content-settings-changed" || sender?.id !== chrome.runtime.id) return false;
+  if (message.changes?.autoShortenConsent) {
+    _autoShortenLinks = message.changes.autoShortenConsent.newValue === true;
+  }
+  return false;
+});
 
 function resolveDisplayUrl(url) {
   const u = String(url || "").trim();
@@ -36,12 +46,11 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
   const preview = document.createElement("div");
   preview.className = "fbs-status-preview";
 
-  // Normalize allImages: ensure it's an array with primary imageUrl first
-  const imageList = Array.isArray(allImages) && allImages.length > 0
-    ? allImages.slice(0, 10)
-    : (imageUrl ? [imageUrl] : []);
-  // Ensure primary imageUrl luôn ở đầu để backward compat với old code
-  if (imageUrl && !imageList.includes(imageUrl)) imageList.unshift(imageUrl);
+  // An explicit empty selection means the user wants a text-only draft.
+  const selectedImages = allImages === undefined
+    ? (imageUrl ? [imageUrl] : [])
+    : (Array.isArray(allImages) ? allImages : []);
+  const imageList = [...new Set(selectedImages.filter(url => typeof url === "string" && url.trim()))].slice(0, 10);
 
   // Validate author/source — bỏ nếu chứa ký tự rác (FB anti-scraping)
   const isValidName = (n) =>
@@ -112,7 +121,8 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
       '<div class="fbs-sp-thumbs">' + thumbsHtml + '</div>' +
       '</div>';
   } else if (imageList.length === 1) {
-    imgHtml = '<div class="fbs-sp-image"><img src="' +
+    imgHtml = '<div class="fbs-sp-image"><label class="fbs-sp-single-select"><input type="checkbox" class="fbs-sp-thumb-cb" data-url="' +
+      escAttrValue(imageList[0]) + '" aria-label="Chọn ảnh 1" checked> Đăng ảnh này</label><img src="' +
       escAttrValue(imageList[0]) +
       '" alt="Ảnh xem trước" crossorigin="anonymous"><button type="button" class="fbs-sp-copy-img"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg> Sao chép ảnh</button></div>';
   }
@@ -354,25 +364,6 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
     if (typeof globalRelatedSourceLinks !== "undefined") {
       globalRelatedSourceLinks = oldRelatedLinks;
     }
-    // Upgrade to a shortened link asynchronously when enabled — the bridge
-    // call is async while this preview renders synchronously.
-    const urlAtRender = String(url || "").trim();
-    if (/^https?:\/\//i.test(urlAtRender)) {
-      resolveDisplayUrl(urlAtRender)
-        .then((short) => {
-          if (!short || short === urlAtRender) return;
-          const current =
-            (linkField ? linkField.value.trim() : "") || sourceUrl || "";
-          if (current !== urlAtRender) return;
-          commentText.textContent = window.buildCommentText(
-            short,
-            authorNow,
-            cleanSource,
-            { relatedLinks },
-          );
-        })
-        .catch(() => {});
-    }
   }
 
   // LUÔN render section comment ngay khi mở composer — kể cả khi chưa có link
@@ -383,35 +374,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
 
   // Normalize Facebook URL
   function normalizeFbUrl(raw) {
-    try {
-      const u = new URL(raw);
-      if (u.hostname.includes("facebook.com")) {
-        const mp = u.searchParams.get("multi_permalinks");
-        if (mp && u.pathname.includes("/groups/")) {
-          return (
-            u.origin + u.pathname.replace(/\/$/, "") + "/posts/" + mp + "/"
-          );
-        }
-        const sfid = u.searchParams.get("story_fbid");
-        const uid = u.searchParams.get("id");
-        if (sfid && uid) {
-          return u.origin + "/" + uid + "/posts/" + sfid + "/";
-        }
-        return u.origin + u.pathname;
-      }
-      // Non-FB: strip tracking
-      for (const k of [...u.searchParams.keys()]) {
-        if (
-          k.startsWith("utm_") ||
-          k.startsWith("__") ||
-          ["fbclid", "gclid", "ref"].includes(k)
-        )
-          u.searchParams.delete(k);
-      }
-      return u.toString().replace(/\?$/, "");
-    } catch (_) {
-      return raw;
-    }
+    return typeof cleanSourceUrl === "function" ? cleanSourceUrl(raw) : raw;
   }
 
   // Auto-normalize khi paste link
@@ -714,13 +677,22 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
           }
 
           const postData = PostData.fromFeedWriter(text, sourceUrl, imageUrl, cleanAuthor, cleanSource, selectedUrls);
-          const result = await adapter.post(postData);
-
-          btn.disabled = false;
-          if (result.ok) {
-            btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Sẵn sàng trên ' + adapter.label + ' — bấm Đăng';
-          } else {
-            btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> Lỗi: ' + esc(result.reason || "unknown");
+          try {
+            const result = await adapter.post(postData);
+            if (result.ok) {
+            const message = result.reason === 'navigating_to_submit'
+              ? 'Đã mở trang soạn Reddit — chờ bản nháp được điền rồi kiểm tra trước khi bấm Đăng'
+              : result.mediaConfirmationRequired
+              ? 'Đã điền bản nháp trên ' + adapter.label + ' — kiểm tra ảnh hiển thị trước khi bấm Đăng'
+              : 'Sẵn sàng trên ' + adapter.label + ' — bấm Đăng';
+            btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> ' + message;
+            } else {
+              btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> Lỗi: ' + esc(result.reason || "Không chuẩn bị được bài đăng");
+            }
+          } catch (err) {
+            btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> Lỗi: ' + esc(err?.message || "Không chuẩn bị được bài đăng");
+          } finally {
+            btn.disabled = false;
           }
           return;
         }
@@ -890,6 +862,10 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
             setFail("Không tải được ảnh bài viết — kiểm tra quyền truy cập ảnh rồi thử lại");
             return;
           }
+          if (imgFiles.length < selectedUrls.length) {
+            setFail(`Chỉ tải được ${imgFiles.length}/${selectedUrls.length} ảnh. Hãy thử lại hoặc bỏ chọn ảnh lỗi.`);
+            return;
+          }
         }
 
         // Bước 5: Paste text + ảnh
@@ -903,14 +879,21 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
         } else {
           textWithFooter = applyUnicodeFormatting(text);
         }
-        pasteToLexical(editor, textWithFooter, imgFiles.length > 0 ? imgFiles : null);
+        await pasteToLexical(editor, textWithFooter, imgFiles.length > 0 ? imgFiles : null);
 
         // Chờ upload hoàn tất (để user thấy ảnh đã render trước khi bấm Đăng)
         const uploadWait = imgFiles.length > 1 ? 1500 + imgFiles.length * 1000 :
                           imgFiles.length === 1 ? 2000 : 800;
         await new Promise(r => setTimeout(r, uploadWait));
 
-        if (sourceLine) setDone("Sẵn sàng — nguồn đã copy, bấm Đăng");
+        if (textWithFooter.trim() && !(editor.innerText || editor.textContent || "").trim()) {
+          setFail("Facebook chưa nhận nội dung bài đăng — hãy thử lại");
+          return;
+        }
+
+        if (selectedUrls.length > 0) {
+          setDone("Đã điền bản nháp — kiểm tra ảnh hiển thị trên Facebook trước khi bấm Đăng");
+        } else if (sourceLine) setDone("Sẵn sàng — nguồn đã copy, bấm Đăng");
         else setDone("Sẵn sàng — bấm Đăng");
       } catch (err) {
         console.error("[Manual Post] Error:", err);
@@ -1124,39 +1107,17 @@ function detectTitleEmoji(title) {
   return '';
 }
 
-function pasteToLexical(element, text, file = null) {
+async function pasteToLexical(element, text, file = null) {
   element.focus();
   // Paste text trước (không kèm file — Facebook sẽ bỏ text nếu có file)
   if (text) {
     // Facebook Lexical editor has clipboard paste limits (~5000 chars observed)
     // Split long text into chunks and paste sequentially
     const CHUNK_SIZE = 4000;
-    if (text.length > CHUNK_SIZE) {
-      let offset = 0;
-      const pasteChunk = () => {
-        if (offset >= text.length) return;
-        const chunk = text.substring(offset, offset + CHUNK_SIZE);
-        offset += CHUNK_SIZE;
-
-        const dtText = new DataTransfer();
-        dtText.setData("text/plain", chunk);
-        element.dispatchEvent(
-          new ClipboardEvent("paste", {
-            clipboardData: dtText,
-            bubbles: true,
-            cancelable: true,
-          }),
-        );
-
-        if (offset < text.length) {
-          setTimeout(pasteChunk, 150);
-        }
-      };
-      pasteChunk();
-    } else {
-      // Short text - paste normally
+    for (let offset = 0; offset < text.length; offset += CHUNK_SIZE) {
+      const chunk = text.substring(offset, offset + CHUNK_SIZE);
       const dtText = new DataTransfer();
-      dtText.setData("text/plain", text);
+      dtText.setData("text/plain", chunk);
       element.dispatchEvent(
         new ClipboardEvent("paste", {
           clipboardData: dtText,
@@ -1164,13 +1125,14 @@ function pasteToLexical(element, text, file = null) {
           cancelable: true,
         }),
       );
+      if (offset + CHUNK_SIZE < text.length) await new Promise(r => setTimeout(r, 150));
     }
   }
   // Paste file riêng sau (nếu có). Hỗ trợ cả single file và array of files.
   if (file) {
     const files = Array.isArray(file) ? file : [file];
     if (files.length === 0) return;
-    setTimeout(() => {
+    await new Promise(r => setTimeout(r, 800));
       element.focus();
       const dtFile = new DataTransfer();
       for (const f of files) {
@@ -1184,6 +1146,5 @@ function pasteToLexical(element, text, file = null) {
           cancelable: true,
         }),
       );
-    }, 800); // Increase delay to wait for text chunks to finish
   }
 }

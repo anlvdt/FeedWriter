@@ -331,16 +331,22 @@ window.addEventListener("beforeunload", cleanup, { once: true });
 
 window.enableUnicodeBold = true;
 
-chrome.storage.sync.get(["minLength", "blockedDomains", "sourceTemplate", "customSourceLink", "enableUnicodeBold", "autoSummarize"], (d) => {
+async function getContentSettings() {
+  const response = await chrome.runtime.sendMessage({ action: "get-content-settings" });
+  if (!response?.ok) throw new Error(response?.error || "Không đọc được cài đặt.");
+  return response.settings || {};
+}
+
+getContentSettings().then((d) => {
   if (d.minLength) MIN_LEN = d.minLength;
   globalSourceTemplate = d.sourceTemplate || DEFAULT_SOURCE_TEMPLATE;
   globalCustomSourceLink = d.customSourceLink || "";
   if (d.enableUnicodeBold !== undefined) window.enableUnicodeBold = d.enableUnicodeBold;
   autoSummarizeEnabled = d.autoSummarize === true;
   updateBlockedState(d.blockedDomains);
-});
+}).catch(() => {});
 
-chrome.storage.onChanged.addListener((changes, area) => {
+function applyContentSettingsChanges(changes, area) {
   if (area !== "sync") return;
   if (changes.minLength) MIN_LEN = changes.minLength.newValue || 400;
   if (changes.sourceTemplate) globalSourceTemplate = changes.sourceTemplate.newValue || DEFAULT_SOURCE_TEMPLATE;
@@ -350,6 +356,12 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (changes.adDisplayMode) adDisplayMode = changes.adDisplayMode.newValue === "mark" ? "mark" : "collapse";
   if (changes.filterEngagementGates) filterEngagementGates = changes.filterEngagementGates.newValue === true;
   if (changes.blockedDomains) updateBlockedState(changes.blockedDomains.newValue);
+}
+chrome.storage.onChanged.addListener(applyContentSettingsChanges);
+chrome.runtime.onMessage.addListener((message, sender) => {
+  if (message?.action !== "content-settings-changed" || sender?.id !== chrome.runtime.id) return false;
+  applyContentSettingsChanges(message.changes || {}, "sync");
+  return false;
 });
 
 function updateBlockedState(rawPatterns = "") {
@@ -382,7 +394,7 @@ function applyTheme() {
   currentTheme = detectTheme();
   document
     .querySelectorAll(
-      ".fbs-wrap, .fbs-panel, .fbs-backdrop, .fbs-chip-host, .fbs-floating-toolbar, .fbs-batch-bar, .fbs-translate-tooltip",
+      ".fbs-wrap, .fbs-panel, .fbs-backdrop, .fbs-chip-host, .fbs-floating-toolbar, .fbs-batch-bar, .fbs-translate-tooltip, .fbs-filter-indicator",
     )
     .forEach((el) => {
       el.setAttribute("data-fbs-theme", currentTheme);
@@ -458,10 +470,10 @@ function saveTelemetry() {
 let adDisplayMode = "collapse";
 let filterEngagementGates = false;
 
-chrome.storage.sync.get(["adDisplayMode", "filterEngagementGates"], (d) => {
+getContentSettings().then((d) => {
   if (d.adDisplayMode) adDisplayMode = d.adDisplayMode === "mark" ? "mark" : "collapse";
   filterEngagementGates = d.filterEngagementGates === true;
-});
+}).catch(() => {});
 
 function _getReasonText(reason) {
   const reasonMap = {
@@ -646,6 +658,7 @@ function hideFlaggedPost(postContainer, evalResult, type) {
   const indicator = document.createElement("div");
   indicator.className = "fbs-filter-indicator fbs-hidden-chip";
   indicator.setAttribute("data-fbs-ui", "v3");
+  indicator.setAttribute("data-fbs-theme", currentTheme);
   indicator.setAttribute("data-kind", kind);
   indicator.innerHTML =
     '<svg class="fbs-hidden-chip-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">' +
@@ -1353,6 +1366,8 @@ let overlayPreviousFocus = null;
 // by extractPostImages() helper exposed on window.
 let isSummarizing = false,
   currentPort = null;
+let activeSummaryRequest = null;
+let summaryInvocationId = 0;
 
 let screenshotCaptureDepth = 0;
 
@@ -1479,7 +1494,7 @@ function ensureOverlay() {
   panel.querySelector(".fbs-regen-btn").addEventListener("click", regenerate);
   panel.querySelector(".fbs-edit-btn").addEventListener("click", toggleEdit);
   panel.addEventListener("keydown", (e) => {
-    if (e.key !== "Tab" || !panel.classList.contains("fbs-visible")) return;
+    if (e.key !== "Tab" || !panel.classList.contains("fbs-visible") || panel.classList.contains("fbs-minimized")) return;
     const focusable = Array.from(
       panel.querySelectorAll(
         'button:not([disabled]):not([hidden]), select:not([disabled]):not([hidden]), textarea:not([disabled]):not([hidden]), input:not([disabled]):not([hidden]), a[href], [tabindex]:not([tabindex="-1"])',
@@ -1692,7 +1707,11 @@ function openOverlay(html, streaming, type = "summary") {
   backdrop.classList.add("fbs-visible");
   panel.classList.add("fbs-visible");
   panel.setAttribute("aria-hidden", "false");
+  panel.setAttribute("aria-modal", "true");
   panel.classList.remove("is-composer", "fbs-panel-left", "fbs-minimized");
+  const minimizeButton = panel.querySelector(".fbs-min");
+  minimizeButton?.setAttribute("aria-label", "Thu gọn");
+  minimizeButton?.setAttribute("title", "Thu gọn");
   panel.dataset.mode = type || "summary";
   panel.classList.toggle("is-streaming", !!(streaming || isSummarizing));
   panel.classList.toggle(
@@ -1800,7 +1819,16 @@ function openOverlay(html, streaming, type = "summary") {
     if (e) e.stopPropagation();
     const panel = document.querySelector(".fbs-panel");
     if (!panel) return;
-    panel.classList.toggle("fbs-minimized");
+    const minimized = panel.classList.toggle("fbs-minimized");
+    panel.setAttribute("aria-modal", String(!minimized));
+    backdrop?.classList.toggle("fbs-visible", !minimized);
+    const button = panel.querySelector(".fbs-min");
+    if (button) {
+      button.setAttribute("aria-label", minimized ? "Mở rộng" : "Thu gọn");
+      button.setAttribute("title", minimized ? "Mở rộng" : "Thu gọn");
+    }
+    if (minimized) overlayPreviousFocus?.focus?.();
+    else button?.focus();
   }
 
   function closeOverlay() {
@@ -1808,6 +1836,7 @@ function openOverlay(html, streaming, type = "summary") {
   if (speechSynthesis.speaking) speechSynthesis.cancel();
   if (panel) {
     panel.classList.remove("fbs-visible");
+    panel.classList.remove("fbs-minimized");
     panel.classList.remove("fbs-panel-left");
     panel.classList.remove("is-composer");
     panel.classList.remove("is-streaming");
@@ -1823,6 +1852,7 @@ function openOverlay(html, streaming, type = "summary") {
 
 function stopSummarize() {
   if (!isSummarizing) return;
+  activeSummaryRequest?.finish({ ok: false, error: "stopped" });
   isSummarizing = false;
   if (currentPort) {
     try {
@@ -3284,6 +3314,8 @@ function showBatchResults() {
 }
 
 async function summarizeText(text, type = "summary", contextElement = null, tone = null) {
+  const invocationId = ++summaryInvocationId;
+  if (activeSummaryRequest) stopSummarize();
   if (isFacebookPersonalProfileHome()) {
     removePersonalProfileControls();
     return;
@@ -3324,15 +3356,7 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
   // Smart cache key includes settings that affect output
   let settings;
   try {
-    settings = await new Promise((r) =>
-      chrome.storage.sync.get([
-        "summaryLength",
-        "promptStyle",
-        "outputLanguage",
-        "customInstructions",
-        "customSummaryPrompt",
-      ], r),
-    );
+    settings = await getContentSettings();
   } catch (_) {
     openOverlay(
       '<div class="fbs-error">Extension đã cập nhật. Vui lòng F5.</div>',
@@ -3341,6 +3365,7 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
     );
     return;
   }
+  if (invocationId !== summaryInvocationId) return { ok: false, error: "superseded" };
   const cacheKey =
     hashText(text) +
     "_" +
@@ -3374,6 +3399,25 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
   }
 
   isSummarizing = true;
+  let settleSummarize = null;
+  const summarizeDone = new Promise((resolve) => { settleSummarize = resolve; });
+  let summaryTimeoutId = null;
+  let streamRafId = null;
+  const request = {
+    finish(value) {
+      if (!settleSummarize) return;
+      clearTimeout(summaryTimeoutId);
+      if (streamRafId) cancelAnimationFrame(streamRafId);
+      streamRafId = null;
+      if (activeSummaryRequest === request) activeSummaryRequest = null;
+      isSummarizing = false;
+      const done = settleSummarize;
+      settleSummarize = null;
+      done(value || { ok: false });
+    },
+  };
+  activeSummaryRequest = request;
+  const finishSummarize = request.finish;
   const title =
     type === "status_share"
       ? "Đang viết Status..."
@@ -3394,7 +3438,8 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
   openOverlay(skeletonHtml, false, type);
 
   // Wake SW before connecting port (MV3 SW dies after ~30s idle)
-  const swAlive = await wakeServiceWorker();
+  const swAlive = await wakeServiceWorker().catch(() => false);
+  if (activeSummaryRequest !== request) return summarizeDone;
   if (!swAlive || !isContextValid()) {
     openOverlay(
       displayError({
@@ -3407,19 +3452,9 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
       false,
       type,
     );
-    isSummarizing = false;
-    return;
+    finishSummarize({ ok: false, error: "service_worker_unavailable" });
+    return summarizeDone;
   }
-  let settleSummarize = null;
-  const summarizeDone = new Promise((resolve) => {
-    settleSummarize = resolve;
-  });
-  const finishSummarize = (value) => {
-    if (!settleSummarize) return;
-    const done = settleSummarize;
-    settleSummarize = null;
-    done(value || { ok: false });
-  };
 
   try {
     currentPort = chrome.runtime.connect({ name: "summarize-stream" });
@@ -3497,7 +3532,7 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
   // chooses “Đăng status”, with every FeedWriter surface suppressed.
   const _modelSelect = panel && panel.querySelector(".fbs-model-select");
   const _preferredProvider = _modelSelect ? _modelSelect.value : "";
-  currentPort.postMessage({
+  try { currentPort.postMessage({
     action: "summarize",
     text,
     site: SITE,
@@ -3511,10 +3546,14 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
     postSource: _source,
     postTime: _postTime,
     postDate: _postDate,
-  });
+  }); } catch (error) {
+    finishSummarize({ ok: false, error: error?.message || "send_failed" });
+    try { currentPort?.disconnect(); } catch (_) {}
+    currentPort = null;
+    return summarizeDone;
+  }
   let first = true;
   let streamBuffer = "";
-  let streamRafId = null;
   let streamPhase = "Đang chuẩn bị bản tin...";
   function paintPhase(message) {
     if (message) streamPhase = message;
@@ -3528,8 +3567,8 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
     480000,
     90000 + Math.ceil(text.length / 10000) * 30000 + (text.length > 12000 ? 150000 : 0),
   );
-  const summaryTimeoutId = setTimeout(() => {
-    if (!isSummarizing) return;
+  summaryTimeoutId = setTimeout(() => {
+    if (activeSummaryRequest !== request) return;
     isSummarizing = false;
     const partial = streamBuffer.trim();
     if (partial) {
@@ -3609,6 +3648,7 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
   }
 
   currentPort.onMessage.addListener((msg) => {
+    if (activeSummaryRequest !== request) return;
     if (msg.action === "chunk") {
       if (first) {
         first = false;
@@ -3711,6 +3751,7 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
   });
 
   currentPort.onDisconnect.addListener(() => {
+    if (activeSummaryRequest !== request) return;
     clearTimeout(summaryTimeoutId);
     if (isSummarizing) {
       isSummarizing = false;
@@ -4925,9 +4966,9 @@ function _mountInlineStatusChip(post, textEl, minimumLength = 50) {
         (SITE === "facebook" && _findFacebookStatusText(post)) ||
         post.querySelector('[data-testid="tweetText"]') ||
         textEl;
-      const clone = currentTextEl.cloneNode(true);
-      clone.querySelectorAll("[data-fbs-ui]").forEach((el) => el.remove());
-      const text = (clone.textContent || "").replace(/\s+/g, " ").trim();
+      const text = (typeof extractPostContent === "function"
+        ? extractPostContent(post)
+        : (currentTextEl?.innerText || "")).trim();
       if (
         text.length < minimumLength ||
         (SITE !== "x" &&
@@ -5387,13 +5428,13 @@ function scanRedditPosts() {
   );
   for (const post of posts) {
     if (post.dataset.fbsScanned) continue;
-    post.dataset.fbsScanned = "1";
     const textEl = post.querySelector(
       '[data-testid="post-content"], .md, [slot="text-body"]',
     );
     if (!textEl) continue;
     if ((textEl.innerText || "").trim().length < MIN_LEN) continue;
     inject(post, null, textEl);
+    if (post.querySelector('.fbs-wrap, .fbs-btn, .fbs-chip-host')) post.dataset.fbsScanned = "1";
   }
 }
 
@@ -5538,12 +5579,16 @@ if (SITE !== "facebook") {
     document.body ||
     document.documentElement;
   const feedTargetSelector =
-    'article[role="article"], [data-virtualized], [data-pagelet^="FeedUnit"]';
+    'article[role="article"], [data-virtualized], [data-pagelet^="FeedUnit"], shreddit-post, [data-testid="post-container"], [slot="text-body"]';
   const scanObserver = new MutationObserver((mutations) => {
     if (document.hidden) return;
     let hit = false;
     const maxMutations = Math.min(mutations.length, 12);
     for (let mi = 0; mi < maxMutations; mi++) {
+      if (SITE === "reddit" && mutations[mi].target?.closest?.('shreddit-post, [data-testid="post-container"]')) {
+        hit = true;
+        break;
+      }
       const nodes = mutations[mi].addedNodes;
       const maxNodes = Math.min(nodes.length, 8);
       for (let ni = 0; ni < maxNodes; ni++) {
@@ -5598,6 +5643,13 @@ async function requestPendingPost(action, kind, id) {
   return response.pending;
 }
 
+function preparedDraftVisible(kind) {
+  const editor = kind === "facebook"
+    ? document.querySelector('div[role="dialog"] div[role="textbox"][contenteditable="true"]')
+    : document.querySelector('shreddit-post-submit [contenteditable="true"], main [contenteditable="true"]');
+  return !!(editor && (editor.innerText || editor.textContent || "").trim());
+}
+
 // A status summarized on X can be handed to a newly opened Facebook tab.
 // The opaque query token references a trusted-context storage record. The
 // record remains available for refresh/retry until the composer is ready.
@@ -5614,21 +5666,21 @@ async function consumePendingFacebookPost() {
 
   try {
     const pending = await requestPendingPost("get-pending-post", "facebook", id);
-    for (let i = 0; i < 30 && !document.querySelector('div[role="main"]'); i++) {
-      await new Promise((resolve) => setTimeout(resolve, 500));
+    if (!pending.prepared || !preparedDraftVisible("facebook")) {
+      for (let i = 0; i < 30 && !document.querySelector('div[role="main"]'); i++) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      if (typeof PosterFacebook === "undefined") {
+        throw new Error("Không tải được bộ đăng Facebook");
+      }
+      const result = await PosterFacebook.post(pending.postData);
+      if (!result?.ok) {
+        throw new Error("Không mở được composer Facebook: " + (result?.reason || "unknown"));
+      }
+      await requestPendingPost("prepare-pending-post", "facebook", id);
     }
-    if (typeof PosterFacebook === "undefined") {
-      throw new Error("Không tải được bộ đăng Facebook");
-    }
-    const result = await PosterFacebook.post(pending.postData);
-    if (!result?.ok) {
-      throw new Error("Không mở được composer Facebook: " + (result?.reason || "unknown"));
-    }
-    try {
-      await requestPendingPost("complete-pending-post", "facebook", id);
-    } finally {
-      clearPendingPostToken(url);
-    }
+    await requestPendingPost("complete-pending-post", "facebook", id);
+    clearPendingPostToken(url);
   } catch (error) {
     const terminal = ["pending_invalid", "pending_missing", "pending_expired"].includes(error.code);
     if (terminal) clearPendingPostToken(url);
@@ -5657,18 +5709,18 @@ async function consumePendingRedditPost() {
 
   try {
     const pending = await requestPendingPost("get-pending-post", "reddit", id);
-    if (typeof PosterReddit === "undefined") {
-      throw new Error("Không tải được bộ đăng Reddit");
+    if (!pending.prepared || !preparedDraftVisible("reddit")) {
+      if (typeof PosterReddit === "undefined") {
+        throw new Error("Không tải được bộ đăng Reddit");
+      }
+      const result = await PosterReddit.post(pending.postData);
+      if (!result?.ok) {
+        throw new Error("Không điền được form Reddit: " + (result?.reason || "unknown"));
+      }
+      await requestPendingPost("prepare-pending-post", "reddit", id);
     }
-    const result = await PosterReddit.post(pending.postData);
-    if (!result?.ok) {
-      throw new Error("Không điền được form Reddit: " + (result?.reason || "unknown"));
-    }
-    try {
-      await requestPendingPost("complete-pending-post", "reddit", id);
-    } finally {
-      clearPendingPostToken(url);
-    }
+    await requestPendingPost("complete-pending-post", "reddit", id);
+    clearPendingPostToken(url);
   } catch (error) {
     const terminal = ["pending_invalid", "pending_missing", "pending_expired"].includes(error.code);
     if (terminal) clearPendingPostToken(url);

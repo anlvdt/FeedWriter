@@ -16,6 +16,9 @@ const PosterReddit = {
   },
 
   async post(postData) {
+    if (postData.images.length > this.maxImages) {
+      return { ok: false, reason: `Reddit hỗ trợ tối đa ${this.maxImages} ảnh.` };
+    }
     let text = PostData.getTextWithTags(postData);
     if (typeof StatusFormatter !== "undefined") {
       text = StatusFormatter.format(text, "reddit");
@@ -66,13 +69,10 @@ const PosterReddit = {
         const tablist = document.querySelector("r-post-type-select")
           ?.shadowRoot?.querySelector("div[role='tablist']")
           ?.querySelectorAll("faceplate-tracker");
-        if (tablist && tablist.length > 1) {
-          const imageTab = tablist[1].querySelector("button");
-          if (imageTab) {
-            imageTab.click();
-            await new Promise(r => setTimeout(r, 1000));
-          }
-        }
+        const imageTab = tablist?.[1]?.querySelector("button");
+        if (!imageTab) return { ok: false, reason: "Không tìm thấy chế độ đăng ảnh Reddit." };
+        imageTab.click();
+        await new Promise(r => setTimeout(r, 1000));
 
         try {
           const fileInput = await waitForCondition(() => {
@@ -80,25 +80,42 @@ const PosterReddit = {
               ?.shadowRoot?.querySelector("input");
           }, 5000);
           if (fileInput) {
-            await uploadFilesToInput(fileInput, postData.images.slice(0, this.maxImages));
+            const requested = postData.images.slice(0, this.maxImages);
+            const attached = await uploadFilesToInput(fileInput, requested);
+            if (attached < requested.length) {
+              return { ok: false, reason: `Chỉ tải được ${attached}/${requested.length} ảnh Reddit.` };
+            }
+          } else {
+            return { ok: false, reason: "Không tìm thấy ô tải ảnh Reddit." };
           }
         } catch (err) {
-          console.warn("[CrossPost:Reddit] Image upload skipped:", err.message);
+          return { ok: false, reason: "Không tải được ảnh Reddit: " + err.message };
         }
       }
 
       // Step 5: Fill body text
       await new Promise(r => setTimeout(r, 1000));
-      const editors = document.querySelectorAll('div[contenteditable="true"]');
-      if (editors.length > 2) {
-        const bodyEditor = editors[2];
+      const composer = document.querySelector("shreddit-post-submit") || document.querySelector('main, [role="main"]');
+      const editors = [...(composer?.querySelectorAll('[contenteditable="true"]') || [])]
+        .filter(editor => editor.getClientRects().length > 0);
+      const named = editors.filter(editor => /body|text|nội dung/i.test(editor.getAttribute("aria-label") || ""));
+      const bodyEditor = named.length === 1 ? named[0] : editors.length === 1 ? editors[0] : null;
+      if (postData.content.trim() && !bodyEditor) {
+        return { ok: false, reason: "Không xác định được ô nội dung Reddit." };
+      }
+      if (bodyEditor) {
         bodyEditor.focus();
-        await new Promise(r => setTimeout(r, 500));
         pasteTextToEditor(bodyEditor, postData.content);
+        try {
+          await waitForCondition(() => (bodyEditor.innerText || bodyEditor.textContent || "").trim(), 2000);
+        } catch (_) {
+          return { ok: false, reason: "Reddit chưa nhận nội dung bài đăng." };
+        }
       }
 
       await new Promise(r => setTimeout(r, 2000));
-      return { ok: true, platform: "reddit", needsManualPublish: true };
+      return { ok: true, platform: "reddit", needsManualPublish: true,
+        mediaConfirmationRequired: postData.images.length > 0 };
     } catch (err) {
       console.error("[CrossPost:Reddit] Error:", err);
       return { ok: false, reason: err.message };

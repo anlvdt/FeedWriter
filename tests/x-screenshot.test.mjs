@@ -212,13 +212,15 @@ describe("X screenshot capture", () => {
       isFacebookPersonalProfileHome: () => false,
       isContextValid: () => true,
       hashText: () => "h",
+      getContentSettings: async () => ({}),
       summaryCache: new Map(),
       fmt: (text) => text,
       openOverlay: (html) => overlays.push(html),
     });
-    context.chrome.storage = { sync: { get: (_keys, callback) => callback({}) } };
     vm.runInContext(`
       let lastPanelRawText = "";
+      let summaryInvocationId = 0;
+      let activeSummaryRequest = null;
       ${cacheSource}
     `, context);
     context.summaryCache.set("h_summary_medium_default_auto_h_h", "Cached summary");
@@ -232,5 +234,37 @@ describe("X screenshot capture", () => {
     assert.equal(vm.runInContext("lastSummarizeParams._element", context), second);
     assert.equal(vm.runInContext("lastSummarizeParams.xPostIdentity.statusId", context), "1002");
     assert.equal(vm.runInContext("lastPanelRawText", context), "Cached summary");
+  });
+
+  it("ignores an older summary request that finishes loading settings after a newer request", async () => {
+    const text = "Same article text with enough characters";
+    const post = makeTweet("1003", text);
+    const cacheSource = content.slice(
+      content.indexOf("async function summarizeText"),
+      content.indexOf("  isSummarizing = true;", content.indexOf("async function summarizeText")),
+    ) + "\n}";
+    const { context } = loadCaptureContext([post]);
+    const pending = [];
+    const overlays = [];
+    Object.assign(context, {
+      SUMMARY_MIN_LEN: 30,
+      isFacebookPersonalProfileHome: () => false,
+      isContextValid: () => true,
+      hashText: () => "h",
+      getContentSettings: () => new Promise(resolve => pending.push(resolve)),
+      summaryCache: new Map([["h_summary_medium_default_auto_h_h", "Cached summary"]]),
+      fmt: value => value,
+      openOverlay: html => overlays.push(html),
+    });
+    vm.runInContext(`let lastPanelRawText = ""; let summaryInvocationId = 0; let activeSummaryRequest = null; ${cacheSource}`, context);
+    context.cacheText = text;
+    context.post = post;
+    const first = vm.runInContext("summarizeText(cacheText, 'summary', post)", context);
+    const second = vm.runInContext("summarizeText(cacheText, 'summary', post)", context);
+    pending[0]({});
+    assert.equal((await first).error, "superseded");
+    pending[1]({});
+    await second;
+    assert.equal(overlays.length, 1);
   });
 });

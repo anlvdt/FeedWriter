@@ -17,7 +17,7 @@
         <div class="header-titles">
           <h1>FeedWriter</h1>
           <div class="brand-byline">by Le An</div>
-          <p class="header-sub">Tóm tắt · Status · Dịch EN→VI</p>
+          <p class="header-sub">Biến bài viết dài thành status tiếng Việt có nguồn.</p>
         </div>
       </div>
       <span class="header-badge" title="Phiên bản">v2.7.0</span>
@@ -44,7 +44,7 @@
             <textarea id="translateInput" rows="3" placeholder="Dán đoạn cần dịch, hoặc bấm Dịch trang"></textarea>
           </div>
           <div class="inline-action-row translate-actions">
-            <button id="translateBtn" class="btn btn-primary" type="button">Dịch</button>
+            <button id="translateBtn" class="btn btn-secondary" type="button">Dịch</button>
             <button id="translateCopyBtn" class="btn btn-secondary" type="button">Sao chép</button>
             <button id="translatePasteBtn" class="btn btn-secondary" type="button">Dán</button>
             <button id="translatePageBtn" class="btn btn-secondary" type="button">Dịch trang</button>
@@ -170,10 +170,10 @@
           </div>
           <div class="field field-check">
             <label class="checkbox-label">
-              <input type="checkbox" id="autoShortenLinks" checked>
-              <span>Tự rút gọn link nguồn (is.gd)</span>
+              <input type="checkbox" id="autoShortenLinks">
+              <span>Rút gọn link nguồn khi chuẩn bị đăng</span>
             </label>
-            <div class="field-hint">Áp dụng cho link gốc trong phần Nguồn tham khảo khi đăng bài.</div>
+            <div class="field-hint">Khi bật, URL gốc được gửi tới is.gd; nếu lỗi có thể thử v.gd, da.gd, TinyURL. Tắt mặc định để giữ riêng tư.</div>
           </div>
           <label class="section-subhead">Thư viện mẫu</label>
           <div class="field">
@@ -245,10 +245,9 @@
                 <svg class="icon-eye-off" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" hidden><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
               </button>
             </div>
-            <button type="button" id="addKeyBtn" class="icon-btn keys-add-btn" title="Thêm key" aria-label="Thêm API key">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            </button>
           </div>
+          <div id="newApiKeyError" class="field-error" role="alert" hidden></div>
+          <button type="button" id="addKeyBtn" class="btn btn-primary btn-block keys-add-btn">Thêm API key</button>
           <p class="field-hint keys-hint">Hỗ trợ Groq · Gemini · Cerebras · SambaNova · OpenRouter. Rotate key khi rate limit.</p>
         </div>
       </section>
@@ -293,6 +292,8 @@
           <div id="keyListOpenrouterItems" class="key-list-items"></div>
         </div>
       </div>
+      <div id="keyLoadState" class="load-state" role="status" aria-live="polite" hidden></div>
+      <button id="retryKeysBtn" class="btn btn-secondary" type="button" hidden>Thử tải lại khóa</button>
 
       <details class="provider-guide model-config" id="modelConfig">
         <summary class="provider-guide-title">Model AI (nâng cao)</summary>
@@ -302,7 +303,7 @@
       </details>
 
       <div class="keys-actions">
-        <button id="testBtn" class="btn btn-primary btn-block" type="button">Test kết nối</button>
+        <button id="testBtn" class="btn btn-secondary btn-block" type="button">Test kết nối</button>
         <div class="keys-io-row">
           <button id="exportKeysBtn" class="btn btn-secondary keys-io-btn" type="button" title="Tải file sao lưu khóa API">Xuất file</button>
           <button id="importKeysBtn" class="btn btn-secondary keys-io-btn" type="button" title="Khôi phục khóa từ file JSON">Nhập file</button>
@@ -366,6 +367,8 @@
       </div>
       <div id="postTimeSuggestBox" class="post-time-suggest" style="display:none"></div>
       <div id="historyList" class="history-list"></div>
+      <div id="historyLoadState" class="load-state" role="status" aria-live="polite" hidden></div>
+      <button id="retryHistoryBtn" class="btn btn-secondary" type="button" hidden>Thử tải lại lịch sử</button>
       <div id="historyDetail" class="history-detail" hidden>
         <button id="historyBack" class="btn btn-secondary" type="button" style="margin-bottom:6px">Quay lại</button>
         <div class="history-detail-date" id="historyDetailDate" role="heading" aria-level="2"></div>
@@ -539,6 +542,7 @@
         <button type="button" class="btn btn-secondary" id="wizardStep2Back">Quay lại</button>
         <button type="button" class="btn btn-primary" id="wizardStep2Next">Tiếp tục</button>
       </div>
+      <div id="wizardSettingsStatus" class="status" role="status" aria-live="polite" hidden></div>
     </div>
 
     <!-- Step 4: Complete -->
@@ -565,6 +569,7 @@
   </div>
 
   <script src="lib/model-registry.js"></script>
+  <script src="lib/api-key-store.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

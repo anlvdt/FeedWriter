@@ -19,10 +19,21 @@ for arg in "$@"; do
   esac
 done
 
+python3 "$ROOT/scripts/build-content-dom.py" --check
+python3 "$ROOT/scripts/build-content-composer.py" --check
+python3 "$ROOT/scripts/build-sw.py" --check
+
 mkdir -p "$DEST"
 # Exclude heavy / non-runtime trees
 rsync -a --delete \
   --exclude '.git/' \
+  --exclude '.claude/' \
+  --exclude '.gitnexus/' \
+  --exclude '.kluster/' \
+  --exclude '.agent/' \
+  --exclude '.agents/' \
+  --exclude '.kiro/' \
+  --exclude '.codex/' \
   --exclude 'node_modules/' \
   --exclude 'ctv-samples/' \
   --exclude '.keys*' \
@@ -34,10 +45,9 @@ rsync -a --delete \
 # Clear macOS provenance attrs that sometimes confuse Chrome
 xattr -cr "$DEST" 2>/dev/null || true
 
-# Ensure SW is fresh
-if [[ -f "$DEST/scripts/build-sw.py" ]]; then
-  python3 "$DEST/scripts/build-sw.py" || true
-fi
+python3 "$DEST/scripts/build-content-dom.py" --check
+python3 "$DEST/scripts/build-content-composer.py" --check
+python3 "$DEST/scripts/build-sw.py" --check
 
 echo "Synced → $DEST"
 echo "Reload extension in chrome://extensions if already loaded from this path."

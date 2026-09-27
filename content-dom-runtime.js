@@ -449,8 +449,9 @@ const AUTHOR_NOISE_RE = /^(sponsored|được tài trợ|quảng cáo|follow|the
 
 function _findPostContainer(element) {
   if (!element) return null;
-  if (_containerCache.has(element)) {
-    return _containerCache.get(element);
+  const cached = _containerCache.get(element);
+  if (cached?.isConnected && cached.contains(element)) {
+    return cached;
   }
 
   let p = element;
@@ -461,7 +462,8 @@ function _findPostContainer(element) {
     if (
       role === "article" ||
       p.hasAttribute?.("data-virtualized") ||
-      (pagelet && pagelet.startsWith("FeedUnit"))
+      (pagelet && pagelet.startsWith("FeedUnit")) ||
+      p.matches?.('shreddit-post, [data-testid="post-container"], [data-pressable-container="true"], .feed-shared-update-v2, .occludable-update')
     ) {
       _containerCache.set(element, p);
       return p;
@@ -471,6 +473,13 @@ function _findPostContainer(element) {
 
   _containerCache.set(element, null);
   return null;
+}
+
+function _postIdentityStamp(container) {
+  if (!container) return "";
+  const link = container.querySelector?.('a[href*="/posts/"], a[href*="story_fbid="], a[href*="/status/"], a[href*="/post/"], a[href*="/comments/"], a[href*="/feed/update/"]');
+  const body = container.querySelector?.('[data-ad-preview="message"], [data-ad-comet-preview="message"], [data-testid="post_message"], [data-testid="post-message"], [data-testid="tweetText"], [data-testid="post-content"], [slot="text-body"]');
+  return (link?.getAttribute("href") || "") + "|" + (body?.textContent || container.textContent || "").slice(0, 500);
 }
 
 /**
@@ -1263,6 +1272,7 @@ function _findPermalinkResultInContainer(container) {
   if (
     cached &&
     Date.now() - cached.timestamp < CACHE_TTL &&
+    cached.stamp === _postIdentityStamp(container) &&
     cached.quality === "exact" &&
     cached.url
   ) {
@@ -1278,6 +1288,7 @@ function _findPermalinkResultInContainer(container) {
         quality,
         reason,
         timestamp: Date.now(),
+        stamp: _postIdentityStamp(container),
       });
     }
     return { url: cleaned, quality, reason };
@@ -1592,7 +1603,8 @@ function extractPostMeta(element) {
 
   const postContainer = _findPostContainer(element) || element;
   const cached = _metaCache.get(postContainer);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+  const stamp = _postIdentityStamp(postContainer);
+  if (cached && cached.stamp === stamp && Date.now() - cached.timestamp < CACHE_TTL) {
     return {
       permalink: cached.permalink,
       author: cached.author,
@@ -1642,7 +1654,7 @@ function extractPostMeta(element) {
   const postDate = timeInfo ? timeInfo.iso : "";
 
   const result = { permalink, author, source, quality, reason, postTime, postDate };
-  _metaCache.set(postContainer, { ...result, timestamp: Date.now() });
+  _metaCache.set(postContainer, { ...result, stamp, timestamp: Date.now() });
   return result;
 }
 
@@ -2004,7 +2016,8 @@ function extractPostAuthor(element) {
   if (!postContainer) return "";
 
   const cached = _authorCache.get(postContainer);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+  const stamp = _postIdentityStamp(postContainer);
+  if (cached && cached.stamp === stamp && Date.now() - cached.timestamp < CACHE_TTL) {
     return cached.name;
   }
 
@@ -2039,13 +2052,13 @@ function extractPostAuthor(element) {
   }
 
   name = _validateAuthorName(name) ? _fbCleanName(name) : "";
-  _authorCache.set(postContainer, { name, timestamp: Date.now() });
+  _authorCache.set(postContainer, { name, stamp, timestamp: Date.now() });
   return name;
 }
 
 function extractPostImages(element) {
   if (!element) return [];
-  const postContainer = _findPostContainer(element);
+  const postContainer = _findPostContainer(element) || element;
 
   // Helper: get best src from img element
   function _imgSrc(img) {
@@ -2777,6 +2790,7 @@ function extractPostContent(element) {
     for (const node of container.querySelectorAll(messageSelector)) {
       if (excluded && excluded.contains(node)) continue;
       if (node.closest("form")) continue;
+      if (candidates.some(candidate => candidate.node.contains(node))) continue;
       const text = _normalizePostBodyText(node.innerText || node.textContent || "");
       if (!text) continue;
       let articleDepth = 0;
@@ -2785,11 +2799,12 @@ function extractPostContent(element) {
         if (parent.getAttribute?.("role") === "article") articleDepth++;
         parent = parent.parentElement;
       }
-      candidates.push({ text, articleDepth });
+      candidates.push({ node, text, articleDepth });
     }
     if (candidates.length) {
-      candidates.sort((a, b) => a.articleDepth - b.articleDepth || b.text.length - a.text.length);
-      return candidates[0].text;
+      const minDepth = Math.min(...candidates.map(candidate => candidate.articleDepth));
+      return candidates.filter(candidate => candidate.articleDepth === minDepth)
+        .map(candidate => candidate.text).join("\n\n");
     }
     return _normalizePostBodyText(_getPrimaryPostText(container));
   };

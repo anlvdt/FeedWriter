@@ -16,6 +16,9 @@ const PosterLinkedin = {
   },
 
   async post(postData) {
+    if (postData.images.length > this.maxImages) {
+      return { ok: false, reason: `LinkedIn hỗ trợ tối đa ${this.maxImages} ảnh.` };
+    }
     let text = PostData.getTextWithTags(postData);
     if (typeof StatusFormatter !== "undefined") {
       text = StatusFormatter.format(text, "linkedin");
@@ -71,17 +74,19 @@ const PosterLinkedin = {
             console.warn("[CrossPost:LinkedIn] Image fetch failed:", err.message);
           }
         }
-        if (dataTransfer.files.length > 0) {
-          editor.dispatchEvent(new ClipboardEvent("paste", {
-            bubbles: true,
-            cancelable: true,
-            clipboardData: dataTransfer,
-          }));
+        if (dataTransfer.files.length !== postData.images.length) {
+          return { ok: false, reason: `Chỉ tải được ${dataTransfer.files.length}/${postData.images.length} ảnh LinkedIn.` };
         }
+        editor.dispatchEvent(new ClipboardEvent("paste", {
+          bubbles: true,
+          cancelable: true,
+          clipboardData: dataTransfer,
+        }));
       }
 
       await new Promise(r => setTimeout(r, 3000));
-      return { ok: true, platform: "linkedin", needsManualPublish: true };
+      return { ok: true, platform: "linkedin", needsManualPublish: true,
+        mediaConfirmationRequired: postData.images.length > 0 };
     } catch (err) {
       console.error("[CrossPost:LinkedIn] Error:", err);
       return { ok: false, reason: err.message };

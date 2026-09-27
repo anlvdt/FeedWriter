@@ -15,6 +15,9 @@ const PosterThreads = {
   },
 
   async post(postData) {
+    if (postData.images.length > this.maxImages) {
+      return { ok: false, reason: `Threads hỗ trợ tối đa ${this.maxImages} ảnh.` };
+    }
     let text = PostData.getTextWithTags(postData);
     if (typeof StatusFormatter !== "undefined") {
       text = StatusFormatter.format(text, "threads");
@@ -59,14 +62,17 @@ const PosterThreads = {
             'input[type="file"][accept*="image/jpeg"]',
             5000
           );
-          await uploadFilesToInput(fileInput, postData.images.slice(0, this.maxImages));
+          const requested = postData.images.slice(0, this.maxImages);
+          const attached = await uploadFilesToInput(fileInput, requested);
+          if (attached < requested.length) return { ok: false, reason: `Chỉ tải được ${attached}/${requested.length} ảnh Threads.` };
         } catch (err) {
-          console.warn("[CrossPost:Threads] Image upload skipped:", err.message);
+          return { ok: false, reason: "Không tải được ảnh Threads: " + err.message };
         }
       }
 
       await new Promise(r => setTimeout(r, 3000));
-      return { ok: true, platform: "threads", needsManualPublish: true };
+      return { ok: true, platform: "threads", needsManualPublish: true,
+        mediaConfirmationRequired: postData.images.length > 0 };
     } catch (err) {
       console.error("[CrossPost:Threads] Error:", err);
       return { ok: false, reason: err.message };

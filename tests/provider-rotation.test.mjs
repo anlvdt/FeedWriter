@@ -139,6 +139,48 @@ describe("selectAvailableKey — preferred provider first", () => {
   });
 });
 
+describe("selectAvailableKey — excludeProviders", () => {
+  it("skips excluded providers and picks the next available", () => {
+    const keys = emptyKeys();
+    keys.groq = ["groq-key"];
+    keys.cerebras = ["cerebras-key"];
+    const result = selectAvailableKey({
+      apiKeys: keys,
+      excludeProviders: ["groq"],
+      now: NOW,
+    });
+    assert.equal(result.provider, "cerebras");
+    assert.equal(result.key, "cerebras-key");
+  });
+
+  it("returns allExcluded when every configured provider is excluded", () => {
+    const keys = emptyKeys();
+    keys.groq = ["g1", "g2"];
+    const result = selectAvailableKey({
+      apiKeys: keys,
+      excludeProviders: ["groq"],
+      now: NOW,
+    });
+    assert.equal(result.allExcluded, true);
+    assert.equal(result.total, 2);
+    assert.equal(result.key, null);
+  });
+
+  it("still reports allLimited for non-excluded providers that are cooling", () => {
+    const keys = emptyKeys();
+    keys.groq = ["g1"];
+    keys.gemini = ["gem1"];
+    const result = selectAvailableKey({
+      apiKeys: keys,
+      excludeProviders: ["groq"],
+      keyStatus: { gem1: { rateLimitedUntil: NOW + 60_000 } },
+      now: NOW,
+    });
+    assert.equal(result.allLimited, true);
+    assert.equal(result.total, 1);
+  });
+});
+
 describe("selectAvailableKey — rate-limited key skip", () => {
   it("skips keys still rate-limited and picks next", () => {
     const keys = emptyKeys();

@@ -111,7 +111,8 @@ describe("getSystemPrompt", () => {
     assert.match(prompt, /KIM TỰ THÁP NGƯỢC/);
     assert.match(prompt, /biên tập viên báo chí công nghệ tiếng Việt/);
     assert.match(prompt, /KHÔNG đưa "USER", "Người dùng".*BẤT KỲ vị trí nào của tiêu đề/);
-    assert.match(prompt, /ưu tiên sản phẩm\/công ty\/tính năng/);
+    assert.match(prompt, /giữ đúng tác nhân của hành động/);
+    assert.match(prompt, /Tắt gợi ý prompt trong Claude Code/);
     assert.match(prompt, /CÓ HOOK MẠNH/);
     assert.match(prompt, /DATA HOOK/);
     assert.match(prompt, /SURPRISE\/CONTRARIAN/);
@@ -124,8 +125,8 @@ describe("getSystemPrompt", () => {
     assert.match(prompt, /PHẢI có căn cứ trực tiếp trong nguồn/);
     assert.match(prompt, /không phải giọng văn mẫu/i);
     assert.match(prompt, /Không được bỏ ý chỉ để ép độ dài/i);
-    assert.match(prompt, /5 từ đầu tiên của tiêu đề/);
-    assert.match(prompt, /Áp dụng 1 trong 4 mô hình tiêu đề báo chí chuẩn/);
+    assert.match(prompt, /Xác định rõ ai làm gì với cái gì/);
+    assert.match(prompt, /Chọn cấu trúc tiêu đề theo đúng tác nhân/);
     assert.match(prompt, /TUYỆT ĐỐI CẤM từ ngữ giật gân, câu view/);
     assert.match(prompt, /LỌC SẠCH NGÔN TỪ PR VÀ TÂNG BỐC/);
     assert.match(prompt, /PHÂN BIỆT RÕ RÀNG GIỮA TIN ĐỒN VÀ DỮ KIỆN XÁC NHẬN/);

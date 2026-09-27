@@ -360,7 +360,8 @@
   // Isolated-world bridge: content.js sends chrome.runtime relay-translate,
   // which the service worker delivers back as translate-selection.
 
-  document.addEventListener("dblclick", () => {
+  document.addEventListener("dblclick", (event) => {
+    if (!event.isTrusted) return;
     const text = (window.getSelection()?.toString() || "").trim();
     if (!isTranslatable(text)) return;
     if (text.split(/\s+/).filter(Boolean).length > 6) return;
@@ -377,8 +378,9 @@
       hideTranslateTooltip();
     }
   });
-  document.addEventListener("scroll", () => {
+  document.addEventListener("scroll", (event) => {
     if (!translateTooltip?.classList.contains("fbs-visible")) return;
+    if (event.target === translateTooltip || translateTooltip.contains(event.target)) return;
     hideTranslateTooltip();
   }, {
     capture: true,

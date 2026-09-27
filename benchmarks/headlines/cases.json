@@ -1,0 +1,102 @@
+[
+  {
+    "id": "release-short",
+    "source": "Công ty giả định Lumen phát hành bản 2.1 của ứng dụng NoteNest. Bản cập nhật cho phép tìm kiếm trong ghi chú ngoại tuyến. Chưa công bố ngày ra mắt trên Android.",
+    "key_fact": "NoteNest 2.1 thêm tìm kiếm ghi chú ngoại tuyến",
+    "supporting_facts": ["Chưa có ngày ra mắt trên Android"],
+    "certainty": "confirmed",
+    "must_keep": ["NoteNest", "tìm kiếm ngoại tuyến"],
+    "must_not_claim": ["Đã phát hành trên Android"],
+    "reference_titles": ["NoteNest 2.1 thêm tìm kiếm ghi chú ngoại tuyến"]
+  },
+  {
+    "id": "two-competing-facts",
+    "source": "Công ty giả định Cobalt nâng dung lượng miễn phí của CloudBox từ 5 GB lên 10 GB. Ứng dụng cũng đổi màu nút tải tệp. Thay đổi dung lượng áp dụng từ hôm nay cho tài khoản mới.",
+    "key_fact": "CloudBox tăng dung lượng miễn phí lên 10 GB cho tài khoản mới",
+    "supporting_facts": ["Nút tải tệp đổi màu"],
+    "certainty": "confirmed",
+    "must_keep": ["CloudBox", "10 GB", "tài khoản mới"],
+    "must_not_claim": ["Tài khoản cũ được tăng dung lượng"],
+    "reference_titles": ["CloudBox tăng dung lượng miễn phí lên 10 GB cho tài khoản mới"]
+  },
+  {
+    "id": "price-condition",
+    "source": "Dịch vụ giả định PixelDesk giảm giá gói Pro từ 12 USD xuống 9 USD mỗi tháng khi thanh toán theo năm. Gói trả theo tháng giữ giá 12 USD.",
+    "key_fact": "PixelDesk Pro còn 9 USD/tháng khi trả theo năm",
+    "supporting_facts": ["Gói trả theo tháng không đổi"],
+    "certainty": "confirmed",
+    "must_keep": ["PixelDesk Pro", "9 USD", "trả theo năm"],
+    "must_not_claim": ["Mọi gói Pro đều giảm giá"],
+    "reference_titles": ["PixelDesk Pro giảm còn 9 USD/tháng khi trả theo năm"]
+  },
+  {
+    "id": "bug-impact",
+    "source": "Bản 4.0 của trình duyệt giả định Orbit gây lỗi không lưu tab ghim sau khi khởi động lại trên macOS. Nhóm phát triển đã xác nhận lỗi và đang thử bản vá; Windows chưa bị ảnh hưởng.",
+    "key_fact": "Orbit 4.0 mất tab ghim sau khởi động lại trên macOS",
+    "supporting_facts": ["Bản vá đang thử", "Windows chưa bị ảnh hưởng"],
+    "certainty": "confirmed",
+    "must_keep": ["Orbit 4.0", "tab ghim", "macOS"],
+    "must_not_claim": ["Đã có bản vá", "Windows bị ảnh hưởng"],
+    "reference_titles": ["Orbit 4.0 không lưu tab ghim sau khi khởi động lại trên macOS"]
+  },
+  {
+    "id": "rumor",
+    "source": "Một tài liệu chưa xác thực được cho là của hãng giả định Mero nói mẫu điện thoại Mero X có thể dùng pin 6.000 mAh. Hãng chưa xác nhận thông số hoặc ngày ra mắt.",
+    "key_fact": "Mero X được đồn có pin 6.000 mAh",
+    "supporting_facts": ["Chưa có ngày ra mắt"],
+    "certainty": "unverified",
+    "must_keep": ["Mero X", "6.000 mAh", "tin đồn"],
+    "must_not_claim": ["Mero xác nhận pin 6.000 mAh"],
+    "reference_titles": ["Mero X được đồn có pin 6.000 mAh"]
+  },
+  {
+    "id": "single-experience",
+    "source": "Một người dùng nói ứng dụng giả định TaskLeaf chạy chậm sau bản 3.2 trên máy của họ. Chưa có báo cáo độc lập hoặc thông báo từ nhà phát triển.",
+    "key_fact": "Một trải nghiệm cá nhân phản ánh TaskLeaf 3.2 chạy chậm",
+    "supporting_facts": ["Chưa có xác nhận độc lập"],
+    "certainty": "personal_report",
+    "must_keep": ["TaskLeaf 3.2", "bị phản ánh", "chạy chậm"],
+    "must_not_claim": ["TaskLeaf 3.2 chạy chậm với mọi người dùng"],
+    "reference_titles": ["TaskLeaf 3.2 bị phản ánh chạy chậm trên một máy"]
+  },
+  {
+    "id": "missing-actor",
+    "source": "Bản cập nhật mới bổ sung chức năng xuất PDF, nhưng bài đăng không nêu tên sản phẩm hoặc nhà phát triển.",
+    "key_fact": "Nguồn thiếu tên sản phẩm nên không thể đặt chủ thể cụ thể",
+    "supporting_facts": [],
+    "certainty": "confirmed",
+    "must_keep": ["thêm chức năng xuất PDF", "không bịa tên sản phẩm"],
+    "must_not_claim": ["Gán sản phẩm cụ thể"],
+    "reference_titles": ["Bản cập nhật chưa rõ sản phẩm thêm chức năng xuất PDF"]
+  },
+  {
+    "id": "technical-term",
+    "source": "Công cụ giả định FlowKit thêm trình tạo workflow no-code kéo thả trên PC. Tính năng mới chưa hỗ trợ mobile.",
+    "key_fact": "FlowKit thêm trình tạo workflow no-code trên PC",
+    "supporting_facts": ["Chưa hỗ trợ mobile"],
+    "certainty": "confirmed",
+    "must_keep": ["FlowKit", "workflow no-code", "PC"],
+    "must_not_claim": ["Dịch no-code thành không mã", "Đã hỗ trợ mobile"],
+    "reference_titles": ["FlowKit thêm trình tạo workflow no-code kéo thả trên PC"]
+  },
+  {
+    "id": "shared-post",
+    "source": "Lời dẫn người chia sẻ: Tôi thích thay đổi này. Nội dung gốc: Công ty giả định Arcadia mở API tạo biểu đồ cho nhà phát triển; API hiện chỉ có trên gói trả phí.",
+    "key_fact": "Arcadia mở API tạo biểu đồ cho gói trả phí",
+    "supporting_facts": ["Người chia sẻ thích thay đổi"],
+    "certainty": "confirmed",
+    "must_keep": ["Arcadia", "API tạo biểu đồ", "gói trả phí"],
+    "must_not_claim": ["API miễn phí", "Coi lời dẫn chia sẻ là thông báo chính thức"],
+    "reference_titles": ["Arcadia mở API tạo biểu đồ cho người dùng gói trả phí"]
+  },
+  {
+    "id": "long-source",
+    "source": "Nền tảng giả định NovaBuild phát hành bản 8. Bản này rút thời gian build trung bình từ 8 phút xuống 6 phút trong bộ thử nghiệm nội bộ gồm 50 dự án. Kết quả chưa được kiểm chứng độc lập. Bản 8 còn thêm chủ đề tối, đổi trang cài đặt, sửa lỗi tooltip và thay biểu tượng. Cải thiện thời gian build chỉ đo trên Linux; nhóm chưa công bố số liệu cho Windows hay macOS.",
+    "key_fact": "NovaBuild 8 giảm thời gian build trong thử nghiệm nội bộ trên Linux",
+    "supporting_facts": ["Chủ đề tối", "Đổi cài đặt", "Sửa tooltip"],
+    "certainty": "internal_test",
+    "must_keep": ["NovaBuild 8", "8 xuống 6 phút", "thử nghiệm nội bộ", "Linux"],
+    "must_not_claim": ["Hiệu quả đã được kiểm chứng độc lập", "Windows và macOS có mức cải thiện tương tự"],
+    "reference_titles": ["NovaBuild 8 giảm thời gian build từ 8 xuống 6 phút trong thử nghiệm nội bộ trên Linux"]
+  }
+]

@@ -15,6 +15,9 @@ const PosterX = {
   },
 
   async post(postData) {
+    if (postData.images.length > this.maxImages) {
+      return { ok: false, reason: `X hỗ trợ tối đa ${this.maxImages} ảnh.` };
+    }
     let text = PostData.getTextWithTags(postData);
     if (typeof StatusFormatter !== "undefined") {
       text = StatusFormatter.format(text, "x");
@@ -46,14 +49,17 @@ const PosterX = {
         await new Promise(r => setTimeout(r, 500));
         const fileInput = document.querySelector('input[type="file"]');
         if (fileInput) {
-          await uploadFilesToInput(fileInput, postData.images.slice(0, this.maxImages));
+          const requested = postData.images.slice(0, this.maxImages);
+          const attached = await uploadFilesToInput(fileInput, requested);
+          if (attached < requested.length) return { ok: false, reason: `Chỉ tải được ${attached}/${requested.length} ảnh X.` };
         } else {
-          console.warn("[CrossPost:X] No file input found");
+          return { ok: false, reason: "Không tìm thấy ô tải ảnh X." };
         }
       }
 
       await new Promise(r => setTimeout(r, 2000));
-      return { ok: true, platform: "x", needsManualPublish: true };
+      return { ok: true, platform: "x", needsManualPublish: true,
+        mediaConfirmationRequired: postData.images.length > 0 };
     } catch (err) {
       console.error("[CrossPost:X] Error:", err);
       return { ok: false, reason: err.message };

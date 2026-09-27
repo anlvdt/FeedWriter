@@ -15,6 +15,9 @@ const PosterFacebook = {
   },
 
   async post(postData) {
+    if (postData.images.length > this.maxImages) {
+      return { ok: false, reason: `Facebook hỗ trợ tối đa ${this.maxImages} ảnh trong luồng này.` };
+    }
     const text = PostData.getTextWithTags(postData);
 
     const mainArea = document.querySelector('div[role="main"]');
@@ -80,6 +83,9 @@ const PosterFacebook = {
       if (imgFiles.length === 0) {
         return { ok: false, reason: "Không tải được ảnh bài viết. Hãy kiểm tra quyền truy cập ảnh rồi tải lại trang để thử lại." };
       }
+      if (imgFiles.length < urls.length) {
+        return { ok: false, reason: `Chỉ tải được ${imgFiles.length}/${urls.length} ảnh. Hãy thử lại hoặc bỏ chọn ảnh lỗi.` };
+      }
     }
 
     // Step 4: Paste text
@@ -89,7 +95,7 @@ const PosterFacebook = {
           ? applyUnicodeFormatting(text)
           : text);
     if (typeof pasteToLexical === "function") {
-      pasteToLexical(editor, formatted, imgFiles.length > 0 ? imgFiles : null);
+      await pasteToLexical(editor, formatted, imgFiles.length > 0 ? imgFiles : null);
     } else {
       pasteTextToEditor(editor, formatted);
     }
@@ -98,6 +104,12 @@ const PosterFacebook = {
                        imgFiles.length === 1 ? 2000 : 800;
     await new Promise(r => setTimeout(r, uploadWait));
 
-    return { ok: true, platform: "facebook", needsManualPublish: true };
+    if (formatted.trim() && !(editor.innerText || editor.textContent || "").trim()) {
+      return { ok: false, reason: "Facebook chưa nhận nội dung bài đăng." };
+    }
+
+    return { ok: true, platform: "facebook", textInserted: true, requestedImages: postData.images.length,
+      attachedImages: imgFiles.length, failedImages: [], needsManualPublish: true,
+      mediaConfirmationRequired: postData.images.length > 0 };
   },
 };

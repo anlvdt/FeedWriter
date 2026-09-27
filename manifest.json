@@ -2,11 +2,12 @@
   "manifest_version": 3,
   "name": "FeedWriter",
   "version": "2.7.0",
-  "description": "Tóm tắt bài viết bằng AI, chỉnh sửa & copy thành status. Dịch EN→VI: từ, đoạn văn, slang, collocations, shadowing.",
+  "description": "Biến bài viết dài thành status tiếng Việt có nguồn để bạn kiểm tra và đăng. Hỗ trợ dịch tiếng Anh sang tiếng Việt.",
   "author": "Le An (anlvdt)",
   "homepage_url": "https://github.com/anlvdt/fb-post-summarizer",
   "permissions": [
     "storage",
+    "alarms",
     "unlimitedStorage",
     "contextMenus",
     "activeTab",

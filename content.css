@@ -1007,7 +1007,7 @@ button.fbs-btn:focus-visible,
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 10px;
+  font-size: 11px;
   color: rgba(255, 255, 255, 0.4);
 }
 
@@ -1034,7 +1034,7 @@ button.fbs-btn:focus-visible,
 }
 
 .fbs-shortcut-label {
-  font-size: 10px;
+  font-size: 11px;
   color: rgba(255, 255, 255, 0.5);
 }
 
@@ -1495,7 +1495,7 @@ button.fbs-btn:focus-visible,
 }
 
 .fbs-sp-link-quality {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   padding: 3px 8px;
   border-radius: 999px;
@@ -1533,7 +1533,7 @@ button.fbs-btn:focus-visible,
 }
 
 .fbs-sp-mini-label {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   color: #8a8d91;
   text-transform: uppercase;
@@ -1629,7 +1629,7 @@ button.fbs-btn:focus-visible,
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   color: #b0b3b8;
   text-transform: uppercase;
@@ -1725,7 +1725,7 @@ button.fbs-btn:focus-visible,
 }
 
 .fbs-sp-link-status {
-  font-size: 10px;
+  font-size: 11px;
   color: #888;
   display: flex;
   align-items: center;
@@ -1884,7 +1884,7 @@ button.fbs-btn:focus-visible,
   border-radius: 6px;
   background: transparent;
   color: #b0b3b8;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s;
@@ -1941,7 +1941,7 @@ button.fbs-btn:focus-visible,
 }
 
 .fbs-sp-comment-label {
-  font-size: 10px;
+  font-size: 11px;
   color: #888;
   margin-bottom: 4px;
   text-transform: uppercase;
@@ -2033,7 +2033,7 @@ button.fbs-btn:focus-visible,
 }
 
 .fbs-sp-link code {
-  font-size: 10px;
+  font-size: 11px;
   color: #8b8fa3;
   word-break: break-all;
   flex: 1;
@@ -2046,7 +2046,7 @@ button.fbs-btn:focus-visible,
   border-radius: 6px;
   background: transparent;
   color: #b0b3b8;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s;
@@ -2470,7 +2470,7 @@ button.fbs-allpost-btn:hover,
   }
 
   .fbs-tone-btn {
-    font-size: 10px;
+    font-size: 11px;
     padding: 3px 8px;
   }
 
@@ -2593,7 +2593,7 @@ button.fbs-allpost-btn:hover,
 }
 
 .fbs-sp-multi-header {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   color: #b0b3b8;
   text-transform: uppercase;
@@ -2663,6 +2663,21 @@ button.fbs-allpost-btn:hover,
 
 .fbs-sp-thumb-cb {
   display: none;
+}
+
+.fbs-sp-single-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.fbs-sp-single-select .fbs-sp-thumb-cb {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  margin: 0;
 }
 
 .fbs-panel[data-fbs-theme="light"] .fbs-sp-image.fbs-sp-multi {
@@ -2759,7 +2774,7 @@ button.fbs-allpost-btn:hover,
   --fbs-hidden-accent: #0F766E;
 }
 .fbs-hidden-chip[data-kind="engagement"] {
-  --fbs-hidden-accent: #a78bfa;
+  --fbs-hidden-accent: var(--fbs-warn, #f0c000);
 }
 
 .fbs-hidden-chip-icon {
@@ -3558,7 +3573,7 @@ button.fbs-allpost-btn:hover,
 }
 
 .fbs-panel.fbs-ui-v2 .fbs-stream-progress {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--fbs-accent);
   margin-top: 2px;
@@ -3633,7 +3648,7 @@ button.fbs-allpost-btn:hover,
 }
 
 .fbs-panel.fbs-ui-v2 .fbs-tone-label {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 650;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -3885,7 +3900,7 @@ article:hover .fbs-allpost-btn,
 }
 
 .fbs-sp-link-quality {
-  font-size: 10px !important;
+  font-size: 11px !important;
   font-weight: 700 !important;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -3942,7 +3957,7 @@ article:hover .fbs-allpost-btn,
 }
 
 .fbs-sp-comment-label {
-  font-size: 10px !important;
+  font-size: 11px !important;
   font-weight: 700 !important;
   text-transform: uppercase !important;
   letter-spacing: 0.05em !important;
@@ -4063,29 +4078,29 @@ article:hover .fbs-allpost-btn,
 
 /* Token alias block (legacy content.css consumers) */
 :root {
-  /* Editorial Ink dark ladder */
-  --fbs-bg: #12171c;
-  --fbs-surface: #1a2229;
-  --fbs-surface-2: #243039;
-  --fbs-border: #3a4652;
-  --fbs-border-strong: #5a6a78;
-  --fbs-text: #eef2f5;
-  --fbs-text-2: #a8b4c0;
-  --fbs-text-3: #7a8794;
-  --fbs-accent: #2dd4bf;
-  --fbs-accent-hover: #5eead4;
-  --fbs-accent-soft: rgba(45, 212, 191, 0.18);
-  --fbs-success: #3dd68c;
+  /* Keep legacy consumers connected to the active Editorial Ink tokens. */
+  --fbs-bg: var(--fw-bg, #12171c);
+  --fbs-surface: var(--fw-surface, #1a2229);
+  --fbs-surface-2: var(--fw-surface-2, #243039);
+  --fbs-border: var(--fw-border, #3a4652);
+  --fbs-border-strong: var(--fw-border-strong, #5a6a78);
+  --fbs-text: var(--fw-text, #eef2f5);
+  --fbs-text-2: var(--fw-text-2, #a8b4c0);
+  --fbs-text-3: var(--fw-text-3, #7a8794);
+  --fbs-accent: var(--fw-accent, #2dd4bf);
+  --fbs-accent-hover: var(--fw-accent-hover, #5eead4);
+  --fbs-accent-soft: var(--fw-accent-soft, rgba(45, 212, 191, 0.18));
+  --fbs-success: var(--fw-ok, #3dd68c);
   --fbs-success-soft: rgba(61, 214, 140, 0.12);
-  --fbs-warn: #f0c000;
+  --fbs-warn: var(--fw-warn, #f0c000);
   --fbs-warn-soft: rgba(240, 192, 0, 0.12);
-  --fbs-danger: #eb5757;
+  --fbs-danger: var(--fw-danger, #eb5757);
   --fbs-danger-soft: rgba(235, 87, 87, 0.12);
   --fbs-info: #8a8f98;
   --fbs-radius: 12px;
   --fbs-radius-sm: 6px;
   --fbs-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
-  --fbs-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --fbs-font: var(--fw-font, ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif);
 }
 
 /* Auto-summary inline card (opt-in, session-capped) */

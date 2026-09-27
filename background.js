@@ -74,6 +74,13 @@ if (typeof featureFlags === 'undefined') {
 // debounced timer flushes, and concurrent summaries must not overwrite each
 // other's read-modify-write cycle.
 let historyWriteQueue = Promise.resolve();
+let pendingPostQueue = Promise.resolve();
+
+function queuePendingPostUpdate(operation) {
+  const next = pendingPostQueue.then(operation);
+  pendingPostQueue = next.catch(() => {});
+  return next;
+}
 
 // Storage schema version
 const STORAGE_VERSION = 2;
@@ -92,6 +99,10 @@ const DEFAULT_SETTINGS = {
   sourceTemplate: '• Nguồn bài viết: {platform} {author} {source}\n  {link}',
   customSourceLink: '',
   enableUnicodeBold: true,
+  autoShortenLinks: false,
+  autoShortenConsent: false,
+  autoSummarize: false,
+  modelOverrides: {},
   advancedModeEnabled: false,
   adDisplayMode: 'collapse',
   filterEngagementGates: false,
@@ -99,47 +110,51 @@ const DEFAULT_SETTINGS = {
   theme: 'auto',
 };
 
+const CONTENT_SETTING_KEYS = ["minLength", "blockedDomains", "sourceTemplate", "customSourceLink",
+  "enableUnicodeBold", "autoSummarize", "adDisplayMode", "filterEngagementGates",
+  "summaryLength", "promptStyle", "outputLanguage", "customInstructions",
+  "customSummaryPrompt", "autoShortenLinks", "autoShortenConsent"];
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "sync") return;
+  const allowedChanges = Object.fromEntries(Object.entries(changes)
+    .filter(([key]) => CONTENT_SETTING_KEYS.includes(key)));
+  if (!Object.keys(allowedChanges).length) return;
+  chrome.tabs.query({ url: [
+    "https://www.facebook.com/*", "https://web.facebook.com/*", "https://m.facebook.com/*",
+    "https://*.threads.net/*", "https://x.com/*", "https://twitter.com/*",
+    "https://www.linkedin.com/*", "https://www.reddit.com/*",
+  ] }).then(tabs => Promise.all(tabs.filter(tab => tab.id).map(tab =>
+    chrome.tabs.sendMessage(tab.id, { action: "content-settings-changed", changes: allowedChanges }).catch(() => {}),
+  ))).catch(() => {});
+});
+
 // API keys, history, and pending drafts must remain in trusted extension pages.
 // Content scripts use the validated message bridge below for the narrow data
 // they need instead of receiving direct access to chrome.storage.local.
 const localStorageAccessReady = (() => {
   try {
-    if (!chrome?.storage?.local?.setAccessLevel) return Promise.resolve();
-    return chrome.storage.local
-      .setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })
-      .catch((error) => logger.warn("Failed to restrict local storage access:", error));
+    if (!chrome?.storage?.local?.setAccessLevel || !chrome?.storage?.sync?.setAccessLevel) return Promise.resolve(false);
+    return Promise.all([
+      chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" }),
+      chrome.storage.sync.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" }),
+    ])
+      .then(() => true)
+      .catch((error) => {
+        logger.warn("Failed to restrict local storage access:", error);
+        return false;
+      });
   } catch (error) {
     logger.warn("Failed to restrict local storage access:", error);
-    return Promise.resolve();
+    return Promise.resolve(false);
   }
 })();
 
 // === STORAGE MIGRATION ===
 async function migrateApiKeysOutOfSync() {
   if (!chrome?.storage?.sync || !chrome?.storage?.local) return;
-  const syncData = await chrome.storage.sync.get(["apiKey", "apiKeys", "provider"]);
-  if (!syncData.apiKey && !syncData.apiKeys) return;
-
-  const localData = await chrome.storage.local.get("apiKeys");
-  const providers = ["groq", "gemini", "cerebras", "sambanova", "openrouter"];
-  const merged = {};
-  for (const provider of providers) {
-    const localKeys = Array.isArray(localData.apiKeys?.[provider])
-      ? localData.apiKeys[provider]
-      : [];
-    const syncKeys = Array.isArray(syncData.apiKeys?.[provider])
-      ? syncData.apiKeys[provider]
-      : [];
-    merged[provider] = [...new Set([...localKeys, ...syncKeys])];
-  }
-  if (syncData.apiKey) {
-    const provider = providers.includes(syncData.provider) ? syncData.provider : "groq";
-    if (!merged[provider].includes(syncData.apiKey)) merged[provider].push(syncData.apiKey);
-  }
-
-  await chrome.storage.local.set({ apiKeys: merged, backupApiKeys: merged });
-  await chrome.storage.sync.remove(["apiKeys", "apiKey"]);
-  logger.info("Moved API keys out of quota-limited sync storage");
+  if (!(await localStorageAccessReady)) throw new Error("Không bảo vệ được kho API key.");
+  await FeedWriterApiKeyStore.migrate(chrome.storage);
 }
 
 async function repairCooldownsAfterStorageQuotaFix() {
@@ -511,6 +526,27 @@ function isSafePublicHttpsUrl(rawUrl) {
   }
 }
 
+// Remote metadata is optional: the post's direct links remain available even
+// when we skip enrichment. A hostname can resolve to a private IP after a URL
+// check, and service-worker fetch cannot pin DNS to a verified public address.
+// Only fetch from these stable, provider-owned hosts; never follow a redirect
+// outside the same set. Exact matching excludes attacker-controlled subdomains.
+const ENRICHMENT_FETCH_HOSTS = new Set([
+  "github.com", "gitlab.com", "arxiv.org", "www.arxiv.org",
+]);
+
+function isAllowedEnrichmentFetchUrl(rawUrl) {
+  if (!isSafePublicHttpsUrl(rawUrl)) return false;
+  try {
+    const url = new URL(rawUrl);
+    return ENRICHMENT_FETCH_HOSTS.has(url.hostname.toLowerCase()) &&
+      (url.port === "" || url.port === "443") &&
+      !url.username && !url.password;
+  } catch (_) {
+    return false;
+  }
+}
+
 const ALLOWED_OPTIONAL_PERMISSIONS = new Set(["clipboardRead"]);
 
 function senderHostname(senderLike) {
@@ -625,32 +661,96 @@ function extractRelatedMetadata(html, finalUrl) {
   return links;
 }
 
+async function readTextLimited(response, maxBytes, signal) {
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  let result = "";
+  let rejectOnAbort;
+  const aborted = new Promise((_, reject) => {
+    rejectOnAbort = () => reject(new Error("response_timeout"));
+    if (signal.aborted) rejectOnAbort();
+    else signal.addEventListener("abort", rejectOnAbort, { once: true });
+  });
+  try {
+    while (true) {
+      const { done, value } = await Promise.race([reader.read(), aborted]);
+      if (done) return result + decoder.decode();
+      bytes += value.byteLength;
+      if (bytes > maxBytes) throw new Error("response_too_large");
+      result += decoder.decode(value, { stream: true });
+    }
+  } finally {
+    signal.removeEventListener("abort", rejectOnAbort);
+    reader.cancel().catch(() => {});
+  }
+}
+
+async function readBlobLimited(response, maxBytes, timeoutMs, contentType) {
+  if (!response.body) throw new Error("Image response has no body");
+  const reader = response.body.getReader();
+  const chunks = [];
+  let bytes = 0;
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error("image_response_timeout")), timeoutMs);
+  });
+  try {
+    while (true) {
+      const { done, value } = await Promise.race([reader.read(), deadline]);
+      if (done) return new Blob(chunks, { type: contentType });
+      bytes += value.byteLength;
+      if (bytes > maxBytes) throw new Error("Ảnh quá lớn (> 12 MB)");
+      chunks.push(value);
+    }
+  } finally {
+    clearTimeout(timer);
+    reader.cancel().catch(() => {});
+  }
+}
+
 async function enrichRelatedSourceUrl(rawUrl) {
-  if (!isSafePublicHttpsUrl(rawUrl)) return [];
+  if (!isAllowedEnrichmentFetchUrl(rawUrl)) return [];
   try {
     let currentUrl = rawUrl;
     let response = null;
     for (let redirectCount = 0; redirectCount <= 3; redirectCount++) {
-      if (!isSafePublicHttpsUrl(currentUrl)) return [];
-      response = await fetchWithTimeout(currentUrl, {
-        method: "GET",
-        credentials: "omit",
-        redirect: "manual",
-        referrerPolicy: "no-referrer",
-        headers: { Accept: "text/html,application/xhtml+xml" },
-      }, 8000);
-      if (![301, 302, 303, 307, 308].includes(response.status)) break;
-      const nextUrl = absoluteUrl(response.headers.get("location") || "", currentUrl);
-      if (!nextUrl) return [];
-      currentUrl = nextUrl;
+      if (!isAllowedEnrichmentFetchUrl(currentUrl)) return [];
+      const controller = new AbortController();
+      const deadline = setTimeout(() => controller.abort(), 8000);
+      try {
+        response = await fetch(currentUrl, {
+          method: "GET",
+          credentials: "omit",
+          redirect: "manual",
+          referrerPolicy: "no-referrer",
+          headers: { Accept: "text/html,application/xhtml+xml" },
+          signal: controller.signal,
+        });
+        if (![301, 302, 303, 307, 308].includes(response.status)) break;
+        const nextUrl = absoluteUrl(response.headers.get("location") || "", currentUrl);
+        if (!nextUrl || !isAllowedEnrichmentFetchUrl(nextUrl)) return [];
+        currentUrl = nextUrl;
+      } finally {
+        // A separate body deadline is started below for the final response.
+        clearTimeout(deadline);
+      }
     }
     if (!response) return [];
-    if (!response.ok || !isSafePublicHttpsUrl(response.url)) return [];
+    if (!response.ok || !isAllowedEnrichmentFetchUrl(response.url)) return [];
     const contentType = response.headers.get("content-type") || "";
     if (!contentType.includes("text/html") && !contentType.includes("application/xhtml+xml")) return [];
     const contentLength = parseInt(response.headers.get("content-length") || "0", 10);
     if (contentLength > 1024 * 1024) return [];
-    const html = (await response.text()).slice(0, 1024 * 1024);
+    const bodyController = new AbortController();
+    const bodyDeadline = setTimeout(() => bodyController.abort(), 8000);
+    let html;
+    try {
+      html = await readTextLimited(response, 1024 * 1024, bodyController.signal);
+    } finally {
+      clearTimeout(bodyDeadline);
+    }
     return [
       { url: response.url, evidence: "redirect-target" },
       ...extractRelatedMetadata(html, response.url),
@@ -666,6 +766,7 @@ chrome.runtime.onInstalled.addListener(async () => {
   // Run all migrations and telemetry init
   await migrateApiKeysOutOfSync().catch(e => logger.error('API key migration failed (onInstalled):', e));
   await compactStoredHistory().catch(e => logger.error('History compaction failed (onInstalled):', e));
+  await expireHistoryBackupIfDue().catch(e => logger.error('History backup cleanup failed (onInstalled):', e));
   await repairCooldownsAfterStorageQuotaFix().catch(e => logger.error('Cooldown repair failed (onInstalled):', e));
   await migrateStorageIfNeeded().catch(e => logger.error('Storage migration failed (onInstalled):', e));
   await cleanupExpiredPendingPosts().catch(e => logger.error('Pending post cleanup failed (onInstalled):', e));
@@ -723,54 +824,6 @@ chrome.runtime.onInstalled.addListener(async () => {
   } catch (_) {
     buildMenus();
   }
-
-  // Migrate old single apiKey + restore from local backup if sync empty
-  // (do NOT write empty apiKeys — that can wipe recovery chance on race)
-  (async () => {
-    try {
-      const data = await chrome.storage.sync.get(["apiKey", "apiKeys", "provider"]);
-      const localData = await chrome.storage.local.get(["apiKeys", "backupApiKeys"]);
-      let apiKeys = localData.apiKeys || data.apiKeys || null;
-      const providers = ["groq", "gemini", "cerebras", "sambanova", "openrouter"];
-      const count = (m) =>
-        m && typeof m === "object"
-          ? providers.reduce((n, p) => n + (Array.isArray(m[p]) ? m[p].length : 0), 0)
-          : 0;
-
-      if (!apiKeys || count(apiKeys) === 0) {
-        if (localData.backupApiKeys && count(localData.backupApiKeys) > 0) {
-          apiKeys = localData.backupApiKeys;
-          logger.info("Restored apiKeys from local backup on install/update");
-        } else {
-          apiKeys = {
-            groq: [],
-            gemini: [],
-            cerebras: [],
-            sambanova: [],
-            openrouter: [],
-          };
-        }
-      }
-      for (const p of providers) {
-        if (!Array.isArray(apiKeys[p])) apiKeys[p] = [];
-      }
-      if (data.apiKey && count(apiKeys) === 0) {
-        const provider = data.provider || "groq";
-        if (!apiKeys[provider].includes(data.apiKey)) {
-          apiKeys[provider].push(data.apiKey);
-        }
-      }
-      // Only write when we have something useful or structure needs normalize
-      if (count(apiKeys) > 0 || data.apiKeys) {
-        if (count(apiKeys) > 0) {
-          await chrome.storage.local.set({ apiKeys, backupApiKeys: apiKeys });
-          try { await chrome.storage.sync.remove(["apiKeys", "apiKey"]); } catch (_) {}
-        }
-      }
-    } catch (e) {
-      logger.error("apiKeys migrate/restore failed:", e);
-    }
-  })();
 
 });
 } // end if (chrome?.runtime?.onInstalled)
@@ -919,6 +972,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.action === "get-content-settings") {
+    (async () => {
+      if (!(await localStorageAccessReady)) throw new Error("Không đọc được cài đặt an toàn.");
+      const settings = await chrome.storage.sync.get(CONTENT_SETTING_KEYS);
+      sendResponse({ ok: true, settings });
+    })().catch(error => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
   if (request.action === "get-feed-telemetry") {
     (async () => {
       await localStorageAccessReady;
@@ -963,7 +1025,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         throw new Error("Trang nhận bài chờ đăng không hợp lệ.");
       }
       await localStorageAccessReady;
-      const pending = await loadPendingPost(request.kind, request.id);
+      const pending = await queuePendingPostUpdate(async () => {
+        const record = await loadPendingPost(request.kind, request.id);
+        if (record.claimedTabId && record.claimedTabId !== sender.tab.id) {
+          const oldTab = await chrome.tabs.get(record.claimedTabId).catch(() => null);
+          if (oldTab) {
+            const error = new Error("Bài chờ đăng đang được mở ở tab khác.");
+            error.code = "pending_claimed";
+            throw error;
+          }
+          record.claimedTabId = sender.tab.id;
+          // The old tab is gone; its prepared DOM draft cannot be reused.
+          record.prepared = false;
+        }
+        if (!record.claimedTabId) {
+          record.claimedTabId = sender.tab.id;
+        }
+        await chrome.storage.local.set({ [pendingPostKey(request.kind, request.id)]: record });
+        return record;
+      });
       sendResponse({ ok: true, pending });
     })().catch((error) => sendResponse({
       ok: false,
@@ -973,15 +1053,36 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.action === "prepare-pending-post") {
+    (async () => {
+      if (!schema.isAllowedPendingSender(request.kind, sender)) {
+        throw new Error("Trang nhận bài chờ đăng không hợp lệ.");
+      }
+      await localStorageAccessReady;
+      await queuePendingPostUpdate(async () => {
+        const pending = await loadPendingPost(request.kind, request.id);
+        if (pending.claimedTabId !== sender.tab.id) throw new Error("Tab này không sở hữu bài chờ đăng.");
+        pending.prepared = true;
+        await chrome.storage.local.set({ [pendingPostKey(request.kind, request.id)]: pending });
+      });
+      sendResponse({ ok: true });
+    })().catch(error => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
   if (request.action === "complete-pending-post") {
     (async () => {
       if (!schema.isAllowedPendingSender(request.kind, sender)) {
         throw new Error("Trang hoàn tất bài chờ đăng không hợp lệ.");
       }
-      const key = pendingPostKey(request.kind, request.id);
-      if (!key) throw new Error("Mã bài chờ đăng không hợp lệ.");
       await localStorageAccessReady;
-      await chrome.storage.local.remove(key);
+      await queuePendingPostUpdate(async () => {
+        const pending = await loadPendingPost(request.kind, request.id);
+        if (pending.claimedTabId !== sender.tab.id || !pending.prepared) {
+          throw new Error("Bài chờ đăng chưa được chuẩn bị ở tab này.");
+        }
+        await chrome.storage.local.remove(pendingPostKey(request.kind, request.id));
+      });
       sendResponse({ ok: true });
     })().catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
@@ -1069,7 +1170,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "enrich-related-source-links") {
     (async () => {
       const urls = Array.isArray(request.urls) ? request.urls : [];
-      const unique = [...new Set(urls.filter(isSafePublicHttpsUrl))].slice(0, 4);
+      const unique = [...new Set(urls.filter(isAllowedEnrichmentFetchUrl))].slice(0, 4);
       const enriched = await Promise.all(unique.map(enrichRelatedSourceUrl));
       sendResponse({ links: enriched.flat().slice(0, 60) });
     })().catch((error) => sendResponse({ links: [], error: error.message }));
@@ -1100,10 +1201,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (["history-clear", "history-undo", "history-expire"].includes(request.action)) {
+    updateHistory(request.action, request.id)
+      .then(result => sendResponse(result))
+      .catch(error => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
   // === SHORTEN URL (bypass CORS) ===
   if (request.action === "shorten-url") {
     (async () => {
       try {
+        const { autoShortenConsent } = await chrome.storage.sync.get("autoShortenConsent");
+        if (autoShortenConsent !== true) throw new Error("Chưa bật quyền rút gọn link nguồn.");
         const longUrl = request.url;
         let parsedLongUrl;
         try {
@@ -1118,7 +1228,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         const fetchShortUrl = async (url) => {
           const response = await fetchWithTimeout(url, { method: "GET" }, 5000);
           if (!response.ok) return "";
-          const shortUrl = (await response.text()).trim();
+          const controller = new AbortController();
+          const deadline = setTimeout(() => controller.abort(), 5000);
+          let shortUrl;
+          try {
+            shortUrl = (await readTextLimited(response, 2048, controller.signal)).trim();
+          } finally {
+            clearTimeout(deadline);
+          }
           try {
             const parsedShortUrl = new URL(shortUrl);
             return ["http:", "https:"].includes(parsedShortUrl.protocol) ? shortUrl : "";
@@ -1409,7 +1526,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       if (contentLength > 12 * 1024 * 1024) {
         throw new Error("Ảnh quá lớn (> 12 MB)");
       }
-      const blob = await res.blob();
+      const blob = await readBlobLimited(res, 12 * 1024 * 1024, 20000, contentType);
       if (!blob || blob.size < 100) throw new Error("Empty or invalid image");
       if (blob.size > 12 * 1024 * 1024) throw new Error("Ảnh quá lớn (> 12 MB)");
       if (!(await hasValidImageSignature(blob, contentType))) {
@@ -1453,6 +1570,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       });
 
       if (!dataUrl) throw new Error("captureVisibleTab failed");
+      const [stillActive] = await chrome.tabs.query({ active: true, windowId: tab.windowId });
+      if (!stillActive || stillActive.id !== tab.id) {
+        throw new Error("Tab đã thay đổi trong lúc chụp màn hình.");
+      }
 
       // If bounds provided, crop to element
       if (request.bounds) {
@@ -1672,7 +1793,7 @@ async function translateText(text, mode = "auto") {
   const cacheKey =
     TRANSLATE_PROMPT_VERSION +
     "::" + resolved +
-    "::" + source.toLowerCase();
+    "::" + source;
   if (translateCache.has(cacheKey)) return translateCache.get(cacheKey);
 
   const { system, prompt } = buildTranslatePrompt(source, resolved);
@@ -1879,7 +2000,6 @@ function normalizeVietnameseNumericNotation(text) {
   return normalized;
 }
 
-const MAX_HEADLINE_WORDS = 16;
 const HEADLINE_DANGLING = /^(?:từ|sang|của|kể|cho|với|và|đến|tới|trong|trên|về|vào|ra|thành|theo|bởi|khi|nếu|hoặc|hay|một|các|những|là|đã|sẽ|đang|được|bị|ở|tại|có|mang|giữa|sau|trước|tháng|năm)$/iu;
 
 function isHeadlineDateToken(word) {
@@ -1899,7 +2019,7 @@ function headlineUnfinished(word) {
   return HEADLINE_DANGLING.test(core) || /^(?:gần|khoảng|chừng)$/iu.test(core);
 }
 
-function clampHeadlineWords(title) {
+function removeDanglingHeadlineTail(title) {
   const raw = String(title || "").trim();
   const words = headlineTokens(raw);
   if (!words.length) return "";
@@ -1920,6 +2040,11 @@ function clampHeadlineWords(title) {
     end -= 1;
   }
   return words.slice(0, end).join(" ").replace(/[,:;.]+$/u, "").trim();
+}
+
+function hasClaudeCodePromptSettingAction(sourceText) {
+  const source = String(sourceText || "");
+  return /(?:tắt|vô hiệu hóa|turn off|disable)\s+(?:(?:tính năng|the)\s+)?(?:(?:gợi ý|đề xuất)\s+prompt|prompt\s+suggestions?)\s+(?:trong|trên|của|in)\s+Claude\s+Code\b/iu.test(source);
 }
 
 // Main post-processing function
@@ -2114,11 +2239,31 @@ function postProcessOutput(output, sourceText, type) {
         ) {
           issues.push("Tiêu đề còn từ giật gân — nên viết lại thủ công.");
         }
-        const cappedTitle = clampHeadlineWords(guardedTitle, MAX_HEADLINE_WORDS);
+        const cappedTitle = removeDanglingHeadlineTail(guardedTitle);
         const titleWords = guardedTitle.trim().split(/\s+/).filter(Boolean);
         const keptWords = cappedTitle.split(/\s+/).filter(Boolean);
         if (cappedTitle && keptWords.length < titleWords.length) {
           issues.push("Đã rút tiêu đề cho trọn ý, phần chi tiết nằm ở đoạn sau.");
+        }
+        if (sourceText && cappedTitle) {
+          const sourceNumbers = new Set((sourceText.match(/\d+(?:[.,]\d+)*/gu) || [])
+            .map(value => value.replace(/[.,]/g, "")));
+          const unsupported = (cappedTitle.match(/\d+(?:[.,]\d+)*/gu) || [])
+            .filter(value => !sourceNumbers.has(value.replace(/[.,]/g, "")));
+          if (unsupported.length) {
+            issues.push("[!] Tiêu đề cần viết lại: số liệu không có trong nguồn.");
+          }
+        }
+        if (headlineTokens(cappedTitle).length < 3 || /^cập nhật$/iu.test(cappedTitle)) {
+          issues.push("[!] Tiêu đề cần viết lại: thiếu chủ thể hoặc sự kiện cụ thể.");
+        }
+        if (hasClaudeCodePromptSettingAction(sourceText) &&
+            /^Claude\s+Code\s+(?:sẽ\s+)?(?:tắt|vô hiệu hóa|giảm)\s+/iu.test(cappedTitle)) {
+          issues.push("[!] Tiêu đề có thể đảo tác nhân: người dùng tắt gợi ý prompt trong Claude Code, không phải Claude Code tự tắt. Kiểm tra lại cả lead.");
+        }
+        if (hasClaudeCodePromptSettingAction(sourceText) &&
+            /Claude\s+Code\s+(?:sẽ\s+)?(?:giảm|tắt|vô hiệu hóa)\s+(?:giới hạn\s+)?(?:gợi ý|đề xuất)\s+prompt/iu.test(lines.slice(i + 1).join(" "))) {
+          issues.push("[!] Lead có thể đảo tác nhân hoặc nhầm tùy chọn gợi ý prompt với hạn mức sử dụng; cần viết lại theo nguồn.");
         }
         lines[i] = cappedTitle || "Cập nhật";
         // Viết hoa toàn bộ tiêu đề
@@ -2461,34 +2606,61 @@ function truncateSourceForBudget(source, budget) {
   return source.slice(0, headLen) + marker + source.slice(source.length - tailLen);
 }
 
-// Groq free-tier gpt-oss-120b is 8,000 tokens/minute per organization.
-// Stay under that for a single request (input + reserved output).
+// Groq free-tier gpt-oss-120b is ~8,000 tokens/minute per organization.
+// Stay under that for a single request (input + reserved output). Multiple
+// Groq keys from the SAME org share this budget; keys from other providers
+// do not. When the local ledger is full we prefer alternate providers instead
+// of parking the whole job for ~60s.
 const TPM_SAFE_TOKENS = 7000;
 const groqTpmLedger = { spent: 0, windowStart: 0 };
 
-async function waitForGroqTpm(cost, port, signal) {
-  const now = Date.now();
+function refreshGroqTpmWindow(now = Date.now()) {
   if (now - groqTpmLedger.windowStart >= 60000) {
     groqTpmLedger.windowStart = now;
     groqTpmLedger.spent = 0;
   }
-  if (groqTpmLedger.spent + cost <= TPM_SAFE_TOKENS) {
-    groqTpmLedger.spent += cost;
+}
+
+function canAffordGroqTpm(cost, now = Date.now()) {
+  refreshGroqTpmWindow(now);
+  return groqTpmLedger.spent + Number(cost || 0) <= TPM_SAFE_TOKENS;
+}
+
+function recordGroqTpm(cost, now = Date.now()) {
+  refreshGroqTpmWindow(now);
+  groqTpmLedger.spent += Math.max(0, Number(cost || 0));
+}
+
+function groqTpmWaitMs(now = Date.now()) {
+  refreshGroqTpmWindow(now);
+  return Math.max(1000, 61000 - (now - groqTpmLedger.windowStart));
+}
+
+/** Wait until the Groq minute window rolls — only when no other provider can take the job. */
+async function waitForGroqTpm(cost, port, signal) {
+  if (canAffordGroqTpm(cost)) {
+    recordGroqTpm(cost);
     return;
   }
-  const wait = Math.max(1000, 61000 - (now - groqTpmLedger.windowStart));
+  const wait = groqTpmWaitMs();
   try {
     port.postMessage({
       action: "status",
       message:
-        "Hết lượt token trong phút này — chờ " +
+        "Groq hết token/phút và chưa có provider khác — chờ " +
         Math.ceil(wait / 1000) +
         " giây rồi đọc tiếp...",
     });
   } catch (_) {}
   await sleepAbortable(wait, signal);
+  refreshGroqTpmWindow(Date.now());
   groqTpmLedger.windowStart = Date.now();
-  groqTpmLedger.spent = cost;
+  groqTpmLedger.spent = Math.max(0, Number(cost || 0));
+}
+
+/** When the Groq minute budget is gone, skip Groq so rotation can use other providers. */
+function groqTpmExcludeProviders(cost) {
+  return canAffordGroqTpm(cost) ? null : ["groq"];
 }
 // Fold this many extracted sections at a time when the fact sheet is still
 // too big. Sections are compressed, never dropped.
@@ -2500,7 +2672,7 @@ const CHUNK_EXTRACT_PROMPT = `Trích dữ kiện từ đoạn bài dưới đây
 - Giữ nguyên thuật ngữ kỹ thuật và tên sản phẩm.`;
 
 const COMPACT_NEWS_PROMPT = `Bạn là biên tập viên báo chí công nghệ tiếng Việt. Viết lại nguồn thành MỘT bản tin fact-first theo kim tự tháp ngược.
-- Dòng đầu là tiêu đề trọn ý: sản phẩm + việc vừa xảy ra + kết quả. Viết hết cụm, không dừng giữa từ. Không bọc **. Hệ thống tự viết hoa.
+- Dòng đầu là tiêu đề trọn ý: đúng tác nhân/thao tác + việc xảy ra + kết quả. Chỉ đặt sản phẩm làm chủ ngữ nếu sản phẩm thực hiện hành động; với thao tác của người dùng, viết "Tắt [tùy chọn] trong [sản phẩm]...", không viết "[sản phẩm] tắt...". Viết hết cụm, không dừng giữa từ. Không bọc **. Hệ thống tự viết hoa.
 - Sau tiêu đề một dòng trống. Lead nêu sản phẩm/công ty/tính năng, thay đổi hoặc kết quả, và tác động. Mỗi ý một đoạn. Không được bỏ ý chỉ để ép độ dài.
 - Chỉ viết điều có trong nguồn. Hết ý thì dừng. Không bịa số liệu, không kể chuyện, không "cho biết", không "Tôi đưa tin về".
 - Giữ thuật ngữ quen (no-code, prompt, model, AI agent, PC). Cấm dịch "không mã", "đại lý AI".
@@ -2731,7 +2903,39 @@ async function handleStream(
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       if (signal.aborted) return { error: "Đã hủy." };
 
-      const keyInfo = await getAvailableKey(attempt === 0 ? preferredProvider : null);
+      const estimatedCost =
+        estimateTokens(activePrompt) +
+        estimateTokens(shrinkBase) +
+        Number(localMax || 0) +
+        200;
+      let excludeProviders = groqTpmExcludeProviders(estimatedCost);
+      let prefer =
+        attempt === 0 && preferredProvider && preferredProvider !== "groq"
+          ? preferredProvider
+          : attempt === 0
+            ? preferredProvider
+            : null;
+      if (excludeProviders && prefer === "groq") prefer = null;
+
+      if (excludeProviders) {
+        try {
+          activePort.postMessage({
+            action: "status",
+            message: "Groq hết token/phút — chuyển provider khác...",
+          });
+        } catch (_) {}
+      }
+
+      let keyInfo = await getAvailableKey(prefer, excludeProviders);
+      let groqTpmReserved = false;
+
+      // Only Groq keys exist (or all non-Groq excluded) and TPM is full — wait once.
+      if (!keyInfo.key && keyInfo.allExcluded) {
+        await waitForGroqTpm(estimatedCost, activePort, signal);
+        groqTpmReserved = true;
+        keyInfo = await getAvailableKey(attempt === 0 ? preferredProvider : null, null);
+      }
+
       if (!keyInfo.key) {
         if (keyInfo.noKeys)
           return { error: "Chưa có API Key. Thêm ở tab Khóa API." };
@@ -2740,6 +2944,29 @@ async function handleStream(
             cooldownCleared = true;
             await clearAllKeyCooldowns();
             continue;
+          }
+          // Non-Groq keys cooling down while Groq TPM is full: wait for the
+          // sooner of key unlock or Groq window, then retry with Groq allowed.
+          if (excludeProviders) {
+            const groqWait = groqTpmWaitMs();
+            const keyWait = Number.isFinite(keyInfo.retryInMs)
+              ? keyInfo.retryInMs
+              : keyInfo.waitMinutes * 60000;
+            const waitMs = Math.min(groqWait, keyWait, LIMITED_WAIT_CAP_MS);
+            if (limitedWaits < MAX_LIMITED_WAITS && waitMs > 0) {
+              limitedWaits++;
+              try {
+                activePort.postMessage({
+                  action: "status",
+                  message:
+                    "Đang chờ ~" +
+                    Math.ceil(waitMs / 1000) +
+                    " giây để mở lại quota...",
+                });
+              } catch (_) {}
+              await sleepAbortable(waitMs + 400, signal);
+              continue;
+            }
           }
           const retryInMs = Number.isFinite(keyInfo.retryInMs)
             ? keyInfo.retryInMs
@@ -2784,6 +3011,14 @@ async function handleStream(
 
       const callFn = streamFns[keyInfo.provider];
       if (!callFn) return { error: "Provider không hợp lệ: " + keyInfo.provider };
+
+      if (keyInfo.provider === "groq" && !groqTpmReserved) {
+        if (!canAffordGroqTpm(estimatedCost)) {
+          await waitForGroqTpm(estimatedCost, activePort, signal);
+        } else {
+          recordGroqTpm(estimatedCost);
+        }
+      }
 
       try {
         activePort.postMessage({
@@ -2988,14 +3223,11 @@ async function handleStream(
     return { error: headline + detail };
   }
 
-  async function waitForTpm(cost) {
-    await waitForGroqTpm(cost, port, signal);
-  }
+  // TPM gating lives inside generateWithRotation: exclude Groq when the
+  // minute budget is gone and another provider can take the request; only
+  // wait when Groq is the sole remaining option.
 
   async function extractPiece(text, label) {
-    if (signal.aborted) return "";
-    const cost = estimateTokens(CHUNK_EXTRACT_PROMPT) + estimateTokens(text) + 700 + 200;
-    await waitForTpm(cost);
     if (signal.aborted) return "";
     shrinkBase = text;
     activePrompt = CHUNK_EXTRACT_PROMPT;
@@ -3075,7 +3307,6 @@ async function handleStream(
     activePort = port;
     recordResult = true;
     jobMaxTokens = savedMax;
-    await waitForTpm(estimateTokens(activePrompt) + estimateTokens(factSheet) + savedMax + 200);
   }
 
   const finalResult = await generateWithRotation();
@@ -3094,6 +3325,7 @@ function compactHistoryForStorage(items) {
   let bytes = 2;
   for (const raw of Array.isArray(items) ? items : []) {
     const entry = {
+      id: String(raw?.id || "").slice(0, 80),
       text: String(raw?.text || "").slice(0, 2000),
       summary: String(raw?.summary || "").slice(0, 20000),
       date: String(raw?.date || "").slice(0, 64),
@@ -3113,6 +3345,88 @@ function compactHistoryForStorage(items) {
     bytes += entryBytes;
   }
   return compacted;
+}
+
+function queueHistoryUpdate(operation) {
+  const write = historyWriteQueue.then(operation);
+  historyWriteQueue = write.catch(error => logger.warn("History write failed:", error?.message || error));
+  return write;
+}
+
+const HISTORY_UNDO_MS = 30_000;
+const HISTORY_EXPIRY_ALARM = "history-backup-expire";
+
+async function expireHistoryBackupIfDue() {
+  return queueHistoryUpdate(async () => {
+    const { historyBackup } = await chrome.storage.local.get("historyBackup");
+    if (!historyBackup) {
+      await chrome.alarms.clear(HISTORY_EXPIRY_ALARM);
+      return;
+    }
+    const expiresAt = Number(historyBackup.deletedAt || 0) + HISTORY_UNDO_MS;
+    if (Date.now() >= expiresAt) {
+      await chrome.storage.local.remove("historyBackup");
+      await chrome.alarms.clear(HISTORY_EXPIRY_ALARM);
+      return;
+    }
+    await chrome.alarms.create(HISTORY_EXPIRY_ALARM, { when: expiresAt });
+  });
+}
+
+if (chrome?.alarms?.onAlarm) {
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === HISTORY_EXPIRY_ALARM) {
+      expireHistoryBackupIfDue().catch(error => logger.warn("History backup expiry failed:", error));
+    }
+  });
+}
+
+function historyEntryIdentity(entry) {
+  return entry.id || JSON.stringify([entry.text, entry.summary, entry.date, entry.sourceUrl, entry.type]);
+}
+
+function updateHistory(action, id) {
+  return queueHistoryUpdate(async () => {
+    const data = await chrome.storage.local.get(["history", "historyBackup"]);
+    const backup = data.historyBackup;
+    if (action === "history-clear") {
+      const newBackup = {
+        id: crypto.randomUUID(),
+        items: (data.history || []).map(entry => ({ ...entry, id: entry.id || crypto.randomUUID() })),
+        deletedAt: Date.now(),
+      };
+      await chrome.storage.local.set({ history: [], historyBackup: newBackup });
+      try {
+        await chrome.alarms.create(HISTORY_EXPIRY_ALARM, {
+          when: newBackup.deletedAt + HISTORY_UNDO_MS,
+        });
+        return { ok: true, id: newBackup.id, undoAvailable: true };
+      } catch (error) {
+        // Clearing history still succeeds; without an alarm, do not retain an
+        // unbounded copy or promise an undo that cannot expire reliably.
+        await chrome.storage.local.remove("historyBackup");
+        return { ok: true, undoAvailable: false };
+      }
+    }
+    if (!backup || backup.id !== id) return { ok: false, error: "Bản khôi phục không còn hợp lệ" };
+    if (action === "history-expire" || Date.now() - backup.deletedAt > HISTORY_UNDO_MS) {
+      await chrome.storage.local.remove("historyBackup");
+      await chrome.alarms.clear(HISTORY_EXPIRY_ALARM);
+      return { ok: false, error: "Đã hết thời gian khôi phục" };
+    }
+    const seen = new Set();
+    const merged = [];
+    for (const entry of [...(data.history || []), ...(backup.items || [])]) {
+      const key = historyEntryIdentity(entry);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(entry);
+    }
+    await chrome.storage.local.set({ history: compactHistoryForStorage(merged) });
+    await chrome.storage.local.remove("historyBackup");
+    await chrome.alarms.clear(HISTORY_EXPIRY_ALARM);
+    return { ok: true };
+  });
 }
 
 async function compactStoredHistory() {
@@ -3137,6 +3451,7 @@ async function saveHistory(
   postDate = null,
 ) {
   const entry = {
+    id: crypto.randomUUID(),
     text: text.substring(0, 2000),
     summary,
     date: postDate ? formatVietnamIsoString(new Date(postDate)) : formatVietnamIsoString(new Date()),
@@ -3150,16 +3465,12 @@ async function saveHistory(
     postTitle: postTitle || "",
   };
 
-  const write = historyWriteQueue.then(async () => {
+  return queueHistoryUpdate(async () => {
     const data = await chrome.storage.local.get("history");
     const history = data.history || [];
     history.unshift(entry);
     await chrome.storage.local.set({ history: compactHistoryForStorage(history) });
   });
-  historyWriteQueue = write.catch((error) => {
-    logger.warn("History write failed:", error?.message || error);
-  });
-  return write;
 }
 
 // reviewTodayHistory uses getAvailableKey with retry on rate limit
@@ -3356,6 +3667,7 @@ if (chrome?.runtime?.onStartup) {
 chrome.runtime.onStartup.addListener(async () => {
   await migrateApiKeysOutOfSync().catch(e => logger.error('API key migration failed (onStartup):', e));
   await compactStoredHistory().catch(e => logger.error('History compaction failed (onStartup):', e));
+  await expireHistoryBackupIfDue().catch(e => logger.error('History backup cleanup failed (onStartup):', e));
   await repairCooldownsAfterStorageQuotaFix().catch(e => logger.error('Cooldown repair failed (onStartup):', e));
   await migrateStorageIfNeeded().catch(e => logger.error('Storage migration failed (onStartup):', e));
   await cleanupExpiredPendingPosts().catch(e => logger.error('Pending post cleanup failed (onStartup):', e));

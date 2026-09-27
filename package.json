@@ -11,6 +11,8 @@
     "build:sw": "python3 scripts/build-sw.py",
     "verify:sw": "python3 scripts/build-sw.py --check",
     "build": "npm run build:dom && npm run build:composer && npm run build:sw",
+    "test:browser-fixture": "python3 tests/browser-fixture.py",
+    "test:extension-smoke": "python3 tests/extension-smoke.py",
     "test:all": "npm run check && npm test"
   }
 }

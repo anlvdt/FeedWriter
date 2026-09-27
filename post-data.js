@@ -19,10 +19,10 @@ const PostData = {
   },
 
   fromFeedWriter(text, sourceUrl, imageUrl, author, source, allImages) {
-    const imageList = Array.isArray(allImages) && allImages.length > 0
-      ? allImages.slice(0, 10)
-      : (imageUrl ? [imageUrl] : []);
-    if (imageUrl && !imageList.includes(imageUrl)) imageList.unshift(imageUrl);
+    const selectedImages = allImages === undefined
+      ? (imageUrl ? [imageUrl] : [])
+      : (Array.isArray(allImages) ? allImages : []);
+    const imageList = [...new Set(selectedImages.filter(url => typeof url === "string" && url.trim()))].slice(0, 10);
 
     return PostData.create({
       content: text,

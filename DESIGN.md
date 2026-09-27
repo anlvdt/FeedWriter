@@ -56,6 +56,8 @@ Dark mode remains for Facebook dark feed and user preference (`theme: dark` / `a
 Base **4px**: 2, 4, 8, 12, 16, 20, 24, 32…
 
 - Buttons: padding ~4×12, height **32px** default / **28px** compact
+- On narrow or touch layouts, interactive targets grow to at least **44px**;
+  labels may wrap and control height may grow with their content.
 - Rows (history/keys): **36px** min
 - Cards: padding 12–16px
 
@@ -82,6 +84,7 @@ Base **4px**: 2, 4, 8, 12, 16, 20, 24, 32…
 | **Chips / badges / kbd** | **20px** · radius 4 |
 | **Panel tool buttons** | 28px compact |
 | **Panel primary (Copy/Đăng)** | 32px teal |
+| **Narrow/touch controls** | 44px minimum target, including tabs and icon buttons |
 | **Floating toolbar btn** | 28px |
 | **Feed chip** | Neutral ink border resting; teal on hover/active |
 | **Overlay panel** | bg L0 · head/footer L1 |

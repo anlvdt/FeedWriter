@@ -111,12 +111,12 @@ async function uploadFilesToInput(fileInput, fileDataList) {
       console.warn("[CrossPost] Failed to fetch file:", fileData.url, err.message);
     }
   }
-  if (dataTransfer.files.length === 0) return false;
+  if (dataTransfer.files.length === 0) return 0;
 
   fileInput.files = dataTransfer.files;
   fileInput.dispatchEvent(new Event("change", { bubbles: true }));
   fileInput.dispatchEvent(new Event("input", { bubbles: true }));
-  return true;
+  return dataTransfer.files.length;
 }
 
 function pasteTextToEditor(editor, text) {

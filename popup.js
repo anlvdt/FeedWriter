@@ -206,6 +206,7 @@ function initWizard() {
   }
 
   async function saveWizardSettings() {
+    const wizardSettingsStatus = document.getElementById("wizardSettingsStatus");
     try {
       const summaryLength =
         document.getElementById("wizardSummaryLength")?.value || "medium";
@@ -214,10 +215,16 @@ function initWizard() {
         summaryLength,
         languageAutoDetected: false,
       });
+      if (wizardSettingsStatus) wizardSettingsStatus.hidden = true;
       return true;
     } catch (e) {
       console.error(e);
-      return true; // still allow finish
+      if (wizardSettingsStatus) {
+        wizardSettingsStatus.textContent = "Không lưu được cài đặt. Hãy thử lại.";
+        wizardSettingsStatus.className = "status error";
+        wizardSettingsStatus.hidden = false;
+      }
+      return false;
     }
   }
 
@@ -264,8 +271,12 @@ function initWizard() {
     }
     if (id === "wizardStep2Next") {
       e.preventDefault();
-      await saveWizardSettings();
-      goToStep(3);
+      btn.disabled = true;
+      try {
+        if (await saveWizardSettings()) goToStep(3);
+      } finally {
+        btn.disabled = false;
+      }
       return;
     }
     if (id === "wizardStep3Finish") {
@@ -442,6 +453,7 @@ chrome.storage.sync.get(
     "blockedDomains",
     "enableUnicodeBold",
     "autoShortenLinks",
+    "autoShortenConsent",
     "autoSummarize",
     "advancedModeEnabled",
   ],
@@ -456,8 +468,8 @@ chrome.storage.sync.get(
     if (d.adDisplayMode) adDisplayModeEl.value = d.adDisplayMode === "mark" ? "mark" : "collapse";
     if (filterEngagementGatesEl) filterEngagementGatesEl.checked = d.filterEngagementGates === true;
     if (d.blockedDomains) blockedDomainsEl.value = d.blockedDomains;
-    if (d.enableUnicodeBold !== false) enableUnicodeBoldEl.checked = true;
-    if (autoShortenLinksEl) autoShortenLinksEl.checked = d.autoShortenLinks !== false;
+    if (enableUnicodeBoldEl) enableUnicodeBoldEl.checked = d.enableUnicodeBold !== false;
+    if (autoShortenLinksEl) autoShortenLinksEl.checked = d.autoShortenConsent === true;
     if (autoSummarizeEl) autoSummarizeEl.checked = d.autoSummarize === true;
 
     // Set advanced mode toggle state
@@ -510,8 +522,9 @@ if (saveBtn) saveBtn.addEventListener("click", () => {
         ? enableUnicodeBoldEl.checked !== false
         : true,
       autoShortenLinks: autoShortenLinksEl
-        ? autoShortenLinksEl.checked !== false
-        : true,
+        ? autoShortenLinksEl.checked === true
+        : false,
+      autoShortenConsent: autoShortenLinksEl?.checked === true,
       autoPublish: false,
       autoSummarize: !!(autoSummarizeEl && autoSummarizeEl.checked),
       advancedModeEnabled: !!(advancedModeToggle && advancedModeToggle.checked),
@@ -623,6 +636,16 @@ if (toggleNewApiKey) {
 const keyStatus = document.getElementById("keyStatus");
 const testBtn = document.getElementById("testBtn");
 const keyEmptyState = document.getElementById("keyEmptyState");
+const newApiKeyError = document.getElementById("newApiKeyError");
+function setNewApiKeyError(message) {
+  if (!newApiKeyError) return;
+  newApiKeyError.textContent = message;
+  newApiKeyError.hidden = !message;
+  newApiKeyInput.setAttribute("aria-invalid", message ? "true" : "false");
+  newApiKeyInput.setAttribute("aria-describedby", "newApiKeyError");
+  if (message) newApiKeyInput.focus();
+}
+newApiKeyInput.addEventListener("input", () => setNewApiKeyError(""));
 function showKeyStatus(msg, type) {
   if (!keyStatus) return;
   keyStatus.textContent = msg;
@@ -681,10 +704,9 @@ async function hashKeyId(key) {
 }
 
 async function persistApiKeys(apiKeys) {
+  await restrictKeyStorage();
   await chrome.storage.local.set({ apiKeys, backupApiKeys: apiKeys });
-  try {
-    await chrome.storage.sync.remove(["apiKeys", "apiKey"]);
-  } catch (_) {}
+  await chrome.storage.sync.remove(["apiKeys", "apiKey"]);
 }
 
 /**
@@ -692,38 +714,18 @@ async function persistApiKeys(apiKeys) {
  * Returns { apiKeys, restoredFromBackup }.
  */
 async function ensureApiKeysLoaded() {
-  const local = await chrome.storage.local.get(["apiKeys", "backupApiKeys"]);
-  const data = await chrome.storage.sync.get(["apiKeys", "apiKey", "provider"]);
-  let apiKeys = local.apiKeys || data.apiKeys || {};
-  for (const p of ALL_PROVIDERS) {
-    if (!Array.isArray(apiKeys[p])) apiKeys[p] = [];
-  }
+  await restrictKeyStorage();
+  return FeedWriterApiKeyStore.migrate(chrome.storage);
+}
 
-  if (data.apiKey) {
-    const provider = data.provider || detectProvider(data.apiKey);
-    if (!apiKeys[provider]) apiKeys[provider] = [];
-    if (!apiKeys[provider].includes(data.apiKey)) {
-      apiKeys[provider].push(data.apiKey);
-    }
+async function restrictKeyStorage() {
+  if (!chrome.storage.local.setAccessLevel || !chrome.storage.sync.setAccessLevel) {
+    throw new Error("Trình duyệt không hỗ trợ bảo vệ API key.");
   }
-
-  let restoredFromBackup = false;
-  if (_countApiKeys(apiKeys) === 0) {
-    const backup = local.backupApiKeys;
-    if (backup && _countApiKeys(backup) > 0) {
-      apiKeys = backup;
-      for (const p of ALL_PROVIDERS) {
-        if (!Array.isArray(apiKeys[p])) apiKeys[p] = [];
-      }
-      restoredFromBackup = true;
-    }
-  }
-
-  if (_countApiKeys(apiKeys) > 0) {
-    await persistApiKeys(apiKeys);
-  }
-
-  return { apiKeys, restoredFromBackup };
+  await Promise.all([
+    chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" }),
+    chrome.storage.sync.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" }),
+  ]);
 }
 
 function _updateKeysTabBadge(total) {
@@ -744,6 +746,16 @@ function _updateKeysTabBadge(total) {
 }
 
 async function loadKeyLists() {
+  const loadState = document.getElementById("keyLoadState");
+  const retry = document.getElementById("retryKeysBtn");
+  const stack = document.getElementById("keysStack");
+  if (stack) stack.hidden = true;
+  if (loadState) {
+    loadState.textContent = "Đang tải khóa API…";
+    loadState.hidden = false;
+  }
+  if (retry) retry.hidden = true;
+  try {
   const { apiKeys, restoredFromBackup } = await ensureApiKeysLoaded();
   const localData = await chrome.storage.local.get([
     "keyStatus",
@@ -792,7 +804,15 @@ async function loadKeyLists() {
       "success",
     );
   }
+  if (loadState) loadState.hidden = true;
+  if (stack) stack.hidden = false;
+  } catch (error) {
+    console.error("[FeedWriter] could not load API keys", error);
+    if (loadState) loadState.textContent = "Không tải được khóa API. Hãy thử lại.";
+    if (retry) retry.hidden = false;
+  }
 }
+document.getElementById("retryKeysBtn")?.addEventListener("click", loadKeyLists);
 
 // === MODEL CONFIG ===
 // Per-provider model overrides, persisted to chrome.storage.sync.modelOverrides.
@@ -1101,9 +1121,10 @@ async function addApiKey() {
   if (isAddingKey) return false;
   const key = newApiKeyInput.value.trim();
   if (!key) {
-    showKeyStatus("Nhập API Key", "error");
+    setNewApiKeyError("Nhập API key trước khi thêm.");
     return false;
   }
+  setNewApiKeyError("");
   isAddingKey = true;
   addKeyBtn.disabled = true;
   try {
@@ -1113,7 +1134,7 @@ async function addApiKey() {
       if (!apiKeys[p]) apiKeys[p] = [];
     }
     if (apiKeys[provider].includes(key)) {
-      showKeyStatus("Key đã tồn tại", "error");
+      setNewApiKeyError("API key này đã tồn tại.");
       return false;
     }
     apiKeys[provider].push(key);
@@ -1125,6 +1146,9 @@ async function addApiKey() {
       "success",
     );
     return true;
+  } catch (error) {
+    setNewApiKeyError("Không lưu được API key. Hãy thử lại.");
+    return false;
   } finally {
     isAddingKey = false;
     addKeyBtn.disabled = false;
@@ -1252,7 +1276,30 @@ let historyData = [];
 let historyReturnFocus = null;
 
 function formatHm(ts) {
-  return new Date(ts).toLocaleTimeString(VI_LOCALE, { hour: "2-digit", minute: "2-digit" });
+  return new Date(ts).toLocaleTimeString(VI_LOCALE, {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Ho_Chi_Minh",
+  });
+}
+
+/** Pill label: HH:mm today, or dd/MM HH:mm when the slot is on another day. */
+function formatSuggestPill(ts, now = Date.now()) {
+  const d = new Date(ts);
+  const today = new Date(now);
+  const sameDay =
+    d.toLocaleDateString(VI_LOCALE, { timeZone: "Asia/Ho_Chi_Minh" }) ===
+    today.toLocaleDateString(VI_LOCALE, { timeZone: "Asia/Ho_Chi_Minh" });
+  if (sameDay) return formatHm(ts);
+  return (
+    d.toLocaleDateString(VI_LOCALE, {
+      day: "2-digit",
+      month: "2-digit",
+      timeZone: "Asia/Ho_Chi_Minh",
+    }) +
+    " " +
+    formatHm(ts)
+  );
 }
 
 function renderPostTimeSuggestions(items) {
@@ -1264,29 +1311,30 @@ function renderPostTimeSuggestions(items) {
     return;
   }
 
-  const sorted = [...items].sort((a, b) => new Date(a.date) - new Date(b.date));
-  const firstTs = new Date(sorted[0].date).getTime();
-  if (!Number.isFinite(firstTs)) {
+  let lastTs = NaN;
+  for (const item of items) {
+    const ts = new Date(item.date).getTime();
+    if (Number.isFinite(ts) && (ts > lastTs || !Number.isFinite(lastTs))) {
+      lastTs = ts;
+    }
+  }
+  if (!Number.isFinite(lastTs)) {
     box.style.display = "none";
     box.innerHTML = "";
     return;
   }
 
   const now = Date.now();
-  const oneHour = 60 * 60 * 1000;
+  const GAPS_MS = [30, 45, 60].map((m) => m * 60 * 1000);
   const candidates = [];
-  for (let i = 1; i <= 24; i++) {
-    const t1 = firstTs + i * oneHour;
-    const t2 = firstTs + i * 2 * oneHour;
-    if (t1 > now) candidates.push(t1);
-    if (t2 > now) candidates.push(t2);
+  let cursor = lastTs;
+  // Cap iterations so a very old lastTs still yields 4 future slots quickly.
+  for (let i = 0; i < 200 && candidates.length < 4; i++) {
+    cursor += GAPS_MS[i % GAPS_MS.length];
+    if (cursor > now) candidates.push(cursor);
   }
 
-  const unique = [...new Set(candidates)]
-    .sort((a, b) => a - b)
-    .slice(0, 4);
-
-  if (unique.length === 0) {
+  if (candidates.length === 0) {
     box.style.display = "none";
     box.innerHTML = "";
     return;
@@ -1294,9 +1342,9 @@ function renderPostTimeSuggestions(items) {
 
   box.style.display = "block";
   box.innerHTML = `
-    <div class="post-time-suggest-title">Gợi ý giờ đăng tiếp theo (cách 1–2 giờ từ bài đầu)</div>
+    <div class="post-time-suggest-title">Gợi ý giờ đăng tiếp theo (cách 30–60 phút từ bài cuối)</div>
     <div class="post-time-suggest-list">
-      ${unique.map((ts) => `<span class="post-time-pill">${formatHm(ts)}</span>`).join("")}
+      ${candidates.map((ts) => `<span class="post-time-pill">${formatSuggestPill(ts, now)}</span>`).join("")}
     </div>
   `;
 }
@@ -1339,17 +1387,28 @@ function typeBadgeLabel(type) {
 }
 
 async function loadHistory() {
+  const loadState = document.getElementById("historyLoadState");
+  const retry = document.getElementById("retryHistoryBtn");
+  const list = document.getElementById("historyList");
+  const actions = document.getElementById("historyActions");
+  if (list) list.hidden = true;
+  if (actions) actions.hidden = true;
+  if (loadState) {
+    loadState.textContent = "Đang tải lịch sử…";
+    loadState.hidden = false;
+  }
+  if (retry) retry.hidden = true;
+  try {
   const data = await chrome.storage.local.get("history");
   historyData = data.history || [];
-  const list = document.getElementById("historyList");
   const detail = document.getElementById("historyDetail");
-  const actions = document.getElementById("historyActions");
   detail.hidden = true;
   list.hidden = false;
   actions.hidden = historyData.length === 0;
   renderPostTimeSuggestions(historyData);
   if (historyData.length === 0) {
-    list.innerHTML = '<p class="empty">Chưa có lịch sử</p>';
+    list.innerHTML = '<p class="empty">Chưa có lịch sử. Tóm tắt một bài viết trên feed để bắt đầu.</p>';
+    if (loadState) loadState.hidden = true;
     return;
   }
   list.innerHTML = historyData
@@ -1382,7 +1441,16 @@ async function loadHistory() {
   if (typeof featureFlags !== "undefined" && featureFlags.testMode) {
     updateDebugInfo();
   }
+  if (loadState) loadState.hidden = true;
+  } catch (error) {
+    console.error("[FeedWriter] could not load history", error);
+    if (list) list.hidden = true;
+    if (actions) actions.hidden = true;
+    if (loadState) loadState.textContent = "Không tải được lịch sử. Hãy thử lại.";
+    if (retry) retry.hidden = false;
+  }
 }
+document.getElementById("retryHistoryBtn")?.addEventListener("click", loadHistory);
 
 // Event delegation for history items
 document.addEventListener("click", (e) => {
@@ -1483,14 +1551,19 @@ document.getElementById("rescanBtn").addEventListener("click", async () => {
 });
 
 document.getElementById("clearBtn").addEventListener("click", async () => {
-  if (!confirm("Xóa toàn bộ lịch sử? (Có thể khôi phục trong 30 giây)")) return;
+  if (!confirm("Xóa toàn bộ lịch sử? Nếu trình duyệt hỗ trợ, bạn có 30 giây để hoàn tác.")) return;
 
-  // Soft delete: backup trước khi xóa
-  const data = await chrome.storage.local.get("history");
-  const backup = data.history || [];
-
-  await chrome.storage.local.set({ history: [], historyBackup: { items: backup, deletedAt: Date.now() } });
+  const cleared = await chrome.runtime.sendMessage({ action: "history-clear" });
+  if (!cleared?.ok) {
+    showHistoryStatus(cleared?.error || "Không xóa được lịch sử", "error");
+    return;
+  }
   loadHistory();
+
+  if (!cleared.undoAvailable) {
+    showHistoryStatus("Đã xóa lịch sử vĩnh viễn", "success");
+    return;
+  }
 
   // Show undo option in the History tab's own status bar (not the Settings
   // tab's #status, which would be hidden while the user is on History).
@@ -1500,22 +1573,17 @@ document.getElementById("clearBtn").addEventListener("click", async () => {
   undoBtn.textContent = "Hoàn tác";
   undoBtn.style.cssText = "margin-left:8px;padding:3px 10px;border:1px solid #3F3F46;border-radius:6px;background:transparent;color:#3F3F46;font-size:12px;cursor:pointer;";
   undoBtn.addEventListener("click", async () => {
-    const backupData = await chrome.storage.local.get("historyBackup");
-    if (backupData.historyBackup && backupData.historyBackup.items) {
-      await chrome.storage.local.set({ history: backupData.historyBackup.items });
-      await chrome.storage.local.remove("historyBackup");
+    const result = await chrome.runtime.sendMessage({ action: "history-undo", id: cleared.id });
+    if (result?.ok) {
       loadHistory();
       showHistoryStatus("Đã khôi phục lịch sử", "success");
     } else {
-      showHistoryStatus("Hết thời gian khôi phục — lịch sử đã xóa vĩnh viễn", "error");
+      showHistoryStatus(result?.error || "Hết thời gian khôi phục — lịch sử đã xóa vĩnh viễn", "error");
     }
   });
   if (statusEl) statusEl.appendChild(undoBtn);
 
-  // Auto-remove backup after 30 seconds
-  setTimeout(async () => {
-    await chrome.storage.local.remove("historyBackup");
-  }, 30000);
+  // Service-worker alarm owns backup expiry even after this popup closes.
 });
 
 // === REVIEW TAB ===
@@ -1670,6 +1738,7 @@ loadTemplates();
 
 // Save template
 saveTemplateBtn.addEventListener("click", async () => {
+  if (saveTemplateBtn.disabled) return;
   const name = templateNameInput.value.trim();
   const type = templateTypeSelect.value;
   const prompt = templatePromptInput.value.trim();
@@ -1692,13 +1761,20 @@ saveTemplateBtn.addEventListener("click", async () => {
     createdAt: Date.now()
   };
 
-  const { templates = [] } = await chrome.storage.local.get("templates");
-  templates.push(template);
-  await chrome.storage.local.set({ templates });
-
-  showTemplateStatus("Đã lưu template", "success");
-  clearTemplateForm();
-  loadTemplates();
+  saveTemplateBtn.disabled = true;
+  try {
+    const { templates = [] } = await chrome.storage.local.get("templates");
+    templates.push(template);
+    await chrome.storage.local.set({ templates });
+    showTemplateStatus("Đã lưu template", "success");
+    clearTemplateForm();
+    await loadTemplates();
+  } catch (error) {
+    console.error("[FeedWriter] could not save template", error);
+    showTemplateStatus("Không lưu được template. Hãy thử lại.", "error");
+  } finally {
+    saveTemplateBtn.disabled = false;
+  }
 });
 
 // Clear template form
@@ -1928,11 +2004,11 @@ function initPopupTranslate() {
     pageBtn.disabled = busy;
     pasteBtn.disabled = busy;
   };
-  const showTranslation = (text, note) => {
+  const showTranslation = (text, note, kind = "success") => {
     lastTranslation = String(text || "").trim();
     output.hidden = !lastTranslation;
     output.textContent = lastTranslation;
-    setStatus(note || (lastTranslation ? "Đã dịch." : ""), lastTranslation ? "success" : "error");
+    setStatus(note || (lastTranslation ? "Đã dịch." : ""), kind);
   };
 
   async function readActivePageText() {
@@ -1951,8 +2027,7 @@ function initPopupTranslate() {
           .replace(/\r\n?/g, "\n")
           .replace(/[^\S\n]+/g, " ")
           .replace(/\n{3,}/g, "\n\n")
-          .trim()
-          .slice(0, 24000);
+          .trim();
       },
     });
     return String(result?.result || "").trim();
@@ -1974,7 +2049,10 @@ function initPopupTranslate() {
         mode,
       });
       if (!response || response.error) {
-        showTranslation(response?.partial || "", response?.error || "Không dịch được.");
+        const partial = response?.partial || "";
+        showTranslation(partial, partial
+          ? "Bản dịch chưa hoàn tất: " + (response?.error || "Không dịch được.")
+          : response?.error || "Không dịch được.", "error");
         return;
       }
       const note = response.truncated

@@ -38,9 +38,12 @@ describe("audit hardening", () => {
     assert.match(background, /clipboardRead/);
   });
 
-  it("shares Groq TPM across summarize jobs", () => {
+  it("shares Groq TPM across summarize jobs and falls back when exhausted", () => {
     assert.match(background, /const groqTpmLedger/);
     assert.match(background, /async function waitForGroqTpm/);
+    assert.match(background, /function groqTpmExcludeProviders/);
+    assert.match(background, /Groq hết token\/phút — chuyển provider khác/);
+    assert.match(background, /excludeProviders/);
   });
 
   it("does not spend auto-summary quota on skipped posts", () => {

@@ -127,7 +127,9 @@ describe("streaming lifecycle", () => {
     assert.match(background, /function repairCooldownsAfterStorageQuotaFix/);
     assert.match(background, /storageQuotaRepairVersion: REPAIR_VERSION/);
     assert.match(background, /\^data:\/i\.test\(String\(imageUrl/);
-    assert.match(background, /chrome\.storage\.sync\.remove\(\["apiKeys", "apiKey"\]\)/);
+    const keyStore = readFileSync(path.join(root, "lib/api-key-store.js"), "utf8");
+    assert.match(background, /FeedWriterApiKeyStore\.migrate\(chrome\.storage\)/);
+    assert.match(keyStore, /storage\.sync\.remove\(\["apiKeys", "apiKey"\]\)/);
     assert.ok(
       background.indexOf("await migrateApiKeysOutOfSync()") <
         background.indexOf("await migrateSettingsIfNeeded()"),

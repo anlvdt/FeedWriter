@@ -15,7 +15,34 @@ function process(output) {
   return vm.runInContext('postProcessOutput(output, "", "summary")', context);
 }
 
+function processWithSource(output, source) {
+  context.output = output;
+  context.source = source;
+  return vm.runInContext('postProcessOutput(output, source, "summary")', context);
+}
+
 describe("summary headline deterministic guard", () => {
+  it("flags a user's Claude Code setting action wrongly attributed to the product", () => {
+    const source = "Tắt đề xuất prompt trong Claude Code có thể tăng giới hạn sử dụng khoảng 10% theo trải nghiệm của một người dùng.";
+    const output = "Claude Code tắt đề xuất prompt có thể tăng giới hạn sử dụng khoảng 10%\n\nClaude Code sẽ giảm giới hạn đề xuất prompt, theo một người dùng, có thể làm tăng giới hạn sử dụng lên khoảng 10%.";
+    const result = processWithSource(output, source);
+    assert.equal(result.quality, "warn");
+    assert.match(result.issues.join(" "), /đảo tác nhân/);
+    assert.match(result.issues.join(" "), /hạn mức sử dụng/);
+  });
+
+  it("does not flag a correctly attributed setting action or a real product action", () => {
+    const userAction = processWithSource(
+      "Tắt gợi ý prompt trong Claude Code có thể tăng khoảng 10% hạn mức sử dụng\n\nTheo một người dùng, tắt tùy chọn này có thể tăng hạn mức sử dụng.",
+      "Tắt gợi ý prompt trong Claude Code có thể tăng hạn mức sử dụng khoảng 10%.",
+    );
+    assert.doesNotMatch(userAction.issues.join(" "), /đảo tác nhân/);
+    const productAction = processWithSource(
+      "Claude Code tắt gợi ý prompt mặc định\n\nAnthropic cho biết Claude Code đã tắt gợi ý prompt mặc định.",
+      "Anthropic tắt gợi ý prompt mặc định trong Claude Code cho mọi tài khoản.",
+    );
+    assert.doesNotMatch(productAction.issues.join(" "), /đảo tác nhân/);
+  });
   for (const [input, expected] of [
     [
       "USER đề xuất cài plugin Product Designs cho Codex\n\nNội dung bài viết.",
@@ -242,5 +269,19 @@ describe("summary headline deterministic guard", () => {
       result.issues.some((i) => i.includes("giật gân")),
       "expected clickbait flag, got: " + JSON.stringify(result.issues),
     );
+  });
+
+  it("flags a made-up headline number for editorial review", () => {
+    context.output = "Codex tăng tốc gấp 5 lần\n\nCodex đã cải thiện tốc độ xử lý.";
+    context.source = "Codex đã cải thiện tốc độ xử lý, chưa có số liệu so sánh.";
+    const result = vm.runInContext('postProcessOutput(output, source, "summary")', context);
+    assert.equal(result.quality, "warn");
+    assert.match(result.issues.join(" "), /số liệu không có trong nguồn/);
+  });
+
+  it("flags an empty generic headline for rewriting", () => {
+    const result = process("Cập nhật\n\nCó thay đổi mới trong ứng dụng.");
+    assert.equal(result.quality, "warn");
+    assert.match(result.issues.join(" "), /thiếu chủ thể/);
   });
 });

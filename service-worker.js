@@ -1,6 +1,6 @@
 /* ==========================================================================
  * FeedWriter service-worker.js (GENERATED — do not edit by hand)
- * Bundle of: lib/error-boundary.js + utils.js + lib/message-schema.js + lib/summary-policy.js + lib/model-registry.js + lib/provider-rotation.js + lib/url-clean.js + bg-prompts.js + bg-api.js + background.js
+ * Bundle of: lib/error-boundary.js + utils.js + lib/message-schema.js + lib/summary-policy.js + lib/model-registry.js + lib/provider-rotation.js + lib/api-key-store.js + lib/url-clean.js + bg-prompts.js + bg-api.js + background.js
  * Rebuild: python3 scripts/build-sw.py
  * ========================================================================== */
 
@@ -900,6 +900,11 @@ const ACTION_SCHEMAS = {
     fields: { kind: "nonEmptyString", id: "nonEmptyString" },
     required: ["kind", "id"],
   },
+  "prepare-pending-post": {
+    sender: SENDER.CONTENT_TAB,
+    fields: { kind: "nonEmptyString", id: "nonEmptyString" },
+    required: ["kind", "id"],
+  },
   "complete-pending-post": {
     sender: SENDER.CONTENT_TAB,
     fields: { kind: "nonEmptyString", id: "nonEmptyString" },
@@ -942,6 +947,14 @@ const ACTION_SCHEMAS = {
     fields: {},
     required: [],
   },
+  "get-content-settings": {
+    sender: SENDER.CONTENT_TAB,
+    fields: {},
+    required: [],
+  },
+  "history-clear": { sender: SENDER.EXTENSION_PAGE, fields: {}, required: [] },
+  "history-undo": { sender: SENDER.EXTENSION_PAGE, fields: { id: "nonEmptyString" }, required: ["id"] },
+  "history-expire": { sender: SENDER.EXTENSION_PAGE, fields: { id: "nonEmptyString" }, required: ["id"] },
   "shorten-url": {
     sender: SENDER.ANY_EXTENSION,
     fields: { url: "nonEmptyString" },
@@ -1441,6 +1454,7 @@ const EMPTY_API_KEYS = {
  * @param {object} [opts.rotationIndex] - { [provider]: number }
  * @param {object} [opts.providerStatus] - { [provider]: { downUntil } } circuit breaker
  * @param {string|null} [opts.preferredProvider]
+ * @param {string[]|null} [opts.excludeProviders] - skip these providers (e.g. Groq when TPM is exhausted)
  * @param {number} opts.now - epoch ms
  * @returns {{ key: string, provider: string, index: number, newRotationIndex: object, newKeyStatus: object }
  *   | { noKeys: true, key?: null, provider?: null }
@@ -1452,8 +1466,14 @@ function selectAvailableKey(opts) {
     legacyProvider = "groq",
     preferredProvider = null,
     providerStatus = null,
+    excludeProviders = null,
     now,
   } = opts;
+  const excluded = new Set(
+    Array.isArray(excludeProviders)
+      ? excludeProviders.filter((p) => typeof p === "string" && p)
+      : [],
+  );
 
   let apiKeys = opts.apiKeys;
   let hasAnyKey = false;
@@ -1498,6 +1518,7 @@ function selectAvailableKey(opts) {
   // should still get a best-effort attempt rather than a dead end.
   for (const ignoreBreaker of [false, true]) {
     for (const provider of orderedProviders) {
+      if (excluded.has(provider)) continue;
       const keys = apiKeys[provider] || [];
       if (keys.length === 0) continue;
 
@@ -1532,12 +1553,15 @@ function selectAvailableKey(opts) {
     }
   }
 
-  // All keys across all providers are rate-limited (or empty)
+  // All keys across all providers are rate-limited (or empty / excluded)
   let soonestTime = Infinity;
   let totalKeys = 0;
+  let consideredKeys = 0;
   for (const provider of PROVIDER_PRIORITY) {
     const keys = apiKeys[provider] || [];
     totalKeys += keys.length;
+    if (excluded.has(provider)) continue;
+    consideredKeys += keys.length;
     for (const key of keys) {
       const until = (keyStatus[key] || {}).rateLimitedUntil || 0;
       if (until < soonestTime) soonestTime = until;
@@ -1547,6 +1571,11 @@ function selectAvailableKey(opts) {
   if (totalKeys === 0) {
     return { key: null, provider: null, noKeys: true };
   }
+  // Every configured key was excluded (e.g. only Groq keys exist but Groq
+  // was deferred for TPM). Callers should fall back to waiting / including them.
+  if (consideredKeys === 0) {
+    return { key: null, provider: null, allExcluded: true, total: totalKeys };
+  }
   const waitMinutes = Math.max(1, Math.ceil((soonestTime - now) / 60000));
   return {
     key: null,
@@ -1554,7 +1583,7 @@ function selectAvailableKey(opts) {
     allLimited: true,
     waitMinutes,
     retryInMs: Math.max(0, soonestTime - now),
-    total: totalKeys,
+    total: consideredKeys,
   };
 }
 
@@ -1597,6 +1626,83 @@ if (typeof globalThis !== "undefined") {
   globalThis.FeedWriterProviderRotation = FeedWriterProviderRotation;
 }
 /* ===== END lib/provider-rotation.js ===== */
+
+/* ===== BEGIN lib/api-key-store.js ===== */
+/** Shared migration for the popup and service worker. Never logs key material. */
+"use strict";
+
+const FeedWriterApiKeyStore = (() => {
+  const providers = ["groq", "gemini", "cerebras", "sambanova", "openrouter"];
+
+  function normalize(map) {
+    const result = {};
+    for (const provider of providers) {
+      const keys = Array.isArray(map?.[provider]) ? map[provider] : [];
+      result[provider] = [...new Set(keys.filter((key) =>
+        typeof key === "string" && key.trim().length > 0,
+      ))];
+    }
+    return result;
+  }
+
+  function count(map) {
+    return providers.reduce((total, provider) => total + (map[provider]?.length || 0), 0);
+  }
+
+  function merge(local, backup, sync) {
+    const primary = normalize(local.apiKeys);
+    const recovered = count(primary) === 0 && count(normalize(backup)) > 0;
+    const base = recovered ? normalize(backup) : primary;
+    const legacyProvider = providers.includes(sync.provider) ? sync.provider : "groq";
+    const merged = normalize(base);
+    const synced = normalize(sync.apiKeys);
+    for (const provider of providers) {
+      merged[provider] = [...new Set([...merged[provider], ...synced[provider]])];
+    }
+    if (typeof sync.apiKey === "string" && sync.apiKey.trim() &&
+        !merged[legacyProvider].includes(sync.apiKey)) {
+      merged[legacyProvider].push(sync.apiKey);
+    }
+    return { apiKeys: merged, restoredFromBackup: recovered };
+  }
+
+  function sameKeys(a, b) {
+    return providers.every((provider) => {
+      const left = a[provider] || [];
+      const right = b[provider] || [];
+      return left.length === right.length && left.every((key, index) => key === right[index]);
+    });
+  }
+
+  async function migrate(storage) {
+    const [local, sync] = await Promise.all([
+      storage.local.get(["apiKeys", "backupApiKeys"]),
+      storage.sync.get(["apiKeys", "apiKey", "provider"]),
+    ]);
+    const result = merge(local, local.backupApiKeys, sync);
+    const hasSync = sync.apiKeys !== undefined || !!sync.apiKey;
+    const mustWrite = hasSync || result.restoredFromBackup ||
+      (count(result.apiKeys) > 0 && !sameKeys(normalize(local.apiKeys), result.apiKeys));
+    if (mustWrite) {
+      await storage.local.set({
+        apiKeys: result.apiKeys,
+        backupApiKeys: result.apiKeys,
+      });
+      const persisted = await storage.local.get("apiKeys");
+      if (!sameKeys(normalize(persisted.apiKeys), result.apiKeys)) {
+        throw new Error("API key migration could not verify local storage");
+      }
+    }
+    if (hasSync) await storage.sync.remove(["apiKeys", "apiKey"]);
+    return result;
+  }
+
+  return { providers, normalize, count, merge, migrate };
+})();
+
+if (typeof module !== "undefined") module.exports = FeedWriterApiKeyStore;
+globalThis.FeedWriterApiKeyStore = FeedWriterApiKeyStore;
+/* ===== END lib/api-key-store.js ===== */
 
 /* ===== BEGIN lib/url-clean.js ===== */
 /**
@@ -1736,14 +1842,15 @@ CHẾ ĐỘ BẮT BUỘC — VIẾT LẠI THÀNH BẢN TIN:
 - Đầu ra PHẢI là bản tin cô đọng, khách quan theo văn phong báo chí công nghệ: ưu tiên sản phẩm, công ty, tính năng, thay đổi, lỗi, kết quả và tác động thực tế. TUYỆT ĐỐI KHÔNG tường thuật lại, kể chuyện, mô phỏng giọng tác giả hay giữ cảm xúc của bài gốc.
 - Dùng cấu trúc KIM TỰ THÁP NGƯỢC: thông tin quan trọng nhất lên trước, chi tiết bổ sung xuống sau. KHÔNG bám thứ tự xuất hiện trong nguồn.
 - Tiêu đề phải HẤP DẪN, GIÀU THÔNG TIN, CÓ HOOK MẠNH nhưng không clickbait; chọn góc mạnh nhất từ dữ kiện thật trong nguồn thay vì chỉ mô tả chung chung.
-- 5 từ đầu tiên của tiêu đề phải ưu tiên chứa ngay tên thương hiệu, sản phẩm hoặc công nghệ cốt lõi.
+- Ưu tiên nêu tên thương hiệu/sản phẩm sớm, NHƯNG không ép sản phẩm làm chủ ngữ của hành động do người dùng thực hiện. Xác định rõ ai làm gì với cái gì trước khi sắp chữ trong tiêu đề và lead.
 - Chọn MỘT kỹ thuật hook phù hợp với dữ kiện: DATA HOOK khi nguồn có con số/chi tiết nổi bật; SURPRISE/CONTRARIAN khi nguồn thực sự cho thấy kết quả trái kỳ vọng; BENEFIT/IMPACT HOOK khi có lợi ích hoặc tác động rõ; CURIOSITY GAP khi có thể tạo tò mò mà vẫn nói rõ sự kiện chính. KHÔNG dùng câu hỏi mở và không giấu fact cốt lõi chỉ để câu click.
-- Áp dụng 1 trong 4 mô hình tiêu đề báo chí chuẩn: (1) [Thương hiệu/Sản phẩm] + [Động từ hành động] + [Số liệu/Kết quả nổi bật]; (2) [Sự cố/Lỗi/Cảnh báo] + [Đối tượng bị ảnh hưởng & Hệ quả thực tế]; (3) [Thay đổi giá/chính sách/tính năng] + [Tác động trực tiếp đến người dùng]; (4) [So sánh/Kiểm nghiệm thực tế] + [Dữ liệu đối chiếu rõ ràng].
+- Chọn cấu trúc tiêu đề theo đúng tác nhân: (1) hãng/sản phẩm + hành động CHỈ khi hãng/sản phẩm thực hiện hành động đó; (2) thao tác hoặc tùy chọn của người dùng + "trong/trên" sản phẩm + tác động khi chính người dùng thực hiện; (3) sự cố/thay đổi + đối tượng chịu tác động. Không đảo vai để khớp khuôn.
 - TUYỆT ĐỐI CẤM từ ngữ giật gân, câu view, thổi phồng: "gây sốc", "chấn động", "không thể tin nổi", "toang", "cháy hàng", "bạn sẽ bất ngờ", "bí mật", "đây là lý do", "chính thức", "phiên bản nâng cấp của phần mềm", câu hỏi tu từ rỗng.
 - Tiêu đề vẫn phải chứa sự kiện/kết quả cụ thể và ưu tiên thực thể công nghệ hoặc thay đổi chính làm chủ ngữ. Mọi con số, so sánh, mức độ bất ngờ, lợi ích hoặc tác động dùng làm hook PHẢI có căn cứ trực tiếp trong nguồn; không phóng đại mức chắc chắn.
-- Tiêu đề phải là MỘT câu/mệnh đề báo chí tự nhiên, đọc liền mạch và hiểu ngay. Chỉ một ý: sản phẩm + việc vừa xảy ra + kết quả. Không kể cả quá trình ("từ A sang B kể từ tháng…"). Không mở thêm mệnh đề sau dấu phẩy nếu không viết trọn số liệu. Không kết thúc bằng "gần", "khoảng", "hơn", giới từ, hoặc "tháng/năm" thiếu mốc. Fact thứ hai đưa xuống lead. Không áp trần số từ. Câu phải kết thúc trọn cụm. Ví dụ SAI: "Agents on Rails tăng mức nỗ lực tối đa cho các mô hình, chi phí gần". Ví dụ ĐÚNG: "Agents on Rails bật nỗ lực tối đa cho mọi mô hình".
+- Tiêu đề phải là MỘT câu/mệnh đề báo chí tự nhiên, đọc liền mạch và hiểu ngay. Chỉ một ý: đúng tác nhân + hành động/thay đổi + kết quả. Không kể cả quá trình ("từ A sang B kể từ tháng…"). Không mở thêm mệnh đề sau dấu phẩy nếu không viết trọn số liệu. Không kết thúc bằng "gần", "khoảng", "hơn", giới từ, hoặc "tháng/năm" thiếu mốc. Fact thứ hai đưa xuống lead. Không áp trần số từ. Câu phải kết thúc trọn cụm. Ví dụ SAI: "Agents on Rails tăng mức nỗ lực tối đa cho các mô hình, chi phí gần". Ví dụ ĐÚNG: "Agents on Rails bật nỗ lực tối đa cho mọi mô hình".
+- Phân biệt thao tác của người dùng với thay đổi do hãng/sản phẩm thực hiện. Nếu nguồn nói tắt gợi ý prompt TRONG Claude Code có thể giúp một người dùng tăng khoảng 10% hạn mức sử dụng, tiêu đề đúng là "Tắt gợi ý prompt trong Claude Code có thể giúp tăng khoảng 10% hạn mức sử dụng"; SAI: "Claude Code tắt gợi ý prompt...". Lead phải nói tùy chọn gợi ý prompt bị người dùng tắt, KHÔNG viết Claude Code giảm giới hạn đề xuất prompt hoặc Anthropic thay đổi hạn mức. Giữ "theo một người dùng" và "có thể" khi đây chỉ là trải nghiệm cá nhân.
 - KHÔNG đưa "USER", "Người dùng", "Một người dùng", "Tác giả", "Người đăng", tên tài khoản hoặc tên cơ quan báo chí/trang tin/leaker (như Vox, The Verge, Reuters, Bloomberg...) vào BẤT KỲ vị trí nào của tiêu đề khi chúng chỉ là chủ thể cung cấp nguồn, chia sẻ, phát hiện, đề xuất, khuyến nghị hoặc nêu ý kiến. TUYỆT ĐỐI KHÔNG mở đầu tiêu đề bằng câu dẫn nguồn ("Theo...", "...cho biết", "...tiết lộ", "...đưa tin"). Chỉ dùng "người dùng" khi chính tập người dùng là đối tượng của sự kiện/dữ liệu.
-- Nếu nguồn chỉ là trải nghiệm của một cá nhân, không biến trải nghiệm thành sự thật chung. Tiêu đề ưu tiên cấu trúc như "[Sản phẩm/tính năng] bị phản ánh..."; thông tin "theo trải nghiệm của một người dùng" để trong thân bài khi cần giữ mức chắc chắn.
+- Nếu nguồn chỉ là trải nghiệm của một cá nhân, không biến trải nghiệm thành sự thật chung. Tiêu đề có thể dùng "có thể" hoặc "được một người dùng phản ánh", tùy câu nào rõ tác nhân hơn; thông tin "theo trải nghiệm của một người dùng" để trong thân bài khi cần giữ mức chắc chắn.
 - Tránh cụm từ máy móc hoặc dịch sát khiến tiếng Việt gượng. Ví dụ, ưu tiên "cải thiện khả năng thẩm mỹ" hơn "tăng mức thẩm mỹ" khi đúng nghĩa nguồn.
 - Ví dụ SAI: "GPT-6 tăng mức thẩm mỹ người dùng đề xuất cài plugin Product Designs cho Codex". Ví dụ ĐÚNG: "GPT-6 được đánh giá cao hơn về thẩm mỹ". Fact còn lại viết ở lead.
 - Tiêu đề công nghệ: Giữ nguyên các thuật ngữ phổ biến (no-code, prompt, model, AI agent, PC, local...). CẤM dịch thô làm tiêu đề tối nghĩa (Ví dụ SAI: "CÔNG CỤ AI KHÔNG MÃ KÉO-THẢ TRÊN MÁY TÍNH CÁ NHÂN"; Ví dụ ĐÚNG: "CÔNG CỤ AI NO-CODE KÉO THẢ TRÊN PC").
@@ -1764,7 +1871,7 @@ CHẾ ĐỘ BẮT BUỘC — VIẾT LẠI THÀNH BẢN TIN:
   + Người viết đóng vai trò là chủ thể trực tiếp đưa tin (ngôi thứ nhất) tới bạn đọc, tự tin, chủ động và mang lại cảm giác tin tức nóng hổi, chân thực. Có thể xưng hô và hướng tới độc giả ("bạn") một cách tự nhiên, thân thiện (ví dụ: "Nếu bạn quan tâm đến...", "Bạn có thể trải nghiệm...").
   + TUYỆT ĐỐI CẤM CÁC CÂU TỰ XƯNG MÁY MÓC / META-TALK: Cấm mở đầu câu hoặc bài viết bằng các cụm từ tự giới thiệu bản thân như: "Tôi đưa tin về...", "Tôi xin chia sẻ về...", "Hôm nay tôi đưa tin...", "Tôi sẽ tóm tắt...", "Tôi giới thiệu về...". Bản tin PHẢI đi thẳng vào tên sản phẩm, công nghệ hoặc sự kiện chính!
   + TUYỆT ĐỐI CẤM KIỂU THUẬT LẠI GIÁN TIẾP: Cấm mở đầu câu hoặc dẫn dắt bằng các cụm từ thuật lại như "[Hãng/Công ty] cho biết / cho hay / tuyên bố / thông báo...", "Theo một bài đăng trên X / Facebook / mạng xã hội...", "Theo bài viết...", "Tác giả chia sẻ rằng...", "Một người dùng phản ánh...".
-  + Hãy chuyển toàn bộ sang câu khẳng định sự kiện/hành động trực tiếp: Thay vì "OpenAI cho biết hệ thống giọng nói đã được triển khai...", PHẢI viết: "OpenAI vừa chính thức mở API giọng nói cho các nhà phát triển sau khi hệ thống này đạt hơn 1 tỷ người dùng ChatGPT...".
+  + Hãy viết trực tiếp về sự kiện/hành động, nhưng KHÔNG đổi tác nhân hoặc mức chắc chắn. Thay vì "OpenAI cho biết hệ thống giọng nói đã được triển khai...", chỉ viết "OpenAI mở API giọng nói..." nếu nguồn xác nhận OpenAI đã làm vậy; với trải nghiệm một người, phải giữ đó là nhận định của một người.
   + CẤM các lối kể rườm rà "sau đó", "tiếp theo", "cuối cùng", "câu chuyện bắt đầu" trừ khi trình tự thời gian là dữ kiện kỹ thuật thiết yếu.
 - Cô đọng bằng cách bỏ chữ thừa và ý lặp, KHÔNG bằng cách bỏ ý. Phải giữ đủ tên, số liệu, điều kiện, kết quả, lập luận và kết luận có giá trị dù nguồn dài.
 - QUY ĐỔI THÔNG MINH MỐC THỜI GIAN SANG GIỜ VIỆT NAM (ICT / UTC+7):
@@ -1778,7 +1885,7 @@ const SUMMARY_PROMPT = `Bạn là biên tập viên báo chí công nghệ tiế
 
 QUY TRÌNH:
 1. Xác định các sự thật / ý chính CÓ TRONG bài gốc (tên, số, việc xảy ra, điều kiện).
-2. Viết tiêu đề: 1 dòng, có hook mạnh nhưng fact-based, một câu trọn nghĩa, không dừng giữa cụm; chọn một góc dữ kiện nổi bật nhất và ưu tiên sản phẩm/công ty/tính năng + thay đổi hoặc kết quả chính. Không ghép fact thứ hai vào tiêu đề. Không đưa "USER", "Người dùng", "Tác giả", "Người đăng" hoặc tên tài khoản vào tiêu đề khi đó chỉ là người cung cấp nguồn/ý kiến. Viết bình thường (hệ thống tự viết hoa).
+2. Viết tiêu đề: 1 dòng, có hook mạnh nhưng fact-based, một câu trọn nghĩa, không dừng giữa cụm; chọn một góc dữ kiện nổi bật nhất và giữ đúng tác nhân của hành động. Nêu sản phẩm sớm nhưng không biến sản phẩm thành người thực hiện thao tác của người dùng. Không ghép fact thứ hai vào tiêu đề. Không đưa "USER", "Người dùng", "Tác giả", "Người đăng" hoặc tên tài khoản vào tiêu đề khi đó chỉ là người cung cấp nguồn/ý kiến. Viết bình thường (hệ thống tự viết hoa).
 3. Xếp các ý theo mức độ quan trọng, viết lead trước rồi mới đến chi tiết bổ sung.
 
 FORMAT OUTPUT:
@@ -1878,7 +1985,7 @@ QUY TẮC CHÍNH TẢ VÀ HÀNH VĂN BẮT BUỘC:
 - Độ dài câu hợp lý: ưu tiên câu 15-25 từ, tối đa 35 từ. Ngắt câu mạch lạc bằng dấu chấm, tránh câu ghép quá nhiều vế phụ rườm rà.
 - Giữ giọng điệu trung lập, khách quan: loại bỏ các từ ngữ tâng bốc PR (đột phá mang tính cách mạng, hoàn hảo, siêu phẩm, đỉnh cao, thần thánh).
 - THỊ HIẾU NGƯỜI ĐỌC VIỆT:
-  + Tiêu đề theo khẩu vị báo Việt: chủ thể đứng đầu, động từ hành động rõ, kết quả/hệ quả theo sau ("iPhone 17 tăng giá 1,5 triệu đồng"). Tránh cấu trúc bị động dài và danh từ hóa nặng nề ("việc cải thiện khả năng").
+  + Tiêu đề theo khẩu vị báo Việt: chủ thể THỰC SỰ của hành động hoặc chính thao tác đứng đầu, kết quả/hệ quả theo sau ("iPhone 17 tăng giá 1,5 triệu đồng" nếu nguồn nói giá iPhone tăng; "Tắt gợi ý prompt trong Claude Code có thể..." nếu người dùng tắt tùy chọn). Tránh cấu trúc bị động dài và danh từ hóa nặng nề.
   + Động từ mạnh, cụ thể: "ra mắt", "tăng giá", "vá lỗi", "cắt giảm", "mở rộng" thay vì "thực hiện", "tiến hành", "đưa ra" khi nguồn cho phép.
   + Quan hệ nhân quả nêu trực tiếp bằng "vì/vì thế/nên" khi nguồn thể hiện rõ; không suy diễn nguyên nhân.
   + Cụm từ đời báo Việt quen thuộc được ưu tiên: "theo công bố", "dự kiến", "vừa ra mắt", "lần đầu tiên" — dùng đúng mức độ chắc chắn của nguồn.
@@ -2171,52 +2278,40 @@ function remapKeyStatus(statusMap, key, hashed) {
 }
 
 async function loadApiKeyStore() {
-  const data = await chrome.storage.sync.get(["apiKeys", "apiKey", "provider"]);
+  if (!(await localStorageAccessReady)) throw new Error("Không bảo vệ được kho API key.");
+  const migrated = await FeedWriterApiKeyStore.migrate(chrome.storage);
   const localData = await chrome.storage.local.get([
-    "apiKeys",
     "keyStatus",
     "keyRotationIndex",
-    "backupApiKeys",
     "providerStatus",
   ]);
-
-  let apiKeys = localData.apiKeys || data.apiKeys;
-  let hasAnyKey = false;
-  if (apiKeys) {
-    for (const p in apiKeys) {
-      if (apiKeys[p] && apiKeys[p].length > 0) hasAnyKey = true;
-    }
-  }
-
-  if (!hasAnyKey && localData.backupApiKeys) {
-    apiKeys = localData.backupApiKeys;
-    hasAnyKey = true;
-  }
-
-  if (hasAnyKey) {
-    chrome.storage.local.set({ apiKeys, backupApiKeys: apiKeys }).catch(() => {});
-    if (data.apiKeys) chrome.storage.sync.remove("apiKeys").catch(() => {});
-  }
+  const apiKeys = migrated.apiKeys;
+  const hasAnyKey = FeedWriterApiKeyStore.count(apiKeys) > 0;
 
   return {
     apiKeys,
     hasAnyKey,
-    legacyApiKey: hasAnyKey ? null : data.apiKey || null,
-    legacyProvider: data.provider || "groq",
+    legacyApiKey: null,
+    legacyProvider: "groq",
     keyStatus: localData.keyStatus || {},
     rotationIndex: localData.keyRotationIndex || {},
     providerStatus: localData.providerStatus || {},
   };
 }
 
-function getAvailableKey(preferredProvider = null) {
-  const task = keySelectionQueue.then(() => selectAvailableKeyForRequest(preferredProvider));
+function getAvailableKey(preferredProvider = null, excludeProviders = null) {
+  const task = keySelectionQueue.then(() =>
+    selectAvailableKeyForRequest(preferredProvider, excludeProviders),
+  );
   keySelectionQueue = task.catch(() => {});
   return task;
 }
 
 // Get the best available key across ALL providers.
-async function selectAvailableKeyForRequest(preferredProvider = null) {
+async function selectAvailableKeyForRequest(
+  preferredProvider = null,
+  excludeProviders = null,
+) {
   const store = await loadApiKeyStore();
   const hashedStatus = { ...(store.keyStatus || {}) };
   const validHashes = new Set();
@@ -2257,6 +2352,7 @@ async function selectAvailableKeyForRequest(preferredProvider = null) {
     rotationIndex: store.rotationIndex,
     providerStatus: store.providerStatus,
     preferredProvider,
+    excludeProviders,
     now: Date.now(),
   });
 
@@ -2282,6 +2378,9 @@ async function selectAvailableKeyForRequest(preferredProvider = null) {
       .catch(() => {});
   }
   if (result.noKeys) return { key: null, provider: null, noKeys: true };
+  if (result.allExcluded) {
+    return { key: null, provider: null, allExcluded: true, total: result.total };
+  }
   return {
     key: null,
     provider: null,
@@ -2953,6 +3052,13 @@ if (typeof featureFlags === 'undefined') {
 // debounced timer flushes, and concurrent summaries must not overwrite each
 // other's read-modify-write cycle.
 let historyWriteQueue = Promise.resolve();
+let pendingPostQueue = Promise.resolve();
+
+function queuePendingPostUpdate(operation) {
+  const next = pendingPostQueue.then(operation);
+  pendingPostQueue = next.catch(() => {});
+  return next;
+}
 
 // Storage schema version
 const STORAGE_VERSION = 2;
@@ -2971,6 +3077,10 @@ const DEFAULT_SETTINGS = {
   sourceTemplate: '• Nguồn bài viết: {platform} {author} {source}\n  {link}',
   customSourceLink: '',
   enableUnicodeBold: true,
+  autoShortenLinks: false,
+  autoShortenConsent: false,
+  autoSummarize: false,
+  modelOverrides: {},
   advancedModeEnabled: false,
   adDisplayMode: 'collapse',
   filterEngagementGates: false,
@@ -2978,47 +3088,51 @@ const DEFAULT_SETTINGS = {
   theme: 'auto',
 };
 
+const CONTENT_SETTING_KEYS = ["minLength", "blockedDomains", "sourceTemplate", "customSourceLink",
+  "enableUnicodeBold", "autoSummarize", "adDisplayMode", "filterEngagementGates",
+  "summaryLength", "promptStyle", "outputLanguage", "customInstructions",
+  "customSummaryPrompt", "autoShortenLinks", "autoShortenConsent"];
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "sync") return;
+  const allowedChanges = Object.fromEntries(Object.entries(changes)
+    .filter(([key]) => CONTENT_SETTING_KEYS.includes(key)));
+  if (!Object.keys(allowedChanges).length) return;
+  chrome.tabs.query({ url: [
+    "https://www.facebook.com/*", "https://web.facebook.com/*", "https://m.facebook.com/*",
+    "https://*.threads.net/*", "https://x.com/*", "https://twitter.com/*",
+    "https://www.linkedin.com/*", "https://www.reddit.com/*",
+  ] }).then(tabs => Promise.all(tabs.filter(tab => tab.id).map(tab =>
+    chrome.tabs.sendMessage(tab.id, { action: "content-settings-changed", changes: allowedChanges }).catch(() => {}),
+  ))).catch(() => {});
+});
+
 // API keys, history, and pending drafts must remain in trusted extension pages.
 // Content scripts use the validated message bridge below for the narrow data
 // they need instead of receiving direct access to chrome.storage.local.
 const localStorageAccessReady = (() => {
   try {
-    if (!chrome?.storage?.local?.setAccessLevel) return Promise.resolve();
-    return chrome.storage.local
-      .setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" })
-      .catch((error) => logger.warn("Failed to restrict local storage access:", error));
+    if (!chrome?.storage?.local?.setAccessLevel || !chrome?.storage?.sync?.setAccessLevel) return Promise.resolve(false);
+    return Promise.all([
+      chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" }),
+      chrome.storage.sync.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" }),
+    ])
+      .then(() => true)
+      .catch((error) => {
+        logger.warn("Failed to restrict local storage access:", error);
+        return false;
+      });
   } catch (error) {
     logger.warn("Failed to restrict local storage access:", error);
-    return Promise.resolve();
+    return Promise.resolve(false);
   }
 })();
 
 // === STORAGE MIGRATION ===
 async function migrateApiKeysOutOfSync() {
   if (!chrome?.storage?.sync || !chrome?.storage?.local) return;
-  const syncData = await chrome.storage.sync.get(["apiKey", "apiKeys", "provider"]);
-  if (!syncData.apiKey && !syncData.apiKeys) return;
-
-  const localData = await chrome.storage.local.get("apiKeys");
-  const providers = ["groq", "gemini", "cerebras", "sambanova", "openrouter"];
-  const merged = {};
-  for (const provider of providers) {
-    const localKeys = Array.isArray(localData.apiKeys?.[provider])
-      ? localData.apiKeys[provider]
-      : [];
-    const syncKeys = Array.isArray(syncData.apiKeys?.[provider])
-      ? syncData.apiKeys[provider]
-      : [];
-    merged[provider] = [...new Set([...localKeys, ...syncKeys])];
-  }
-  if (syncData.apiKey) {
-    const provider = providers.includes(syncData.provider) ? syncData.provider : "groq";
-    if (!merged[provider].includes(syncData.apiKey)) merged[provider].push(syncData.apiKey);
-  }
-
-  await chrome.storage.local.set({ apiKeys: merged, backupApiKeys: merged });
-  await chrome.storage.sync.remove(["apiKeys", "apiKey"]);
-  logger.info("Moved API keys out of quota-limited sync storage");
+  if (!(await localStorageAccessReady)) throw new Error("Không bảo vệ được kho API key.");
+  await FeedWriterApiKeyStore.migrate(chrome.storage);
 }
 
 async function repairCooldownsAfterStorageQuotaFix() {
@@ -3390,6 +3504,27 @@ function isSafePublicHttpsUrl(rawUrl) {
   }
 }
 
+// Remote metadata is optional: the post's direct links remain available even
+// when we skip enrichment. A hostname can resolve to a private IP after a URL
+// check, and service-worker fetch cannot pin DNS to a verified public address.
+// Only fetch from these stable, provider-owned hosts; never follow a redirect
+// outside the same set. Exact matching excludes attacker-controlled subdomains.
+const ENRICHMENT_FETCH_HOSTS = new Set([
+  "github.com", "gitlab.com", "arxiv.org", "www.arxiv.org",
+]);
+
+function isAllowedEnrichmentFetchUrl(rawUrl) {
+  if (!isSafePublicHttpsUrl(rawUrl)) return false;
+  try {
+    const url = new URL(rawUrl);
+    return ENRICHMENT_FETCH_HOSTS.has(url.hostname.toLowerCase()) &&
+      (url.port === "" || url.port === "443") &&
+      !url.username && !url.password;
+  } catch (_) {
+    return false;
+  }
+}
+
 const ALLOWED_OPTIONAL_PERMISSIONS = new Set(["clipboardRead"]);
 
 function senderHostname(senderLike) {
@@ -3504,32 +3639,96 @@ function extractRelatedMetadata(html, finalUrl) {
   return links;
 }
 
+async function readTextLimited(response, maxBytes, signal) {
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  let result = "";
+  let rejectOnAbort;
+  const aborted = new Promise((_, reject) => {
+    rejectOnAbort = () => reject(new Error("response_timeout"));
+    if (signal.aborted) rejectOnAbort();
+    else signal.addEventListener("abort", rejectOnAbort, { once: true });
+  });
+  try {
+    while (true) {
+      const { done, value } = await Promise.race([reader.read(), aborted]);
+      if (done) return result + decoder.decode();
+      bytes += value.byteLength;
+      if (bytes > maxBytes) throw new Error("response_too_large");
+      result += decoder.decode(value, { stream: true });
+    }
+  } finally {
+    signal.removeEventListener("abort", rejectOnAbort);
+    reader.cancel().catch(() => {});
+  }
+}
+
+async function readBlobLimited(response, maxBytes, timeoutMs, contentType) {
+  if (!response.body) throw new Error("Image response has no body");
+  const reader = response.body.getReader();
+  const chunks = [];
+  let bytes = 0;
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error("image_response_timeout")), timeoutMs);
+  });
+  try {
+    while (true) {
+      const { done, value } = await Promise.race([reader.read(), deadline]);
+      if (done) return new Blob(chunks, { type: contentType });
+      bytes += value.byteLength;
+      if (bytes > maxBytes) throw new Error("Ảnh quá lớn (> 12 MB)");
+      chunks.push(value);
+    }
+  } finally {
+    clearTimeout(timer);
+    reader.cancel().catch(() => {});
+  }
+}
+
 async function enrichRelatedSourceUrl(rawUrl) {
-  if (!isSafePublicHttpsUrl(rawUrl)) return [];
+  if (!isAllowedEnrichmentFetchUrl(rawUrl)) return [];
   try {
     let currentUrl = rawUrl;
     let response = null;
     for (let redirectCount = 0; redirectCount <= 3; redirectCount++) {
-      if (!isSafePublicHttpsUrl(currentUrl)) return [];
-      response = await fetchWithTimeout(currentUrl, {
-        method: "GET",
-        credentials: "omit",
-        redirect: "manual",
-        referrerPolicy: "no-referrer",
-        headers: { Accept: "text/html,application/xhtml+xml" },
-      }, 8000);
-      if (![301, 302, 303, 307, 308].includes(response.status)) break;
-      const nextUrl = absoluteUrl(response.headers.get("location") || "", currentUrl);
-      if (!nextUrl) return [];
-      currentUrl = nextUrl;
+      if (!isAllowedEnrichmentFetchUrl(currentUrl)) return [];
+      const controller = new AbortController();
+      const deadline = setTimeout(() => controller.abort(), 8000);
+      try {
+        response = await fetch(currentUrl, {
+          method: "GET",
+          credentials: "omit",
+          redirect: "manual",
+          referrerPolicy: "no-referrer",
+          headers: { Accept: "text/html,application/xhtml+xml" },
+          signal: controller.signal,
+        });
+        if (![301, 302, 303, 307, 308].includes(response.status)) break;
+        const nextUrl = absoluteUrl(response.headers.get("location") || "", currentUrl);
+        if (!nextUrl || !isAllowedEnrichmentFetchUrl(nextUrl)) return [];
+        currentUrl = nextUrl;
+      } finally {
+        // A separate body deadline is started below for the final response.
+        clearTimeout(deadline);
+      }
     }
     if (!response) return [];
-    if (!response.ok || !isSafePublicHttpsUrl(response.url)) return [];
+    if (!response.ok || !isAllowedEnrichmentFetchUrl(response.url)) return [];
     const contentType = response.headers.get("content-type") || "";
     if (!contentType.includes("text/html") && !contentType.includes("application/xhtml+xml")) return [];
     const contentLength = parseInt(response.headers.get("content-length") || "0", 10);
     if (contentLength > 1024 * 1024) return [];
-    const html = (await response.text()).slice(0, 1024 * 1024);
+    const bodyController = new AbortController();
+    const bodyDeadline = setTimeout(() => bodyController.abort(), 8000);
+    let html;
+    try {
+      html = await readTextLimited(response, 1024 * 1024, bodyController.signal);
+    } finally {
+      clearTimeout(bodyDeadline);
+    }
     return [
       { url: response.url, evidence: "redirect-target" },
       ...extractRelatedMetadata(html, response.url),
@@ -3545,6 +3744,7 @@ chrome.runtime.onInstalled.addListener(async () => {
   // Run all migrations and telemetry init
   await migrateApiKeysOutOfSync().catch(e => logger.error('API key migration failed (onInstalled):', e));
   await compactStoredHistory().catch(e => logger.error('History compaction failed (onInstalled):', e));
+  await expireHistoryBackupIfDue().catch(e => logger.error('History backup cleanup failed (onInstalled):', e));
   await repairCooldownsAfterStorageQuotaFix().catch(e => logger.error('Cooldown repair failed (onInstalled):', e));
   await migrateStorageIfNeeded().catch(e => logger.error('Storage migration failed (onInstalled):', e));
   await cleanupExpiredPendingPosts().catch(e => logger.error('Pending post cleanup failed (onInstalled):', e));
@@ -3602,54 +3802,6 @@ chrome.runtime.onInstalled.addListener(async () => {
   } catch (_) {
     buildMenus();
   }
-
-  // Migrate old single apiKey + restore from local backup if sync empty
-  // (do NOT write empty apiKeys — that can wipe recovery chance on race)
-  (async () => {
-    try {
-      const data = await chrome.storage.sync.get(["apiKey", "apiKeys", "provider"]);
-      const localData = await chrome.storage.local.get(["apiKeys", "backupApiKeys"]);
-      let apiKeys = localData.apiKeys || data.apiKeys || null;
-      const providers = ["groq", "gemini", "cerebras", "sambanova", "openrouter"];
-      const count = (m) =>
-        m && typeof m === "object"
-          ? providers.reduce((n, p) => n + (Array.isArray(m[p]) ? m[p].length : 0), 0)
-          : 0;
-
-      if (!apiKeys || count(apiKeys) === 0) {
-        if (localData.backupApiKeys && count(localData.backupApiKeys) > 0) {
-          apiKeys = localData.backupApiKeys;
-          logger.info("Restored apiKeys from local backup on install/update");
-        } else {
-          apiKeys = {
-            groq: [],
-            gemini: [],
-            cerebras: [],
-            sambanova: [],
-            openrouter: [],
-          };
-        }
-      }
-      for (const p of providers) {
-        if (!Array.isArray(apiKeys[p])) apiKeys[p] = [];
-      }
-      if (data.apiKey && count(apiKeys) === 0) {
-        const provider = data.provider || "groq";
-        if (!apiKeys[provider].includes(data.apiKey)) {
-          apiKeys[provider].push(data.apiKey);
-        }
-      }
-      // Only write when we have something useful or structure needs normalize
-      if (count(apiKeys) > 0 || data.apiKeys) {
-        if (count(apiKeys) > 0) {
-          await chrome.storage.local.set({ apiKeys, backupApiKeys: apiKeys });
-          try { await chrome.storage.sync.remove(["apiKeys", "apiKey"]); } catch (_) {}
-        }
-      }
-    } catch (e) {
-      logger.error("apiKeys migrate/restore failed:", e);
-    }
-  })();
 
 });
 } // end if (chrome?.runtime?.onInstalled)
@@ -3798,6 +3950,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.action === "get-content-settings") {
+    (async () => {
+      if (!(await localStorageAccessReady)) throw new Error("Không đọc được cài đặt an toàn.");
+      const settings = await chrome.storage.sync.get(CONTENT_SETTING_KEYS);
+      sendResponse({ ok: true, settings });
+    })().catch(error => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
   if (request.action === "get-feed-telemetry") {
     (async () => {
       await localStorageAccessReady;
@@ -3842,7 +4003,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         throw new Error("Trang nhận bài chờ đăng không hợp lệ.");
       }
       await localStorageAccessReady;
-      const pending = await loadPendingPost(request.kind, request.id);
+      const pending = await queuePendingPostUpdate(async () => {
+        const record = await loadPendingPost(request.kind, request.id);
+        if (record.claimedTabId && record.claimedTabId !== sender.tab.id) {
+          const oldTab = await chrome.tabs.get(record.claimedTabId).catch(() => null);
+          if (oldTab) {
+            const error = new Error("Bài chờ đăng đang được mở ở tab khác.");
+            error.code = "pending_claimed";
+            throw error;
+          }
+          record.claimedTabId = sender.tab.id;
+          // The old tab is gone; its prepared DOM draft cannot be reused.
+          record.prepared = false;
+        }
+        if (!record.claimedTabId) {
+          record.claimedTabId = sender.tab.id;
+        }
+        await chrome.storage.local.set({ [pendingPostKey(request.kind, request.id)]: record });
+        return record;
+      });
       sendResponse({ ok: true, pending });
     })().catch((error) => sendResponse({
       ok: false,
@@ -3852,15 +4031,36 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.action === "prepare-pending-post") {
+    (async () => {
+      if (!schema.isAllowedPendingSender(request.kind, sender)) {
+        throw new Error("Trang nhận bài chờ đăng không hợp lệ.");
+      }
+      await localStorageAccessReady;
+      await queuePendingPostUpdate(async () => {
+        const pending = await loadPendingPost(request.kind, request.id);
+        if (pending.claimedTabId !== sender.tab.id) throw new Error("Tab này không sở hữu bài chờ đăng.");
+        pending.prepared = true;
+        await chrome.storage.local.set({ [pendingPostKey(request.kind, request.id)]: pending });
+      });
+      sendResponse({ ok: true });
+    })().catch(error => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
   if (request.action === "complete-pending-post") {
     (async () => {
       if (!schema.isAllowedPendingSender(request.kind, sender)) {
         throw new Error("Trang hoàn tất bài chờ đăng không hợp lệ.");
       }
-      const key = pendingPostKey(request.kind, request.id);
-      if (!key) throw new Error("Mã bài chờ đăng không hợp lệ.");
       await localStorageAccessReady;
-      await chrome.storage.local.remove(key);
+      await queuePendingPostUpdate(async () => {
+        const pending = await loadPendingPost(request.kind, request.id);
+        if (pending.claimedTabId !== sender.tab.id || !pending.prepared) {
+          throw new Error("Bài chờ đăng chưa được chuẩn bị ở tab này.");
+        }
+        await chrome.storage.local.remove(pendingPostKey(request.kind, request.id));
+      });
       sendResponse({ ok: true });
     })().catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
@@ -3948,7 +4148,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "enrich-related-source-links") {
     (async () => {
       const urls = Array.isArray(request.urls) ? request.urls : [];
-      const unique = [...new Set(urls.filter(isSafePublicHttpsUrl))].slice(0, 4);
+      const unique = [...new Set(urls.filter(isAllowedEnrichmentFetchUrl))].slice(0, 4);
       const enriched = await Promise.all(unique.map(enrichRelatedSourceUrl));
       sendResponse({ links: enriched.flat().slice(0, 60) });
     })().catch((error) => sendResponse({ links: [], error: error.message }));
@@ -3979,10 +4179,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (["history-clear", "history-undo", "history-expire"].includes(request.action)) {
+    updateHistory(request.action, request.id)
+      .then(result => sendResponse(result))
+      .catch(error => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
   // === SHORTEN URL (bypass CORS) ===
   if (request.action === "shorten-url") {
     (async () => {
       try {
+        const { autoShortenConsent } = await chrome.storage.sync.get("autoShortenConsent");
+        if (autoShortenConsent !== true) throw new Error("Chưa bật quyền rút gọn link nguồn.");
         const longUrl = request.url;
         let parsedLongUrl;
         try {
@@ -3997,7 +4206,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         const fetchShortUrl = async (url) => {
           const response = await fetchWithTimeout(url, { method: "GET" }, 5000);
           if (!response.ok) return "";
-          const shortUrl = (await response.text()).trim();
+          const controller = new AbortController();
+          const deadline = setTimeout(() => controller.abort(), 5000);
+          let shortUrl;
+          try {
+            shortUrl = (await readTextLimited(response, 2048, controller.signal)).trim();
+          } finally {
+            clearTimeout(deadline);
+          }
           try {
             const parsedShortUrl = new URL(shortUrl);
             return ["http:", "https:"].includes(parsedShortUrl.protocol) ? shortUrl : "";
@@ -4288,7 +4504,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       if (contentLength > 12 * 1024 * 1024) {
         throw new Error("Ảnh quá lớn (> 12 MB)");
       }
-      const blob = await res.blob();
+      const blob = await readBlobLimited(res, 12 * 1024 * 1024, 20000, contentType);
       if (!blob || blob.size < 100) throw new Error("Empty or invalid image");
       if (blob.size > 12 * 1024 * 1024) throw new Error("Ảnh quá lớn (> 12 MB)");
       if (!(await hasValidImageSignature(blob, contentType))) {
@@ -4332,6 +4548,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       });
 
       if (!dataUrl) throw new Error("captureVisibleTab failed");
+      const [stillActive] = await chrome.tabs.query({ active: true, windowId: tab.windowId });
+      if (!stillActive || stillActive.id !== tab.id) {
+        throw new Error("Tab đã thay đổi trong lúc chụp màn hình.");
+      }
 
       // If bounds provided, crop to element
       if (request.bounds) {
@@ -4551,7 +4771,7 @@ async function translateText(text, mode = "auto") {
   const cacheKey =
     TRANSLATE_PROMPT_VERSION +
     "::" + resolved +
-    "::" + source.toLowerCase();
+    "::" + source;
   if (translateCache.has(cacheKey)) return translateCache.get(cacheKey);
 
   const { system, prompt } = buildTranslatePrompt(source, resolved);
@@ -4758,7 +4978,6 @@ function normalizeVietnameseNumericNotation(text) {
   return normalized;
 }
 
-const MAX_HEADLINE_WORDS = 16;
 const HEADLINE_DANGLING = /^(?:từ|sang|của|kể|cho|với|và|đến|tới|trong|trên|về|vào|ra|thành|theo|bởi|khi|nếu|hoặc|hay|một|các|những|là|đã|sẽ|đang|được|bị|ở|tại|có|mang|giữa|sau|trước|tháng|năm)$/iu;
 
 function isHeadlineDateToken(word) {
@@ -4778,7 +4997,7 @@ function headlineUnfinished(word) {
   return HEADLINE_DANGLING.test(core) || /^(?:gần|khoảng|chừng)$/iu.test(core);
 }
 
-function clampHeadlineWords(title) {
+function removeDanglingHeadlineTail(title) {
   const raw = String(title || "").trim();
   const words = headlineTokens(raw);
   if (!words.length) return "";
@@ -4799,6 +5018,11 @@ function clampHeadlineWords(title) {
     end -= 1;
   }
   return words.slice(0, end).join(" ").replace(/[,:;.]+$/u, "").trim();
+}
+
+function hasClaudeCodePromptSettingAction(sourceText) {
+  const source = String(sourceText || "");
+  return /(?:tắt|vô hiệu hóa|turn off|disable)\s+(?:(?:tính năng|the)\s+)?(?:(?:gợi ý|đề xuất)\s+prompt|prompt\s+suggestions?)\s+(?:trong|trên|của|in)\s+Claude\s+Code\b/iu.test(source);
 }
 
 // Main post-processing function
@@ -4993,11 +5217,31 @@ function postProcessOutput(output, sourceText, type) {
         ) {
           issues.push("Tiêu đề còn từ giật gân — nên viết lại thủ công.");
         }
-        const cappedTitle = clampHeadlineWords(guardedTitle, MAX_HEADLINE_WORDS);
+        const cappedTitle = removeDanglingHeadlineTail(guardedTitle);
         const titleWords = guardedTitle.trim().split(/\s+/).filter(Boolean);
         const keptWords = cappedTitle.split(/\s+/).filter(Boolean);
         if (cappedTitle && keptWords.length < titleWords.length) {
           issues.push("Đã rút tiêu đề cho trọn ý, phần chi tiết nằm ở đoạn sau.");
+        }
+        if (sourceText && cappedTitle) {
+          const sourceNumbers = new Set((sourceText.match(/\d+(?:[.,]\d+)*/gu) || [])
+            .map(value => value.replace(/[.,]/g, "")));
+          const unsupported = (cappedTitle.match(/\d+(?:[.,]\d+)*/gu) || [])
+            .filter(value => !sourceNumbers.has(value.replace(/[.,]/g, "")));
+          if (unsupported.length) {
+            issues.push("[!] Tiêu đề cần viết lại: số liệu không có trong nguồn.");
+          }
+        }
+        if (headlineTokens(cappedTitle).length < 3 || /^cập nhật$/iu.test(cappedTitle)) {
+          issues.push("[!] Tiêu đề cần viết lại: thiếu chủ thể hoặc sự kiện cụ thể.");
+        }
+        if (hasClaudeCodePromptSettingAction(sourceText) &&
+            /^Claude\s+Code\s+(?:sẽ\s+)?(?:tắt|vô hiệu hóa|giảm)\s+/iu.test(cappedTitle)) {
+          issues.push("[!] Tiêu đề có thể đảo tác nhân: người dùng tắt gợi ý prompt trong Claude Code, không phải Claude Code tự tắt. Kiểm tra lại cả lead.");
+        }
+        if (hasClaudeCodePromptSettingAction(sourceText) &&
+            /Claude\s+Code\s+(?:sẽ\s+)?(?:giảm|tắt|vô hiệu hóa)\s+(?:giới hạn\s+)?(?:gợi ý|đề xuất)\s+prompt/iu.test(lines.slice(i + 1).join(" "))) {
+          issues.push("[!] Lead có thể đảo tác nhân hoặc nhầm tùy chọn gợi ý prompt với hạn mức sử dụng; cần viết lại theo nguồn.");
         }
         lines[i] = cappedTitle || "Cập nhật";
         // Viết hoa toàn bộ tiêu đề
@@ -5340,34 +5584,61 @@ function truncateSourceForBudget(source, budget) {
   return source.slice(0, headLen) + marker + source.slice(source.length - tailLen);
 }
 
-// Groq free-tier gpt-oss-120b is 8,000 tokens/minute per organization.
-// Stay under that for a single request (input + reserved output).
+// Groq free-tier gpt-oss-120b is ~8,000 tokens/minute per organization.
+// Stay under that for a single request (input + reserved output). Multiple
+// Groq keys from the SAME org share this budget; keys from other providers
+// do not. When the local ledger is full we prefer alternate providers instead
+// of parking the whole job for ~60s.
 const TPM_SAFE_TOKENS = 7000;
 const groqTpmLedger = { spent: 0, windowStart: 0 };
 
-async function waitForGroqTpm(cost, port, signal) {
-  const now = Date.now();
+function refreshGroqTpmWindow(now = Date.now()) {
   if (now - groqTpmLedger.windowStart >= 60000) {
     groqTpmLedger.windowStart = now;
     groqTpmLedger.spent = 0;
   }
-  if (groqTpmLedger.spent + cost <= TPM_SAFE_TOKENS) {
-    groqTpmLedger.spent += cost;
+}
+
+function canAffordGroqTpm(cost, now = Date.now()) {
+  refreshGroqTpmWindow(now);
+  return groqTpmLedger.spent + Number(cost || 0) <= TPM_SAFE_TOKENS;
+}
+
+function recordGroqTpm(cost, now = Date.now()) {
+  refreshGroqTpmWindow(now);
+  groqTpmLedger.spent += Math.max(0, Number(cost || 0));
+}
+
+function groqTpmWaitMs(now = Date.now()) {
+  refreshGroqTpmWindow(now);
+  return Math.max(1000, 61000 - (now - groqTpmLedger.windowStart));
+}
+
+/** Wait until the Groq minute window rolls — only when no other provider can take the job. */
+async function waitForGroqTpm(cost, port, signal) {
+  if (canAffordGroqTpm(cost)) {
+    recordGroqTpm(cost);
     return;
   }
-  const wait = Math.max(1000, 61000 - (now - groqTpmLedger.windowStart));
+  const wait = groqTpmWaitMs();
   try {
     port.postMessage({
       action: "status",
       message:
-        "Hết lượt token trong phút này — chờ " +
+        "Groq hết token/phút và chưa có provider khác — chờ " +
         Math.ceil(wait / 1000) +
         " giây rồi đọc tiếp...",
     });
   } catch (_) {}
   await sleepAbortable(wait, signal);
+  refreshGroqTpmWindow(Date.now());
   groqTpmLedger.windowStart = Date.now();
-  groqTpmLedger.spent = cost;
+  groqTpmLedger.spent = Math.max(0, Number(cost || 0));
+}
+
+/** When the Groq minute budget is gone, skip Groq so rotation can use other providers. */
+function groqTpmExcludeProviders(cost) {
+  return canAffordGroqTpm(cost) ? null : ["groq"];
 }
 // Fold this many extracted sections at a time when the fact sheet is still
 // too big. Sections are compressed, never dropped.
@@ -5379,7 +5650,7 @@ const CHUNK_EXTRACT_PROMPT = `Trích dữ kiện từ đoạn bài dưới đây
 - Giữ nguyên thuật ngữ kỹ thuật và tên sản phẩm.`;
 
 const COMPACT_NEWS_PROMPT = `Bạn là biên tập viên báo chí công nghệ tiếng Việt. Viết lại nguồn thành MỘT bản tin fact-first theo kim tự tháp ngược.
-- Dòng đầu là tiêu đề trọn ý: sản phẩm + việc vừa xảy ra + kết quả. Viết hết cụm, không dừng giữa từ. Không bọc **. Hệ thống tự viết hoa.
+- Dòng đầu là tiêu đề trọn ý: đúng tác nhân/thao tác + việc xảy ra + kết quả. Chỉ đặt sản phẩm làm chủ ngữ nếu sản phẩm thực hiện hành động; với thao tác của người dùng, viết "Tắt [tùy chọn] trong [sản phẩm]...", không viết "[sản phẩm] tắt...". Viết hết cụm, không dừng giữa từ. Không bọc **. Hệ thống tự viết hoa.
 - Sau tiêu đề một dòng trống. Lead nêu sản phẩm/công ty/tính năng, thay đổi hoặc kết quả, và tác động. Mỗi ý một đoạn. Không được bỏ ý chỉ để ép độ dài.
 - Chỉ viết điều có trong nguồn. Hết ý thì dừng. Không bịa số liệu, không kể chuyện, không "cho biết", không "Tôi đưa tin về".
 - Giữ thuật ngữ quen (no-code, prompt, model, AI agent, PC). Cấm dịch "không mã", "đại lý AI".
@@ -5610,7 +5881,39 @@ async function handleStream(
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       if (signal.aborted) return { error: "Đã hủy." };
 
-      const keyInfo = await getAvailableKey(attempt === 0 ? preferredProvider : null);
+      const estimatedCost =
+        estimateTokens(activePrompt) +
+        estimateTokens(shrinkBase) +
+        Number(localMax || 0) +
+        200;
+      let excludeProviders = groqTpmExcludeProviders(estimatedCost);
+      let prefer =
+        attempt === 0 && preferredProvider && preferredProvider !== "groq"
+          ? preferredProvider
+          : attempt === 0
+            ? preferredProvider
+            : null;
+      if (excludeProviders && prefer === "groq") prefer = null;
+
+      if (excludeProviders) {
+        try {
+          activePort.postMessage({
+            action: "status",
+            message: "Groq hết token/phút — chuyển provider khác...",
+          });
+        } catch (_) {}
+      }
+
+      let keyInfo = await getAvailableKey(prefer, excludeProviders);
+      let groqTpmReserved = false;
+
+      // Only Groq keys exist (or all non-Groq excluded) and TPM is full — wait once.
+      if (!keyInfo.key && keyInfo.allExcluded) {
+        await waitForGroqTpm(estimatedCost, activePort, signal);
+        groqTpmReserved = true;
+        keyInfo = await getAvailableKey(attempt === 0 ? preferredProvider : null, null);
+      }
+
       if (!keyInfo.key) {
         if (keyInfo.noKeys)
           return { error: "Chưa có API Key. Thêm ở tab Khóa API." };
@@ -5619,6 +5922,29 @@ async function handleStream(
             cooldownCleared = true;
             await clearAllKeyCooldowns();
             continue;
+          }
+          // Non-Groq keys cooling down while Groq TPM is full: wait for the
+          // sooner of key unlock or Groq window, then retry with Groq allowed.
+          if (excludeProviders) {
+            const groqWait = groqTpmWaitMs();
+            const keyWait = Number.isFinite(keyInfo.retryInMs)
+              ? keyInfo.retryInMs
+              : keyInfo.waitMinutes * 60000;
+            const waitMs = Math.min(groqWait, keyWait, LIMITED_WAIT_CAP_MS);
+            if (limitedWaits < MAX_LIMITED_WAITS && waitMs > 0) {
+              limitedWaits++;
+              try {
+                activePort.postMessage({
+                  action: "status",
+                  message:
+                    "Đang chờ ~" +
+                    Math.ceil(waitMs / 1000) +
+                    " giây để mở lại quota...",
+                });
+              } catch (_) {}
+              await sleepAbortable(waitMs + 400, signal);
+              continue;
+            }
           }
           const retryInMs = Number.isFinite(keyInfo.retryInMs)
             ? keyInfo.retryInMs
@@ -5663,6 +5989,14 @@ async function handleStream(
 
       const callFn = streamFns[keyInfo.provider];
       if (!callFn) return { error: "Provider không hợp lệ: " + keyInfo.provider };
+
+      if (keyInfo.provider === "groq" && !groqTpmReserved) {
+        if (!canAffordGroqTpm(estimatedCost)) {
+          await waitForGroqTpm(estimatedCost, activePort, signal);
+        } else {
+          recordGroqTpm(estimatedCost);
+        }
+      }
 
       try {
         activePort.postMessage({
@@ -5867,14 +6201,11 @@ async function handleStream(
     return { error: headline + detail };
   }
 
-  async function waitForTpm(cost) {
-    await waitForGroqTpm(cost, port, signal);
-  }
+  // TPM gating lives inside generateWithRotation: exclude Groq when the
+  // minute budget is gone and another provider can take the request; only
+  // wait when Groq is the sole remaining option.
 
   async function extractPiece(text, label) {
-    if (signal.aborted) return "";
-    const cost = estimateTokens(CHUNK_EXTRACT_PROMPT) + estimateTokens(text) + 700 + 200;
-    await waitForTpm(cost);
     if (signal.aborted) return "";
     shrinkBase = text;
     activePrompt = CHUNK_EXTRACT_PROMPT;
@@ -5954,7 +6285,6 @@ async function handleStream(
     activePort = port;
     recordResult = true;
     jobMaxTokens = savedMax;
-    await waitForTpm(estimateTokens(activePrompt) + estimateTokens(factSheet) + savedMax + 200);
   }
 
   const finalResult = await generateWithRotation();
@@ -5973,6 +6303,7 @@ function compactHistoryForStorage(items) {
   let bytes = 2;
   for (const raw of Array.isArray(items) ? items : []) {
     const entry = {
+      id: String(raw?.id || "").slice(0, 80),
       text: String(raw?.text || "").slice(0, 2000),
       summary: String(raw?.summary || "").slice(0, 20000),
       date: String(raw?.date || "").slice(0, 64),
@@ -5992,6 +6323,88 @@ function compactHistoryForStorage(items) {
     bytes += entryBytes;
   }
   return compacted;
+}
+
+function queueHistoryUpdate(operation) {
+  const write = historyWriteQueue.then(operation);
+  historyWriteQueue = write.catch(error => logger.warn("History write failed:", error?.message || error));
+  return write;
+}
+
+const HISTORY_UNDO_MS = 30_000;
+const HISTORY_EXPIRY_ALARM = "history-backup-expire";
+
+async function expireHistoryBackupIfDue() {
+  return queueHistoryUpdate(async () => {
+    const { historyBackup } = await chrome.storage.local.get("historyBackup");
+    if (!historyBackup) {
+      await chrome.alarms.clear(HISTORY_EXPIRY_ALARM);
+      return;
+    }
+    const expiresAt = Number(historyBackup.deletedAt || 0) + HISTORY_UNDO_MS;
+    if (Date.now() >= expiresAt) {
+      await chrome.storage.local.remove("historyBackup");
+      await chrome.alarms.clear(HISTORY_EXPIRY_ALARM);
+      return;
+    }
+    await chrome.alarms.create(HISTORY_EXPIRY_ALARM, { when: expiresAt });
+  });
+}
+
+if (chrome?.alarms?.onAlarm) {
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === HISTORY_EXPIRY_ALARM) {
+      expireHistoryBackupIfDue().catch(error => logger.warn("History backup expiry failed:", error));
+    }
+  });
+}
+
+function historyEntryIdentity(entry) {
+  return entry.id || JSON.stringify([entry.text, entry.summary, entry.date, entry.sourceUrl, entry.type]);
+}
+
+function updateHistory(action, id) {
+  return queueHistoryUpdate(async () => {
+    const data = await chrome.storage.local.get(["history", "historyBackup"]);
+    const backup = data.historyBackup;
+    if (action === "history-clear") {
+      const newBackup = {
+        id: crypto.randomUUID(),
+        items: (data.history || []).map(entry => ({ ...entry, id: entry.id || crypto.randomUUID() })),
+        deletedAt: Date.now(),
+      };
+      await chrome.storage.local.set({ history: [], historyBackup: newBackup });
+      try {
+        await chrome.alarms.create(HISTORY_EXPIRY_ALARM, {
+          when: newBackup.deletedAt + HISTORY_UNDO_MS,
+        });
+        return { ok: true, id: newBackup.id, undoAvailable: true };
+      } catch (error) {
+        // Clearing history still succeeds; without an alarm, do not retain an
+        // unbounded copy or promise an undo that cannot expire reliably.
+        await chrome.storage.local.remove("historyBackup");
+        return { ok: true, undoAvailable: false };
+      }
+    }
+    if (!backup || backup.id !== id) return { ok: false, error: "Bản khôi phục không còn hợp lệ" };
+    if (action === "history-expire" || Date.now() - backup.deletedAt > HISTORY_UNDO_MS) {
+      await chrome.storage.local.remove("historyBackup");
+      await chrome.alarms.clear(HISTORY_EXPIRY_ALARM);
+      return { ok: false, error: "Đã hết thời gian khôi phục" };
+    }
+    const seen = new Set();
+    const merged = [];
+    for (const entry of [...(data.history || []), ...(backup.items || [])]) {
+      const key = historyEntryIdentity(entry);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(entry);
+    }
+    await chrome.storage.local.set({ history: compactHistoryForStorage(merged) });
+    await chrome.storage.local.remove("historyBackup");
+    await chrome.alarms.clear(HISTORY_EXPIRY_ALARM);
+    return { ok: true };
+  });
 }
 
 async function compactStoredHistory() {
@@ -6016,6 +6429,7 @@ async function saveHistory(
   postDate = null,
 ) {
   const entry = {
+    id: crypto.randomUUID(),
     text: text.substring(0, 2000),
     summary,
     date: postDate ? formatVietnamIsoString(new Date(postDate)) : formatVietnamIsoString(new Date()),
@@ -6029,16 +6443,12 @@ async function saveHistory(
     postTitle: postTitle || "",
   };
 
-  const write = historyWriteQueue.then(async () => {
+  return queueHistoryUpdate(async () => {
     const data = await chrome.storage.local.get("history");
     const history = data.history || [];
     history.unshift(entry);
     await chrome.storage.local.set({ history: compactHistoryForStorage(history) });
   });
-  historyWriteQueue = write.catch((error) => {
-    logger.warn("History write failed:", error?.message || error);
-  });
-  return write;
 }
 
 // reviewTodayHistory uses getAvailableKey with retry on rate limit
@@ -6235,6 +6645,7 @@ if (chrome?.runtime?.onStartup) {
 chrome.runtime.onStartup.addListener(async () => {
   await migrateApiKeysOutOfSync().catch(e => logger.error('API key migration failed (onStartup):', e));
   await compactStoredHistory().catch(e => logger.error('History compaction failed (onStartup):', e));
+  await expireHistoryBackupIfDue().catch(e => logger.error('History backup cleanup failed (onStartup):', e));
   await repairCooldownsAfterStorageQuotaFix().catch(e => logger.error('Cooldown repair failed (onStartup):', e));
   await migrateStorageIfNeeded().catch(e => logger.error('Storage migration failed (onStartup):', e));
   await cleanupExpiredPendingPosts().catch(e => logger.error('Pending post cleanup failed (onStartup):', e));

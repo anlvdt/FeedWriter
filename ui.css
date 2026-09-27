@@ -331,7 +331,7 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
 }
 .fbs-backdrop.fbs-visible {
   display: block !important;
-  animation: fwBackdropIn 0.16s ease !important;
+  animation: fwBackdropIn 0.15s ease !important;
 }
 @keyframes fwBackdropIn {
   from { opacity: 0; }
@@ -369,7 +369,7 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
 .fbs-panel.fbs-ui-v2.fbs-visible {
   display: flex !important;
   /* Opacity-only enter — avoid fighting fixed transform positioning */
-  animation: fwPanelIn 0.16s ease !important;
+  animation: fwPanelIn 0.15s ease !important;
 }
 @keyframes fwPanelIn {
   from { opacity: 0; }
@@ -463,7 +463,7 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
 
 .fbs-panel[data-fbs-ui="v3"] .fbs-stream-progress,
 .fbs-panel.fbs-ui-v2 .fbs-stream-progress {
-  font-size: 10px !important;
+  font-size: 11px !important;
   font-weight: 600 !important;
   color: var(--fw-accent) !important;
 }
@@ -782,7 +782,7 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
   height: 100% !important;
   border-radius: 999px !important;
   background: var(--fw-accent) !important;
-  transition: width 0.2s ease !important;
+  transition: width 0.15s ease !important;
 }
 
 /* Skeleton loading */
@@ -840,7 +840,7 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
 }
 .fbs-panel[data-fbs-ui="v3"] .fbs-tone-label,
 .fbs-panel.fbs-ui-v2 .fbs-tone-label {
-  font-size: 10px !important;
+  font-size: 11px !important;
   font-weight: 650 !important;
   letter-spacing: 0.06em !important;
   text-transform: uppercase !important;
@@ -1252,6 +1252,7 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
 /* Editorial light — cool paper + teal ink (FB light feed) */
 .fbs-panel[data-fbs-ui="v3"][data-fbs-theme="light"],
 .fbs-panel.fbs-ui-v2[data-fbs-theme="light"],
+.fbs-filter-indicator[data-fbs-theme="light"],
 .fbs-chip-host[data-fbs-theme="light"],
 .fbs-wrap[data-fbs-theme="light"],
 .fbs-floating-toolbar[data-fbs-theme="light"],
@@ -1279,6 +1280,17 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
 .fbs-panel.fbs-ui-v2[data-fbs-theme="light"] {
   background: #eef2f5 !important;
   box-shadow: 0 16px 40px rgba(15, 20, 28, 0.12) !important;
+}
+.fbs-filter-indicator[data-fbs-theme="light"] {
+  --fbs-surface: var(--fw-surface);
+  --fbs-border: var(--fw-border);
+  --fbs-text: var(--fw-text);
+  --fbs-text-2: var(--fw-text-2);
+  --fbs-warn: var(--fw-warn);
+  --fbs-hidden-accent: var(--fw-accent);
+}
+.fbs-filter-indicator[data-fbs-theme="light"][data-kind="engagement"] {
+  --fbs-hidden-accent: var(--fw-warn);
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -1324,7 +1336,7 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
 }
 
 .fbs-sp-link-quality {
-  font-size: 10px !important;
+  font-size: 11px !important;
   font-weight: 700 !important;
   letter-spacing: 0.02em !important;
   text-transform: uppercase !important;
@@ -1359,7 +1371,7 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
   flex-wrap: wrap !important;
 }
 .fbs-sp-mini-label {
-  font-size: 10px !important;
+  font-size: 11px !important;
   font-weight: 650 !important;
   text-transform: uppercase !important;
   letter-spacing: 0.04em !important;
@@ -1368,7 +1380,8 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
 .fbs-sp-author-field {
   flex: 1 !important;
   min-width: 120px !important;
-  height: 34px !important;
+  min-height: 32px !important;
+  height: auto !important;
   padding: 0 10px !important;
   border-radius: var(--fw-radius-sm) !important;
   border: 1px solid var(--fw-border) !important;
@@ -1396,7 +1409,7 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
   display: flex !important;
   align-items: center !important;
   gap: 5px !important;
-  font-size: 10px !important;
+  font-size: 11px !important;
   font-weight: 650 !important;
   text-transform: uppercase !important;
   letter-spacing: 0.04em !important;
@@ -1444,7 +1457,8 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
 .fbs-sp-paste-link,
 .fbs-sp-redetect-link,
 .fbs-sp-open-link {
-  height: 34px !important;
+  min-height: 28px !important;
+  height: auto !important;
   padding: 0 10px !important;
   border-radius: var(--fw-radius-sm) !important;
   border: 1px solid var(--fw-border) !important;
@@ -1502,7 +1516,7 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
 .fbs-sp-comment > summary span {
   margin-left: auto !important;
   color: var(--fw-text-3) !important;
-  font-size: 10px !important;
+  font-size: 11px !important;
   font-weight: 500 !important;
   letter-spacing: 0 !important;
   text-transform: none !important;
@@ -1526,7 +1540,7 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
   border: 1px solid var(--fw-border) !important;
   border-radius: 8px !important;
   background: rgba(255, 255, 255, 0.035) !important;
-  font-size: 10px !important;
+  font-size: 11px !important;
   font-weight: 700 !important;
   text-transform: uppercase !important;
   letter-spacing: 0.05em !important;
@@ -1571,9 +1585,11 @@ article[data-testid="tweet"] [role="button"] > .fbs-wrap-inline[data-fbs-ui="v3"
 }
 .fbs-sp-open-fb {
   width: 100% !important;
-  height: 42px !important;
+  min-height: 32px !important;
+  height: auto !important;
+  padding: 7px 10px !important;
   border: none !important;
-  border-radius: 10px !important;
+  border-radius: var(--fw-radius-sm) !important;
   background: var(--fw-accent) !important;
   color: var(--fw-accent-fg) !important;
   font-size: 13px !important;
@@ -1905,7 +1921,7 @@ body:has(:is(
   .fbs-panel.fbs-ui-v3.fbs-visible,
   .fbs-panel.fbs-ui-v2.fbs-visible {
     transform: translateY(0) !important;
-    animation: fwSheetIn 0.16s ease !important;
+    animation: fwSheetIn 0.15s ease !important;
   }
   .fbs-panel[data-fbs-ui="v3"].fbs-panel-left,
   .fbs-panel.fbs-ui-v3.fbs-panel-left,
@@ -1944,6 +1960,18 @@ body:has(:is(
   }
   .fbs-sp-link-field {
     grid-column: 1 / -1 !important;
+  }
+  .fbs-panel[data-fbs-ui="v3"] button,
+  .fbs-panel.fbs-ui-v2 button,
+  .fbs-filter-indicator button,
+  .fbs-translate-tooltip button {
+    min-width: 44px !important;
+    min-height: 44px !important;
+    touch-action: manipulation;
+  }
+  .fbs-panel[data-fbs-ui="v3"] input,
+  .fbs-panel.fbs-ui-v2 input {
+    min-height: 44px !important;
   }
 }
 @keyframes fwSheetIn {
