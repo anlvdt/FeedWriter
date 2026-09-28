@@ -34,6 +34,24 @@ with sync_playwright() as p:
     for file in ["content.css", "ui.css"]:
         page.add_style_tag(path=str(ROOT / file))
 
+    # Facebook may name the dialog through a plain span, not a heading.
+    page.evaluate("html => document.body.innerHTML = html", '<div role="dialog" aria-labelledby="post-title"><span id="post-title">Create a post</span><div role="textbox" contenteditable="true" id="labelled-editor"></div></div>')
+    assert page.evaluate("findVisibleFacebookPostEditor().id") == "labelled-editor"
+    # aria-placeholder is sufficient without a dialog heading.
+    page.evaluate("html => document.body.innerHTML = html", '<div role="dialog"><div contenteditable="true" aria-placeholder="Bạn đang nghĩ gì?" id="placeholder-editor"></div></div>')
+    assert page.evaluate("findVisibleFacebookPostEditor().id") == "placeholder-editor"
+    # Unlabelled editors are accepted only after our explicit composer click.
+    page.evaluate("html => document.body.innerHTML = html", '<div role="dialog"><div contenteditable="true" role="textbox" id="old-editor"></div></div><main><button id="open-post">Create post</button></main>')
+    assert page.evaluate("findVisibleFacebookPostEditor()") is None
+    page.evaluate("() => { document.querySelector('#open-post').onclick = () => document.body.insertAdjacentHTML('beforeend', '<div role=dialog><div contenteditable=true data-lexical-editor=true id=new-editor></div></div>'); }")
+    assert page.evaluate("async () => (await findFacebookPostEditor()).id") == "new-editor"
+    # Comment labels referenced by ID must also be excluded.
+    page.evaluate("html => document.body.innerHTML = html", '<div role="dialog"><span id="comment-label">Write a comment</span><div contenteditable="true" role="textbox" aria-labelledby="comment-label"></div></div>')
+    assert page.evaluate("findVisibleFacebookPostEditor(new Set())") is None
+    # Ambiguous newly opened editors must not receive content.
+    page.evaluate("html => document.body.innerHTML = html", '<div role="dialog"><div contenteditable="true" role="textbox">one</div></div><div role="dialog"><div contenteditable="true" role="textbox">two</div></div>')
+    assert page.evaluate("findVisibleFacebookPostEditor(new Set())") is None
+
     # Semantic <main>/<button>, smart apostrophe, and hidden stale dialogs.
     page.evaluate("html => document.body.innerHTML = html", '<div hidden>'+DIALOG+'</div><main><button id="trigger">What’s on your mind?</button></main>')
     page.evaluate('''html => document.querySelector('#trigger').onclick = () => {

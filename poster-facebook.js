@@ -91,30 +91,46 @@ function facebookElementVisible(element) {
     element.getClientRects().length > 0 && getComputedStyle(element).visibility !== "hidden";
 }
 
+function facebookAccessibleLabel(element) {
+  const referenced = (element.getAttribute("aria-labelledby") || "").split(/\s+/)
+    .map(id => document.getElementById(id)?.textContent || "").join(" ");
+  return [element.getAttribute("aria-label"), referenced,
+    element.getAttribute("data-placeholder"), element.getAttribute("aria-placeholder")]
+    .filter(Boolean).join(" ").replace(/[’‘]/g, "'").toLowerCase();
+}
+
 function facebookComposerLabel(element) {
-  return [element.getAttribute("aria-label"), element.getAttribute("data-placeholder"),
-    element.textContent].filter(Boolean).join(" ").replace(/[’‘]/g, "'").toLowerCase();
+  return [facebookAccessibleLabel(element), element.textContent]
+    .filter(Boolean).join(" ").replace(/[’‘]/g, "'").toLowerCase();
 }
 
 function isFacebookComposerLabel(label) {
-  return /bạn đang nghĩ|what's on your mind|write something|viết gì đó|chia sẻ điều gì|say something|tạo bài viết|create post/.test(label);
+  return /bạn đang nghĩ|bạn nghĩ gì|what's on your mind|write something|viết gì đó|chia sẻ điều gì|say something|tạo bài viết|create (?:a )?post/.test(label);
 }
 
-function findVisibleFacebookPostEditor() {
-  for (const dialog of document.querySelectorAll('[role="dialog"]')) {
+function findVisibleFacebookPostEditor(previousEditors = null) {
+  const candidates = [];
+  for (const dialog of document.querySelectorAll('[role="dialog"], dialog')) {
     if (!facebookElementVisible(dialog)) continue;
-    const title = dialog.querySelector('h1, h2, [role="heading"]');
-    const composerDialog = isFacebookComposerLabel([
-      dialog.getAttribute("aria-label"), title?.textContent,
-    ].filter(Boolean).join(" ").toLowerCase());
-    const editors = Array.from(dialog.querySelectorAll('[contenteditable="true"]'))
+    const headings = Array.from(dialog.querySelectorAll('h1, h2, [role="heading"]'))
+      .filter(facebookElementVisible).map(el => el.textContent).join(" ");
+    const label = (facebookAccessibleLabel(dialog) + " " + headings).toLowerCase();
+    const composerDialog = isFacebookComposerLabel(label);
+    if (!composerDialog && /comment|bình luận|reply|trả lời|messenger|chat/i.test(label)) continue;
+    const editors = Array.from(dialog.querySelectorAll('[contenteditable="true"], [contenteditable="plaintext-only"]'))
       .filter(facebookElementVisible)
-      .filter(editor => !/comment|bình luận|reply|trả lời/i.test(editor.getAttribute("aria-label") || ""));
-    const labelled = editors.find(editor => isFacebookComposerLabel(facebookComposerLabel(editor)));
-    if (labelled) return labelled;
-    if (composerDialog && editors.length === 1) return editors[0];
+      .filter(editor => editor.closest('[role="dialog"], dialog') === dialog)
+      .filter(editor => !/comment|bình luận|reply|trả lời/i.test(facebookAccessibleLabel(editor)));
+    const labelled = editors.filter(editor => isFacebookComposerLabel(facebookAccessibleLabel(editor)));
+    if (labelled.length === 1) candidates.push(labelled[0]);
+    else if (composerDialog && editors.length === 1) candidates.push(editors[0]);
+    // Only relax label requirements for an editor that became visible after
+    // our explicit create-post click. Never use an arbitrary existing textbox.
+    else if (previousEditors && editors.length === 1 && !previousEditors.has(editors[0]) &&
+      editors[0].matches('[data-lexical-editor="true"], [role="textbox"]')) candidates.push(editors[0]);
   }
-  return null;
+  const unique = [...new Set(candidates)];
+  return unique.length === 1 ? unique[0] : null;
 }
 
 async function findFacebookPostEditor() {
@@ -128,8 +144,10 @@ async function findFacebookPostEditor() {
         isFacebookComposerLabel(facebookComposerLabel(button)));
   }, 8000).catch(() => null);
   if (!trigger) throw new Error("Không thấy ô tạo bài viết. Hãy mở ô ‘Bạn đang nghĩ gì?’ trên trang cá nhân, nhóm hoặc Bảng feed rồi thử lại.");
+  const previousEditors = new Set(Array.from(document.querySelectorAll('[contenteditable]'))
+    .filter(facebookElementVisible));
   trigger.click();
-  editor = await waitForCondition(findVisibleFacebookPostEditor, 8000).catch(() => null);
+  editor = await waitForCondition(() => findVisibleFacebookPostEditor(previousEditors), 15000).catch(() => null);
   if (!editor) throw new Error("Chưa tìm thấy ô nội dung Facebook. Hãy mở hộp Tạo bài viết rồi thử lại.");
   return editor;
 }
