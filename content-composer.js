@@ -43,6 +43,7 @@ function resolveDisplayUrl(url) {
 // --- FACEBOOK COMPOSER ---
 
 function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImages, discoveredLinks = [], options = {}) {
+  panelBody.querySelector(".fbs-status-preview")?.remove();
   const preview = document.createElement("div");
   preview.className = "fbs-status-preview";
 
@@ -124,7 +125,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
     imgHtml = '<div class="fbs-sp-image"><label class="fbs-sp-single-select"><input type="checkbox" class="fbs-sp-thumb-cb" data-url="' +
       escAttrValue(imageList[0]) + '" aria-label="Chọn ảnh 1" checked> Đăng ảnh này</label><img src="' +
       escAttrValue(imageList[0]) +
-      '" alt="Ảnh xem trước" crossorigin="anonymous"><button type="button" class="fbs-sp-copy-img"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg> Sao chép ảnh</button></div>';
+      '" alt="Ảnh xem trước" ><button type="button" class="fbs-sp-copy-img"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg> Sao chép ảnh</button></div>';
   }
 
   const q0 = qualityLabel(linkQuality, sourceUrl || "");
@@ -147,7 +148,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
     '<div class="fbs-sp-link-input">' +
     '<div class="fbs-sp-link-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> Link bài gốc</div>' +
     '<div class="fbs-sp-link-row">' +
-    '<input type="text" class="fbs-sp-link-field" placeholder="Dán link bài gốc (permalink)" value="' +
+    '<input type="text" class="fbs-sp-link-field" aria-label="Link bài gốc" placeholder="Dán link bài gốc (permalink)" value="' +
     escAttrValue(sourceUrl || "") +
     '" autocomplete="off" spellcheck="false">' +
     '<button type="button" class="fbs-sp-paste-link" title="Dán link từ clipboard" aria-label="Dán link nguồn">Dán</button>' +
@@ -158,7 +159,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
     "</div>" +
     '<div class="fbs-sp-link-input fbs-sp-related-block">' +
     '<div class="fbs-sp-link-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg> Link tham khảo <span>Tuỳ chọn</span></div>' +
-    '<textarea class="fbs-sp-github-field" rows="2" placeholder="Mỗi dòng một link (tuỳ chọn)">' +
+    '<textarea class="fbs-sp-github-field" aria-label="Link tham khảo, mỗi dòng một link" rows="2" placeholder="Mỗi dòng một link (tuỳ chọn)">' +
     esc(initialRelatedText) +
     "</textarea>" +
     '<div class="fbs-sp-link-chips"></div>' +
@@ -169,15 +170,24 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
     '<div class="fbs-sp-comment-text" tabindex="0" title="Bấm để bôi đen khi cần copy thủ công"></div>' +
     "</details>" +
     '<button type="button" class="fbs-sp-copy-comment" title="Sao chép nội dung nguồn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Sao chép nguồn</button>' +
+    '<div class="fbs-sp-post-status" role="status" aria-live="polite" aria-atomic="true"></div>' +
     '<div class="fbs-sp-actions">' +
-    '<button type="button" class="fbs-sp-open-fb"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg> ' + (SITE === "x" ? "Đăng lên Facebook" : "Đăng status") + '</button>' +
+    '<button type="button" class="fbs-sp-copy-text">Sao chép nội dung</button>' +
+    '<button type="button" class="fbs-sp-open-fb"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg> ' + (SITE === "x" || SITE === "facebook" ? "Điền bản nháp Facebook" : "Điền bản nháp") + '</button>' +
     "</div>";
 
   panelBody.appendChild(preview);
   preview.querySelectorAll("img").forEach((image) => {
     image.addEventListener("error", () => {
       const imageShell = image.closest(".fbs-sp-thumb, .fbs-sp-image");
-      if (imageShell) imageShell.hidden = true;
+      if (imageShell && !imageShell.querySelector(".fbs-sp-image-error")) {
+        image.hidden = true;
+        const warning = document.createElement("span");
+        warning.className = "fbs-sp-image-error";
+        warning.textContent = "Ảnh lỗi";
+        imageShell.title = "Không xem trước được ảnh. Bỏ chọn nếu không muốn tải ảnh này.";
+        imageShell.appendChild(warning);
+      }
     });
   });
 
@@ -191,8 +201,9 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
     toneRow.classList.remove("fbs-tone-visible");
   }
   panel.classList.add("is-composer");
+  panel.setAttribute("aria-modal", "false");
   const subtitle = panel.querySelector('[data-role="panel-subtitle"]');
-  if (subtitle) subtitle.textContent = "Đăng Facebook";
+  if (subtitle) subtitle.textContent = SITE === "x" || SITE === "facebook" ? "Bản nháp Facebook" : "Bản nháp";
 
   const linkField = preview.querySelector(".fbs-sp-link-field");
   const authorField = preview.querySelector(".fbs-sp-author-field");
@@ -206,6 +217,20 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
   const commentSection = preview.querySelector(".fbs-sp-comment");
   const commentText = preview.querySelector(".fbs-sp-comment-text");
   const copyCommentBtn = preview.querySelector(".fbs-sp-copy-comment");
+
+  const postStatus = preview.querySelector(".fbs-sp-post-status");
+  preview.querySelector(".fbs-sp-copy-text").addEventListener("click", async () => {
+    try {
+      const formatted = typeof StatusFormatter !== "undefined"
+        ? StatusFormatter.format(text, SITE === "x" ? "facebook" : SITE, {
+            hasRepo: parseRelatedLinks(githubField.value).some(item => item.type === "github"),
+          }) : text;
+      await navigator.clipboard.writeText(formatted);
+      postStatus.textContent = "Đã sao chép nội dung. Dán vào ô tạo bài viết rồi kiểm tra trước khi đăng.";
+    } catch (_) {
+      postStatus.textContent = "Trình duyệt không cho sao chép. Hãy chọn nội dung bản tóm tắt và dùng Ctrl/Cmd+C.";
+    }
+  });
 
   const LINK_TYPE_LABEL = { github: "Repo", download: "Tải về", reference: "Tham khảo" };
 
@@ -400,7 +425,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
 
   // Update comment khi gõ github link
   githubField.addEventListener("input", () => {
-    const url = linkField.value.trim() || sourceUrl || "";
+    const url = linkField.value.trim();
     const githubUrl = githubField.value.trim();
     updateComment(url, githubUrl);
     renderLinkUI();
@@ -408,7 +433,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
 
   githubField.addEventListener("paste", () => {
     setTimeout(() => {
-      const url = linkField.value.trim() || sourceUrl || "";
+      const url = linkField.value.trim();
       const githubUrl = githubField.value.trim();
       updateComment(url, githubUrl);
       renderLinkUI();
@@ -442,7 +467,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
         refreshLinkFieldState();
         selectSourceField();
         setPasteLinkButtonState("Đã dán", "is-done");
-        setTimeout(() => setPasteLinkButtonState("Paste"), 1600);
+        setTimeout(() => setPasteLinkButtonState("Dán"), 1600);
       } catch (_) {
         setPasteLinkButtonState("Ctrl+V", "is-error");
         setTimeout(() => {
@@ -520,7 +545,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
           .map((item) => item.url)
           .filter((u) => u !== url);
         githubField.value = remaining.join("\n");
-        updateComment(linkField.value.trim() || sourceUrl || "", githubField.value);
+        updateComment(linkField.value.trim(), githubField.value);
         renderLinkUI();
       }
     });
@@ -597,32 +622,17 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
         btn.disabled = true;
         btn.innerHTML = '<div class="fbs-spinner" style="width:14px;height:14px;border-width:2px"></div> Đang copy nguồn...';
 
+        let sourceCopied = false;
         try {
           // Keep this as the first awaited action in the click handler so the
           // browser's transient user activation still authorizes clipboard.
           await copySourceComment();
+          sourceCopied = true;
         } catch (error) {
-          btn.disabled = false;
-          btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> Không sao chép được nguồn — bấm Sao chép nguồn rồi thử lại';
-          selectCommentText();
-          return;
+          postStatus.textContent = "Chưa sao chép được nguồn. Bạn vẫn có thể điền bản nháp và sao chép nguồn sau.";
         }
 
         btn.innerHTML = '<div class="fbs-spinner" style="width:14px;height:14px;border-width:2px"></div> Đang mở Facebook...';
-
-        // Grant optional host permission while the click's user gesture is
-        // still active — the new Facebook tab fetches remote images through
-        // the service worker, which refuses them without it.
-        try {
-          await chrome.runtime.sendMessage({
-            action: "request-optional-permission",
-            origins:
-              (typeof FeedWriterUrlClean !== "undefined" &&
-                FeedWriterUrlClean.imageOptionalOrigins &&
-                FeedWriterUrlClean.imageOptionalOrigins()) ||
-              ["https://*.fbcdn.net/*", "https://fbcdn.net/*"],
-          });
-        } catch (_) {}
 
         let selectedUrls = [];
         const thumbCheckboxes = preview.querySelectorAll(".fbs-sp-thumb-cb");
@@ -635,12 +645,25 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
           selectedUrls = imageList;
         }
 
+        if (selectedUrls.some(url => /^https?:/i.test(url))) {
+          try {
+            await chrome.runtime.sendMessage({
+              action: "request-optional-permission",
+              origins:
+                (typeof FeedWriterUrlClean !== "undefined" &&
+                  FeedWriterUrlClean.imageOptionalOrigins &&
+                  FeedWriterUrlClean.imageOptionalOrigins()) ||
+                ["https://*.fbcdn.net/*", "https://fbcdn.net/*"],
+            });
+          } catch (_) {}
+        }
+
         try {
           const response = await chrome.runtime.sendMessage({
             action: "open-facebook-composer",
             postData: PostData.fromFeedWriter(
               text,
-              linkField.value.trim() || sourceUrl,
+              linkField.value.trim(),
               imageUrl,
               authorField.value.trim() || cleanAuthor,
               cleanSource,
@@ -649,7 +672,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
           });
           if (!response?.ok) throw new Error(response?.error || "Không mở được Facebook");
           btn.disabled = false;
-          btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Đã mở Facebook — nguồn đã copy';
+          btn.textContent = sourceCopied ? 'Đã mở Facebook — nguồn đã copy' : 'Đã mở Facebook — chưa sao chép nguồn';
         } catch (err) {
           btn.disabled = false;
           btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> Lỗi: ' + esc(err?.message || String(err));
@@ -712,25 +735,31 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
         '<div class="fbs-spinner" style="width:14px;height:14px;border-width:2px"></div> Mở Composer...';
 
       const setStatus = (msg) => {
+        postStatus.textContent = msg;
+        btn.setAttribute("aria-busy", "true");
         btn.innerHTML = '<div class="fbs-spinner" style="width:14px;height:14px;border-width:2px"></div> ' + msg;
       };
       const setDone = (msg) => {
+        postStatus.textContent = msg;
+        btn.removeAttribute("aria-busy");
+        if (!panel.classList.contains("fbs-minimized") && typeof toggleMinimize === "function") toggleMinimize();
         btn.disabled = false;
         btn.innerHTML =
           '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> ' + msg;
       };
       const setFail = (msg) => {
+        postStatus.textContent = msg;
+        btn.removeAttribute("aria-busy");
         btn.disabled = false;
         btn.innerHTML =
-          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> ' + msg;
+          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> Thử lại';
       };
 
       try {
-        // Prep comment text for preview only. Do not auto-copy source because the
-        // detected source can be wrong; the user can paste a manually copied link.
+        // Use the source fields reviewed by the user, including an intentionally empty link.
         let sourceLine = "";
         const finalUrl = await resolveDisplayUrl(
-          linkField.value.trim() || sourceUrl,
+          linkField.value.trim(),
         );
         const finalGithubUrl = githubField.value.trim();
         const finalRelatedLinks = parseRelatedLinks(finalGithubUrl);
@@ -750,31 +779,16 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
         }
 
         // Auto-copy source comment before touching the native composer.
+        let sourceCopied = false;
         if (sourceLine) {
           try {
             await navigator.clipboard.writeText(sourceLine);
+            sourceCopied = true;
           } catch (_) {
-            setFail("Không sao chép được nguồn — bấm Sao chép nguồn rồi thử lại");
-            selectCommentText();
-            return;
+            postStatus.textContent = "Chưa sao chép được nguồn — có thể sao chép sau khi điền bản nháp.";
           }
         }
 
-        // Grant optional host permission while the click gesture is still
-        // active — fetchImageBlob's own request runs after the composer
-        // dialog wait, when transient activation may already be gone.
-        try {
-          await chrome.runtime.sendMessage({
-            action: "request-optional-permission",
-            origins:
-              (typeof FeedWriterUrlClean !== "undefined" &&
-                FeedWriterUrlClean.imageOptionalOrigins &&
-                FeedWriterUrlClean.imageOptionalOrigins()) ||
-              ["https://*.fbcdn.net/*", "https://fbcdn.net/*"],
-          });
-        } catch (_) {}
-
-        // Bước 1: Xác định ảnh user muốn đăng
         let selectedUrls = [];
         const thumbCheckboxes = preview.querySelectorAll(".fbs-sp-thumb-cb");
         if (thumbCheckboxes.length > 0) {
@@ -786,56 +800,22 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
           selectedUrls = imageList;
         }
 
-        // Bước 2: Tìm và click nút "Bạn đang nghĩ gì?"
-        const allButtons = document.querySelectorAll('div[role="main"] div[role="button"]');
-        let composerBtn = null;
-        for (const b of allButtons) {
-          const t = (b.textContent || "").toLowerCase();
-          if (t.includes("bạn đang nghĩ gì") ||
-              t.includes("what's on your mind") ||
-              t.includes("write something") ||
-              t.includes("viết gì đó")) {
-            composerBtn = b;
-            break;
-          }
-        }
-        if (!composerBtn) {
-          window.scrollTo({ top: 0, behavior: "smooth" });
-          setFail("Không thấy ô 'Bạn đang nghĩ gì?' — cuộn lên đầu feed rồi thử lại");
-          return;
+        if (selectedUrls.some(url => /^https?:/i.test(url))) {
+          try {
+            await chrome.runtime.sendMessage({
+              action: "request-optional-permission",
+              origins:
+                (typeof FeedWriterUrlClean !== "undefined" &&
+                  FeedWriterUrlClean.imageOptionalOrigins &&
+                  FeedWriterUrlClean.imageOptionalOrigins()) ||
+                ["https://*.fbcdn.net/*", "https://fbcdn.net/*"],
+            });
+          } catch (_) {}
         }
 
-        // Snapshot existing dialogs so we can find the NEW one after click
-        const existingDialogs = new Set(document.querySelectorAll('div[role="dialog"]'));
-        composerBtn.click();
-
-        // Bước 3: Chờ CREATE POST dialog (dialog MỚI, không phải dialog cũ)
-        setStatus("Chờ dialog mở...");
-        let editor = null;
-        for (let i = 0; i < 25 && !editor; i++) {
-          const allDialogs = document.querySelectorAll('div[role="dialog"]');
-          for (const dlg of allDialogs) {
-            if (existingDialogs.has(dlg)) continue;
-            const tb = dlg.querySelector('div[role="textbox"][contenteditable="true"]');
-            if (tb) { editor = tb; break; }
-          }
-          // Fallback: check aria-label on textbox inside any dialog
-          if (!editor) {
-            const allBoxes = document.querySelectorAll('div[role="dialog"] div[role="textbox"][contenteditable="true"]');
-            for (const box of allBoxes) {
-              const label = (box.getAttribute("aria-label") || "").toLowerCase();
-              if (label.includes("bạn đang nghĩ") || label.includes("what's on your mind") || label.includes("write something")) {
-                editor = box;
-                break;
-              }
-            }
-          }
-          if (!editor) await new Promise(r => setTimeout(r, 200));
-        }
-        if (!editor) {
-          setFail("Không tìm thấy editor");
-          return;
-        }
+        // Both entry points use the same visible, post-only editor lookup.
+        setStatus("Mở ô soạn bài Facebook...");
+        const editor = await findFacebookPostEditor();
         editor.click();
         editor.focus();
         await new Promise(r => setTimeout(r, 600));
@@ -893,8 +873,9 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
 
         if (selectedUrls.length > 0) {
           setDone("Đã điền bản nháp — kiểm tra ảnh hiển thị trên Facebook trước khi bấm Đăng");
-        } else if (sourceLine) setDone("Sẵn sàng — nguồn đã copy, bấm Đăng");
-        else setDone("Sẵn sàng — bấm Đăng");
+        } else if (sourceCopied) setDone("Sẵn sàng — nguồn đã copy, bấm Đăng");
+        else setDone("Bản nháp đã điền — chưa sao chép nguồn. Kiểm tra rồi bấm Đăng trên Facebook.");
+        editor.focus();
       } catch (err) {
         console.error("[Manual Post] Error:", err);
         setFail("Lỗi: " + (err.message || err));
@@ -1108,24 +1089,43 @@ function detectTitleEmoji(title) {
 }
 
 async function pasteToLexical(element, text, file = null) {
+  const readText = () => (element.innerText || element.textContent || "").replace(/\r\n/g, "\n").trim();
+  if (readText()) {
+    throw new Error("Ô Facebook đang có nội dung. Hãy giữ hoặc xóa bản nháp đó trước khi điền lại để tránh trùng bài.");
+  }
   element.focus();
-  // Paste text trước (không kèm file — Facebook sẽ bỏ text nếu có file)
   if (text) {
-    // Facebook Lexical editor has clipboard paste limits (~5000 chars observed)
-    // Split long text into chunks and paste sequentially
     const CHUNK_SIZE = 4000;
-    for (let offset = 0; offset < text.length; offset += CHUNK_SIZE) {
-      const chunk = text.substring(offset, offset + CHUNK_SIZE);
+    for (let offset = 0; offset < text.length;) {
+      let end = Math.min(offset + CHUNK_SIZE, text.length);
+      // Do not split a surrogate pair (Unicode bold and emoji use these).
+      if (end < text.length && /[\uD800-\uDBFF]/.test(text[end - 1])) end--;
+      const chunk = text.slice(offset, end);
+      const before = readText();
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      range.collapse(false);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
       const dtText = new DataTransfer();
       dtText.setData("text/plain", chunk);
-      element.dispatchEvent(
-        new ClipboardEvent("paste", {
-          clipboardData: dtText,
-          bubbles: true,
-          cancelable: true,
-        }),
-      );
-      if (offset + CHUNK_SIZE < text.length) await new Promise(r => setTimeout(r, 150));
+      element.dispatchEvent(new ClipboardEvent("paste", {
+        clipboardData: dtText, bubbles: true, cancelable: true,
+      }));
+      await new Promise(r => setTimeout(r, 150));
+      // Some editors ignore untrusted paste. Use the browser editing command
+      // only when nothing changed; never append a second copy after success.
+      if (readText() === before && chunk.trim()) {
+        element.focus();
+        document.execCommand("insertText", false, chunk);
+        await new Promise(r => setTimeout(r, 150));
+      }
+      const expected = text.slice(0, end).replace(/\r\n/g, "\n").trim();
+      if (readText() !== expected) {
+        throw new Error("Facebook chưa nhận đủ nội dung. Hãy dùng Sao chép nội dung, kiểm tra bản nháp rồi dán thủ công.");
+      }
+      offset = end;
     }
   }
   // Paste file riêng sau (nếu có). Hỗ trợ cả single file và array of files.

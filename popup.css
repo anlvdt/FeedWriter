@@ -166,9 +166,12 @@ html.dark {
  * Rounded popup window: keep the root transparent so Chrome's popup canvas
  * (theme-matched via color-scheme) shows only in the corner slivers, and clip
  * the body to the popup radius.
+ * Chrome auto-sizes action popups from document dimensions. Keep the root
+ * width independent of vw to avoid a circular, collapsed initial viewport.
  */
 html {
-  width: min(380px, 100vw);
+  width: 380px;
+  min-width: 380px;
   height: 600px;
   background: transparent !important;
   border-radius: 0;
@@ -181,7 +184,8 @@ html.dark {
 }
 
 body {
-  width: min(380px, 100vw);
+  width: 380px;
+  min-width: 380px;
   height: min(600px, 100vh);
   margin: 0;
   padding: 0;

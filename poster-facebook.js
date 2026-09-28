@@ -20,41 +20,11 @@ const PosterFacebook = {
     }
     const text = PostData.getTextWithTags(postData);
 
-    const mainArea = document.querySelector('div[role="main"]');
-    if (!mainArea) return { ok: false, reason: "no_main_area" };
-
-    // Step 1: Click "Bạn đang nghĩ gì?"
-    const composerBtn = await waitForCondition(() => {
-      const buttons = mainArea.querySelectorAll('div[role="button"]');
-      for (const b of buttons) {
-        const t = (b.textContent || "").toLowerCase();
-        if (t.includes("bạn đang nghĩ gì") ||
-            t.includes("what's on your mind") ||
-            t.includes("write something") ||
-            t.includes("viết gì đó") ||
-            t.includes("chia sẻ điều gì") ||
-            t.includes("say something")) {
-          return b;
-        }
-      }
-      return null;
-    }, 5000).catch(() => null);
-
-    if (!composerBtn) {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-      return { ok: false, reason: "no_composer_btn" };
-    }
-    composerBtn.click();
-
-    // Step 2: Wait for editor
     let editor;
     try {
-      editor = await waitForElement(
-        'div[role="dialog"] div[role="textbox"][contenteditable="true"]',
-        5000
-      );
-    } catch (_) {
-      return { ok: false, reason: "no_editor" };
+      editor = await findFacebookPostEditor();
+    } catch (error) {
+      return { ok: false, reason: error.message };
     }
     editor.click();
     editor.focus();
@@ -113,3 +83,53 @@ const PosterFacebook = {
       mediaConfirmationRequired: postData.images.length > 0 };
   },
 };
+
+// Shared by the in-page preview and cross-tab handoff. Never pick a comment
+// editor merely because it happens to be the first textbox in a dialog.
+function facebookElementVisible(element) {
+  return !!element && !element.closest('[hidden], [aria-hidden="true"], .fbs-panel') &&
+    element.getClientRects().length > 0 && getComputedStyle(element).visibility !== "hidden";
+}
+
+function facebookComposerLabel(element) {
+  return [element.getAttribute("aria-label"), element.getAttribute("data-placeholder"),
+    element.textContent].filter(Boolean).join(" ").replace(/[’‘]/g, "'").toLowerCase();
+}
+
+function isFacebookComposerLabel(label) {
+  return /bạn đang nghĩ|what's on your mind|write something|viết gì đó|chia sẻ điều gì|say something|tạo bài viết|create post/.test(label);
+}
+
+function findVisibleFacebookPostEditor() {
+  for (const dialog of document.querySelectorAll('[role="dialog"]')) {
+    if (!facebookElementVisible(dialog)) continue;
+    const title = dialog.querySelector('h1, h2, [role="heading"]');
+    const composerDialog = isFacebookComposerLabel([
+      dialog.getAttribute("aria-label"), title?.textContent,
+    ].filter(Boolean).join(" ").toLowerCase());
+    const editors = Array.from(dialog.querySelectorAll('[contenteditable="true"]'))
+      .filter(facebookElementVisible)
+      .filter(editor => !/comment|bình luận|reply|trả lời/i.test(editor.getAttribute("aria-label") || ""));
+    const labelled = editors.find(editor => isFacebookComposerLabel(facebookComposerLabel(editor)));
+    if (labelled) return labelled;
+    if (composerDialog && editors.length === 1) return editors[0];
+  }
+  return null;
+}
+
+async function findFacebookPostEditor() {
+  let editor = findVisibleFacebookPostEditor();
+  if (editor) return editor;
+  const trigger = await waitForCondition(() => {
+    return Array.from(document.querySelectorAll('[role="main"] [role="button"], main button, main [role="button"], [role="main"] button'))
+      .filter(facebookElementVisible)
+      .find(button => !button.closest('[role="article"], [role="dialog"]') &&
+        button.getAttribute("aria-disabled") !== "true" && !button.disabled &&
+        isFacebookComposerLabel(facebookComposerLabel(button)));
+  }, 8000).catch(() => null);
+  if (!trigger) throw new Error("Không thấy ô tạo bài viết. Hãy mở ô ‘Bạn đang nghĩ gì?’ trên trang cá nhân, nhóm hoặc Bảng feed rồi thử lại.");
+  trigger.click();
+  editor = await waitForCondition(findVisibleFacebookPostEditor, 8000).catch(() => null);
+  if (!editor) throw new Error("Chưa tìm thấy ô nội dung Facebook. Hãy mở hộp Tạo bài viết rồi thử lại.");
+  return editor;
+}

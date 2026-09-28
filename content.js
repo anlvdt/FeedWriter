@@ -1494,7 +1494,7 @@ function ensureOverlay() {
   panel.querySelector(".fbs-regen-btn").addEventListener("click", regenerate);
   panel.querySelector(".fbs-edit-btn").addEventListener("click", toggleEdit);
   panel.addEventListener("keydown", (e) => {
-    if (e.key !== "Tab" || !panel.classList.contains("fbs-visible") || panel.classList.contains("fbs-minimized")) return;
+    if (e.key !== "Tab" || !panel.classList.contains("fbs-visible") || panel.classList.contains("fbs-minimized") || panel.classList.contains("is-composer")) return;
     const focusable = Array.from(
       panel.querySelectorAll(
         'button:not([disabled]):not([hidden]), select:not([disabled]):not([hidden]), textarea:not([disabled]):not([hidden]), input:not([disabled]):not([hidden]), a[href], [tabindex]:not([tabindex="-1"])',
@@ -1820,8 +1820,8 @@ function openOverlay(html, streaming, type = "summary") {
     const panel = document.querySelector(".fbs-panel");
     if (!panel) return;
     const minimized = panel.classList.toggle("fbs-minimized");
-    panel.setAttribute("aria-modal", String(!minimized));
-    backdrop?.classList.toggle("fbs-visible", !minimized);
+    panel.setAttribute("aria-modal", String(!minimized && !panel.classList.contains("is-composer")));
+    backdrop?.classList.toggle("fbs-visible", !minimized && !panel.classList.contains("is-composer"));
     const button = panel.querySelector(".fbs-min");
     if (button) {
       button.setAttribute("aria-label", minimized ? "Mở rộng" : "Thu gọn");
@@ -5645,7 +5645,9 @@ async function requestPendingPost(action, kind, id) {
 
 function preparedDraftVisible(kind) {
   const editor = kind === "facebook"
-    ? document.querySelector('div[role="dialog"] div[role="textbox"][contenteditable="true"]')
+    ? (typeof findVisibleFacebookPostEditor === "function"
+        ? findVisibleFacebookPostEditor()
+        : document.querySelector('[role="dialog"] [role="textbox"][contenteditable="true"]'))
     : document.querySelector('shreddit-post-submit [contenteditable="true"], main [contenteditable="true"]');
   return !!(editor && (editor.innerText || editor.textContent || "").trim());
 }
@@ -5667,7 +5669,7 @@ async function consumePendingFacebookPost() {
   try {
     const pending = await requestPendingPost("get-pending-post", "facebook", id);
     if (!pending.prepared || !preparedDraftVisible("facebook")) {
-      for (let i = 0; i < 30 && !document.querySelector('div[role="main"]'); i++) {
+      for (let i = 0; i < 30 && !document.querySelector('[role="main"], main, [role="dialog"]'); i++) {
         await new Promise((resolve) => setTimeout(resolve, 500));
       }
       if (typeof PosterFacebook === "undefined") {
