@@ -2777,9 +2777,25 @@ function _normalizePostBodyText(raw) {
  * Prefer Facebook's semantic message node; fall back to a chrome/comment-free
  * clone. For shares, keep the sharer's note followed by the original body.
  */
+function _extractXTweetText(article) {
+  if (!article?.querySelectorAll) return "";
+  const parts = [];
+  const seen = [];
+  for (const node of article.querySelectorAll('[data-testid="tweetText"]')) {
+    if (seen.some((other) => other.contains(node))) continue;
+    seen.push(node);
+    const text = _normalizePostBodyText(node.innerText || node.textContent || "");
+    if (text) parts.push(text);
+  }
+  return parts.join("\n\n");
+}
+
 function extractPostContent(element) {
   if (!element) return "";
   const postContainer = _findPostContainer(element) || element;
+  // X: the article also holds handle, timestamp, view/like counts and
+  // "Relevant / View quotes". Only the tweetText nodes are post content.
+  if (SITE === "x") return _extractXTweetText(element.closest?.('article[data-testid="tweet"]') || postContainer);
   const sharedInner = SITE === "facebook" ? _findSharedPostArticle(postContainer) : null;
   const messageSelector =
     '[data-ad-preview="message"], [data-ad-comet-preview="message"], [data-testid="post_message"], [data-testid="post-message"]';
