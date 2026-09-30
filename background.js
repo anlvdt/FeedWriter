@@ -2819,9 +2819,23 @@ async function handleStream(
           glossary: { mode: "omit", candidates: [], limit: 0 },
         };
 
+  // Too-short or list-only foreign-language sources are translated, not
+  // summarized. Vietnamese sources keep the skip behavior below.
+  const translation =
+    typeof FeedWriterSummaryPolicy !== "undefined"
+      ? FeedWriterSummaryPolicy.decideTranslation({
+          site,
+          text: completeSource,
+          type,
+          minimumChars,
+        })
+      : { translate: false };
+  const translateMode = !!translation.translate;
+
   // X summaries are always explicitly requested from the per-tweet action.
   // Do not let the automatic-offer policy veto that user request.
   if (
+    !translateMode &&
     type === "summary" &&
     site !== "x" &&
     !summaryPolicy.summary.shouldSummarize
@@ -2848,6 +2862,17 @@ async function handleStream(
     postTime,
     postDate,
   );
+
+  if (translateMode) {
+    systemPrompt = TRANSLATE_SOURCE_PROMPT;
+    summaryPolicy.glossary = { mode: "omit", candidates: [], limit: 0 };
+    try {
+      port.postMessage({
+        action: "status",
+        message: "Nội dung ngắn/dạng liệt kê — chuyển sang chế độ dịch thuật...",
+      });
+    } catch (_) {}
+  }
 
   const streamFns = {
     groq: callGroqStream,

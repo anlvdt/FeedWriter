@@ -140,3 +140,26 @@ describe("glossary policy", () => {
     assert.equal(result.mode, "omit");
   });
 });
+
+describe("translation fallback policy", () => {
+  it("translates a short foreign-language post", () => {
+    const r = policy.decideTranslation({ site: "x", text: "OpenAI released a new model today." });
+    assert.deepEqual([r.translate, r.reason], [true, "too_short"]);
+  });
+
+  it("translates a list-only post even when it has many items", () => {
+    const text = "- Faster inference\n- Lower latency\n- Cheaper tokens\n- Better tools\n- Longer context";
+    const r = policy.decideTranslation({ site: "facebook", text });
+    assert.deepEqual([r.translate, r.reason], [true, "list_only"]);
+  });
+
+  it("keeps summarizing long English prose", () => {
+    const text = Array.from({ length: 6 }, (_, i) => `Sentence number ${i + 1} explains a detailed product change for developers.`).join(" ");
+    assert.equal(policy.decideTranslation({ site: "facebook", text }).translate, false);
+  });
+
+  it("does not translate Vietnamese sources", () => {
+    const r = policy.decideTranslation({ site: "x", text: "Apple vừa phát hành bản cập nhật sửa lỗi pin." });
+    assert.deepEqual([r.translate, r.reason], [false, "already_vietnamese"]);
+  });
+});
