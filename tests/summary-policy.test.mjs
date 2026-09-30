@@ -163,3 +163,11 @@ describe("translation fallback policy", () => {
     assert.deepEqual([r.translate, r.reason], [false, "already_vietnamese"]);
   });
 });
+
+describe("translation fallback eligibility", () => {
+  it("allows the NO_SUMMARY fallback only for short foreign-language sources", () => {
+    assert.equal(policy.canFallbackToTranslation("Cursor can now chart in chat. Available now."), true);
+    assert.equal(policy.canFallbackToTranslation("Apple vừa phát hành bản cập nhật sửa lỗi pin."), false);
+    assert.equal(policy.canFallbackToTranslation("word ".repeat(2000)), false);
+  });
+});

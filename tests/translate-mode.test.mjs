@@ -47,4 +47,14 @@ describe("translation mode helpers", () => {
     assert.match(out, /^Ollama hỗ trợ mô hình Jev-like chạy local\./);
     assert.ok(!out.includes("\u2063"));
   });
+
+  it("rejects a translation that leaves the last sentence in English", () => {
+    const src = "Cursor can now chart in chat.\n\nUse /visualize to analyze data inline. Available now in the Agents Window.";
+    const bad = "Cursor giờ có thể tạo biểu đồ trong trò chuyện.\n\nDùng /visualize để phân tích dữ liệu ngay trong dòng. Available now in the Agents Window.";
+    const r = ctx.checkTranslationCompleteness(src, bad);
+    assert.equal(r.ok, false);
+    assert.equal(r.untranslated.length, 1);
+    const good = bad.replace("Available now in the Agents Window.", "Hiện đã có trong Agents Window.");
+    assert.equal(ctx.checkTranslationCompleteness(src, good).ok, true);
+  });
 });

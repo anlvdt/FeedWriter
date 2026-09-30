@@ -2078,7 +2078,24 @@ function checkTranslationCompleteness(source, output) {
     .filter((a) => a && !out.includes(a));
   const paragraphs = (t) => String(t || "").split(/\n\s*\n/).filter((p) => p.trim()).length;
   const droppedParagraphs = paragraphs(src) > paragraphs(output);
-  return { ok: !missing.length && !droppedParagraphs, missing, droppedParagraphs };
+  // A sentence left in English means the model skipped part of the source.
+  const viChars = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i;
+  const enWords = /\b(?:the|and|is|are|was|now|in|on|for|with|to|of|available|use|you|your|this|that|from|can|new|will)\b/gi;
+  const untranslated = String(output || "")
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => {
+      if (sentence.length < 20 || /^[/`·•\-*\d]/.test(sentence)) return false;
+      if (viChars.test(sentence)) return false;
+      const words = sentence.split(/\s+/).length;
+      return words >= 4 && (sentence.match(enWords) || []).length >= 2;
+    });
+  return {
+    ok: !missing.length && !droppedParagraphs && !untranslated.length,
+    missing,
+    droppedParagraphs,
+    untranslated,
+  };
 }
 
 // Main post-processing function
@@ -2853,37 +2870,25 @@ async function handleStream(
           glossary: { mode: "omit", candidates: [], limit: 0 },
         };
 
-  // Too-short or list-only foreign-language sources are translated, not
-  // summarized. Vietnamese sources keep the skip behavior below.
-  const translation =
-    typeof FeedWriterSummaryPolicy !== "undefined"
-      ? FeedWriterSummaryPolicy.decideTranslation({
-          site,
-          text: completeSource,
-          type,
-          minimumChars,
-        })
-      : { translate: false };
-  const translateMode = !!translation.translate;
-  if (translateMode) {
-    completeSource = stripSocialMetadataLines(completeSource);
-    sourceMessage = buildSourceMessage(completeSource);
-    sourceBudget = completeSource.length;
-  }
+  // Always try to summarize first. Only when the model reports that the source
+  // lacks facts/events (NO_SUMMARY) does a foreign-language source fall back to
+  // translation. Vietnamese sources keep the skip message instead.
+  const translateEligible =
+    type === "summary" &&
+    typeof FeedWriterSummaryPolicy !== "undefined" &&
+    FeedWriterSummaryPolicy.canFallbackToTranslation(completeSource);
+  let translateMode = false;
 
   // X summaries are always explicitly requested from the per-tweet action.
   // Do not let the automatic-offer policy veto that user request.
   if (
-    !translateMode &&
+    !translateEligible &&
     type === "summary" &&
     site !== "x" &&
     !summaryPolicy.summary.shouldSummarize
   ) {
     return {
-      error:
-        site === "x"
-          ? "Tweet này đã đủ ngắn, chưa cần tóm tắt."
-          : "Nội dung đã đủ ngắn hoặc chưa có đủ ý để tóm tắt.",
+      error: "Nội dung đã đủ ngắn hoặc chưa có đủ ý để tóm tắt.",
       skipped: true,
       reason: summaryPolicy.summary.reason,
     };
@@ -2901,17 +2906,7 @@ async function handleStream(
     postTime,
     postDate,
   );
-
-  if (translateMode) {
-    systemPrompt = TRANSLATE_SOURCE_PROMPT;
-    summaryPolicy.glossary = { mode: "omit", candidates: [], limit: 0 };
-    try {
-      port.postMessage({
-        action: "status",
-        message: "Nội dung ngắn/dạng liệt kê — chuyển sang chế độ dịch thuật...",
-      });
-    } catch (_) {}
-  }
+  if (translateEligible) systemPrompt += "\n\n" + NO_SUMMARY_INSTRUCTION;
 
   const streamFns = {
     groq: callGroqStream,
@@ -2937,7 +2932,7 @@ async function handleStream(
 
   // Reasoning models spend part of max_tokens before the first visible token;
   // a tight cap cut translations mid-sentence.
-  if (translateMode) maxTokens = Math.max(maxTokens, 2048);
+  if (translateEligible) maxTokens = Math.max(maxTokens, 2048);
 
   let activePort = port;
   let activePrompt = systemPrompt;
@@ -3204,6 +3199,31 @@ async function handleStream(
         continue;
       }
 
+      if (
+        result.summary &&
+        recordResult &&
+        translateEligible &&
+        !translateMode &&
+        /^\s*NO_SUMMARY\b/i.test(result.summary)
+      ) {
+        // Not enough facts/events to write a news item: translate instead.
+        translateMode = true;
+        shrinkBase = stripSocialMetadataLines(shrinkBase);
+        sourceMessage = buildSourceMessage(shrinkBase);
+        completeSource = shrinkBase;
+        activePrompt = TRANSLATE_SOURCE_PROMPT;
+        localMax = Math.max(localMax, 2048);
+        summaryPolicy.glossary = { mode: "omit", candidates: [], limit: 0 };
+        triedKeys.clear();
+        try {
+          activePort.postMessage({
+            action: "retry",
+            message: "Thiếu dữ kiện để tóm tắt — chuyển sang dịch thuật...",
+          });
+        } catch (_) {}
+        continue;
+      }
+
       if (result.summary) {
         if (recordResult && typeof FeedWriterSummaryPolicy !== "undefined") {
           result.summary = FeedWriterSummaryPolicy.sanitizeGlossaryOutput(
@@ -3220,7 +3240,9 @@ async function handleStream(
             postResult.failure = "incomplete_translation";
             postResult.detail = check.droppedParagraphs
               ? "thiếu đoạn"
-              : "thiếu " + check.missing.slice(0, 3).join(", ");
+              : check.untranslated.length
+                ? "còn câu chưa dịch"
+                : "thiếu " + check.missing.slice(0, 3).join(", ");
           }
         }
         if (postResult.failure) {

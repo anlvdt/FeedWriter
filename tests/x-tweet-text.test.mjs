@@ -35,4 +35,16 @@ describe("X tweet text extraction", () => {
     ctx.article = { querySelectorAll: () => [] };
     assert.equal(vm.runInContext("_extractXTweetText(article)", ctx), "");
   });
+
+  it("drops FeedWriter's own inline button mounted inside the tweet text", () => {
+    const ui = { removed: false, remove() { this.removed = true; } };
+    const body = {
+      get innerText() { return ui.removed ? "Available now in the Agents Window." : "Available now in the Agents Window.Đang tóm tắt…"; },
+      contains: () => false,
+      cloneNode() { return this; },
+      querySelectorAll: () => [ui],
+    };
+    ctx.article = { querySelectorAll: () => [body] };
+    assert.equal(vm.runInContext("_extractXTweetText(article)", ctx), "Available now in the Agents Window.");
+  });
 });

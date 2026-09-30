@@ -2784,7 +2784,14 @@ function _extractXTweetText(article) {
   for (const node of article.querySelectorAll('[data-testid="tweetText"]')) {
     if (seen.some((other) => other.contains(node))) continue;
     seen.push(node);
-    const text = _normalizePostBodyText(node.innerText || node.textContent || "");
+    // FeedWriter's own inline button ("Tóm tắt" / "Đang tóm tắt…") can be
+    // mounted inside the tweet text; it must never reach the model.
+    let clone = node;
+    try {
+      clone = node.cloneNode(true);
+      clone.querySelectorAll('[data-fbs-ui], .fbs-wrap-inline, .fbs-chip-host').forEach((el) => el.remove());
+    } catch (_) { clone = node; }
+    const text = _normalizePostBodyText(clone.innerText || clone.textContent || "");
     if (text) parts.push(text);
   }
   return parts.join("\n\n");
