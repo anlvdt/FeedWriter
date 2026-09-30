@@ -83,8 +83,14 @@ const StatusFormatter = {
 
   // ── Parser: raw text → structured blocks ───────────────────────────
 
+  TRANSLATION_MARK: "\u2063",
+
   _parse(rawText) {
     let text = rawText.trim();
+    // Translation-mode output has no headline: never promote line 1 to a
+    // title (uppercase) or short lines to section headers.
+    const translated = text.startsWith(this.TRANSLATION_MARK);
+    if (translated) text = text.slice(this.TRANSLATION_MARK.length).trim();
 
     // Strip existing footers/separators FIRST (prevent duplication)
     // Must be aggressive — AI sometimes copies footer from examples or prior output
@@ -138,7 +144,7 @@ const StatusFormatter = {
 
     const lines = text.trim().split("\n");
     const blocks = [];
-    let titleFound = false;
+    let titleFound = translated;
     let glossaryItems = [];
     let inGlossary = false;
 
@@ -223,7 +229,7 @@ const StatusFormatter = {
       // Heuristic header: short line (≤ 40 chars) not a bullet/number,
       // followed by bullet/numbered lines → treat as section header.
       // Catches AI output like "Điểm nổi bật" or "Lợi ích:" without **...**
-      if (trimmed.length <= 40 && !trimmed.match(/^[·•\-*✓▸▪→\d]/) && titleFound) {
+      if (!translated && trimmed.length <= 40 && !trimmed.match(/^[·•\-*✓▸▪→\d]/) && titleFound) {
         // Look ahead: next non-empty line should be a bullet or number
         let j = i + 1;
         while (j < lines.length && !lines[j].trim()) j++;

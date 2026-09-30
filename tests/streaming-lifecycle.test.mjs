@@ -146,7 +146,7 @@ describe("streaming lifecycle", () => {
       background,
       /msg\.preferredProvider \|\| null,\s*msg\.type \|\| "summary",\s*\)/,
     );
-    assert.match(background, /postProcessOutput\(result\.summary, text, type\)/);
+    assert.match(background, /postProcessOutput\(result\.summary, text, translateMode \? "translate" : type\)/);
     assert.match(background, /saveHistory\([\s\S]*?site,\s*type,/);
   });
 
