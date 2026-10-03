@@ -2090,6 +2090,17 @@ function checkTranslationCompleteness(source, output) {
       const words = sentence.split(/\s+/).length;
       return words >= 4 && (sentence.match(enWords) || []).length >= 2;
     });
+  // The loop above skips lines that start with a digit, which is exactly how a
+  // headline like "10 GITHUB REPOS THAT CAN…" slipped through untranslated.
+  const headline = String(output || "").split("\n").map((l) => l.trim()).find(Boolean) || "";
+  if (
+    headline.length >= 15 &&
+    !viChars.test(headline) &&
+    (headline.match(enWords) || []).length >= 2 &&
+    !untranslated.includes(headline)
+  ) {
+    untranslated.push(headline);
+  }
   return {
     ok: !missing.length && !droppedParagraphs && !untranslated.length,
     missing,

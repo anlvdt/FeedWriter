@@ -145,3 +145,17 @@ describe("formatter keeps repo links out of uppercase headers", () => {
     assert.ok(out.includes("http://github.com/formbricks/formbricks"), out);
   });
 });
+
+describe("untranslated headline detection", () => {
+  const src = "10 GITHUB REPOS THAT CAN REPLACE EXPENSIVE SOFTWARE\n\nYou might be paying for tools that already have alternatives.\n\n1. AppFlowy\nNotion alternative.";
+  const body = "Bạn có thể đang trả tiền cho công cụ đã có bản thay thế mã nguồn mở.\n\n1. AppFlowy\nThay thế Notion.";
+  it("flags an English headline that starts with a digit", () => {
+    const bad = ctx.checkTranslationCompleteness(src, "10 GITHUB REPOS THAT CAN REPLACE EXPENSIVE SOFTWARE\n\n" + body);
+    assert.equal(bad.ok, false);
+    assert.ok(bad.untranslated.length > 0);
+  });
+  it("accepts a Vietnamese headline", () => {
+    const good = ctx.checkTranslationCompleteness(src, "10 REPO GITHUB CÓ THỂ THAY THẾ PHẦN MỀM ĐẮT TIỀN\n\n" + body);
+    assert.equal(good.ok, true, JSON.stringify(good));
+  });
+});
