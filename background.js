@@ -2111,6 +2111,16 @@ function countDistinctUrls(text) {
   return new Set(urls.map((u) => u.replace(/[.,;:!?]+$/, "").toLowerCase())).size;
 }
 
+// Translation output opens with a headline line; show it in capitals. Lines
+// that are list items, links or already long sentences are left alone.
+function uppercaseTitleLine(text) {
+  const lines = String(text || "").split("\n");
+  const first = (lines[0] || "").trim();
+  if (!first || first.length > 140 || /https?:\/\/|^[·•\-*]|^\d+[.)]\s/.test(first)) return text;
+  lines[0] = first.toLocaleUpperCase("vi");
+  return lines.join("\n");
+}
+
 // Main post-processing function
 function postProcessOutput(output, sourceText, type) {
   const issues = [];
@@ -2920,9 +2930,18 @@ async function handleStream(
     postTime,
     postDate,
   );
-  if (translateEligible) systemPrompt += "\n\n" + NO_SUMMARY_INSTRUCTION;
-  if (type === "summary" && countDistinctUrls(completeSource) >= 2) {
-    systemPrompt += "\n\n" + SOURCE_LINKS_INSTRUCTION;
+  if (translateEligible && FeedWriterSummaryPolicy.isTitledListPost(completeSource)) {
+    // The post already has its own title + intro: translate it as is.
+    translateMode = true;
+    completeSource = stripSocialMetadataLines(completeSource);
+    sourceMessage = buildSourceMessage(completeSource);
+    systemPrompt = TRANSLATE_SOURCE_PROMPT;
+    summaryPolicy.glossary = { mode: "omit", candidates: [], limit: 0 };
+  } else {
+    if (translateEligible) systemPrompt += "\n\n" + NO_SUMMARY_INSTRUCTION;
+    if (type === "summary" && countDistinctUrls(completeSource) >= 2) {
+      systemPrompt += "\n\n" + SOURCE_LINKS_INSTRUCTION;
+    }
   }
 
   const streamFns = {
@@ -3281,7 +3300,7 @@ async function handleStream(
         }
 
         result.summary = translateMode
-          ? TRANSLATION_MARK + postResult.text
+          ? TRANSLATION_MARK + uppercaseTitleLine(postResult.text)
           : postResult.text;
         result.quality = postResult.quality;
         result.issues = postResult.issues;

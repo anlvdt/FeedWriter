@@ -1135,6 +1135,19 @@ if (typeof globalThis !== "undefined") {
     return items >= 3 && items / lines.length >= 0.7;
   }
 
+  // A post that already opens with its own headline and an intro paragraph
+  // before a numbered/bulleted list ("10 repos…" + intro + items). Rewriting
+  // it as a news item loses items and links, so it is translated in place.
+  function isTitledListPost(text) {
+    const lines = String(text || "").split("\n").map((l) => l.trim()).filter(Boolean);
+    if (lines.length < 5) return false;
+    const isItem = (l) => /^(?:[·•\-*▪◦→]|\d+[.)])\s*\S/u.test(l);
+    const [title, intro] = lines;
+    if (isItem(title) || title.length > 140 || /[.!?:]$/.test(title)) return false;
+    if (isItem(intro) || intro.length < 25) return false;
+    return lines.filter(isItem).length >= 3;
+  }
+
   // Too-short or list-only foreign-language sources are translated verbatim
   // instead of summarized/rewritten; Vietnamese sources keep the old policy.
   function decideTranslation(options = {}) {
@@ -1294,6 +1307,7 @@ if (typeof globalThis !== "undefined") {
     canFallbackToTranslation,
     looksVietnamese,
     isListOnly,
+    isTitledListPost,
     buildGlossaryInstruction,
     sanitizeGlossaryOutput,
     normalizeText,
@@ -2128,7 +2142,8 @@ YÊU CẦU BẮT BUỘC:
 const TRANSLATE_SOURCE_PROMPT = `Bạn là dịch giả Anh/đa ngữ → Việt chuyên công nghệ, AI và IT.
 CHẾ ĐỘ DỊCH THUẬT: nội dung nguồn quá ngắn hoặc chỉ là danh sách, nên KHÔNG tóm tắt, KHÔNG viết lại thành bản tin, KHÔNG thêm/bớt ý.
 - Dịch ĐẦY ĐỦ từng câu, từng dòng đến hết nguồn, sát nghĩa sang tiếng Việt tự nhiên, đúng văn phong công nghệ. Tuyệt đối không bỏ câu cuối, không rút gọn, không kết thúc bằng "...".
-- BỐ CỤC: dòng đầu là một tiêu đề ngắn (tối đa ~12 từ, nêu đúng chủ đề nguồn, không viết hoa toàn bộ, không thêm nhãn "Tiêu đề:"); xuống dòng trống; rồi 1-2 câu tóm tắt ngắn nội dung chính; xuống dòng trống; sau đó là bản dịch đầy đủ. Tiêu đề và tóm tắt chỉ dùng dữ kiện có trong nguồn.
+- NẾU nguồn đã có sẵn tiêu đề và đoạn mở đầu/tóm tắt: dịch luôn chính tiêu đề (VIẾT HOA TOÀN BỘ) và đoạn đó ở đầu bài, KHÔNG tự thêm tiêu đề hay tóm tắt mới.
+- NẾU nguồn chưa có tiêu đề: BỐ CỤC: dòng đầu là một tiêu đề ngắn (tối đa ~12 từ, nêu đúng chủ đề nguồn, VIẾT HOA TOÀN BỘ, không thêm nhãn "Tiêu đề:"); xuống dòng trống; rồi 1-2 câu tóm tắt ngắn nội dung chính; xuống dòng trống; sau đó là bản dịch đầy đủ. Tiêu đề và tóm tắt chỉ dùng dữ kiện có trong nguồn.
 - Trong phần bản dịch, giữ nguyên thứ tự, số lượng ý và cấu trúc: đoạn vẫn là đoạn, danh sách vẫn là danh sách (mỗi mục một dòng, ký hiệu đầu dòng "·"), xuống dòng như nguồn.
 - CẤM in nhãn chia phần như "Phần 1:", "Phần 2:", "Đoạn 1:".
 - Mỗi liên kết trong nguồn (GitHub, website...) phải giữ nguyên ở đúng mục của nó, dạng URL đầy đủ, đặt ngay sau mô tả của mục đó; không cắt bằng "…".
@@ -5156,6 +5171,16 @@ function countDistinctUrls(text) {
   return new Set(urls.map((u) => u.replace(/[.,;:!?]+$/, "").toLowerCase())).size;
 }
 
+// Translation output opens with a headline line; show it in capitals. Lines
+// that are list items, links or already long sentences are left alone.
+function uppercaseTitleLine(text) {
+  const lines = String(text || "").split("\n");
+  const first = (lines[0] || "").trim();
+  if (!first || first.length > 140 || /https?:\/\/|^[·•\-*]|^\d+[.)]\s/.test(first)) return text;
+  lines[0] = first.toLocaleUpperCase("vi");
+  return lines.join("\n");
+}
+
 // Main post-processing function
 function postProcessOutput(output, sourceText, type) {
   const issues = [];
@@ -5965,9 +5990,18 @@ async function handleStream(
     postTime,
     postDate,
   );
-  if (translateEligible) systemPrompt += "\n\n" + NO_SUMMARY_INSTRUCTION;
-  if (type === "summary" && countDistinctUrls(completeSource) >= 2) {
-    systemPrompt += "\n\n" + SOURCE_LINKS_INSTRUCTION;
+  if (translateEligible && FeedWriterSummaryPolicy.isTitledListPost(completeSource)) {
+    // The post already has its own title + intro: translate it as is.
+    translateMode = true;
+    completeSource = stripSocialMetadataLines(completeSource);
+    sourceMessage = buildSourceMessage(completeSource);
+    systemPrompt = TRANSLATE_SOURCE_PROMPT;
+    summaryPolicy.glossary = { mode: "omit", candidates: [], limit: 0 };
+  } else {
+    if (translateEligible) systemPrompt += "\n\n" + NO_SUMMARY_INSTRUCTION;
+    if (type === "summary" && countDistinctUrls(completeSource) >= 2) {
+      systemPrompt += "\n\n" + SOURCE_LINKS_INSTRUCTION;
+    }
   }
 
   const streamFns = {
@@ -6326,7 +6360,7 @@ async function handleStream(
         }
 
         result.summary = translateMode
-          ? TRANSLATION_MARK + postResult.text
+          ? TRANSLATION_MARK + uppercaseTitleLine(postResult.text)
           : postResult.text;
         result.quality = postResult.quality;
         result.issues = postResult.issues;

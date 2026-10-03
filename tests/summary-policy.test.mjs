@@ -171,3 +171,23 @@ describe("translation fallback eligibility", () => {
     assert.equal(policy.canFallbackToTranslation("word ".repeat(2000)), false);
   });
 });
+
+import { createRequire as _cr } from "node:module";
+describe("titled list posts are translated in place", () => {
+  const policy = _cr(import.meta.url)("../lib/summary-policy.js");
+  const post = [
+    "10 GITHUB REPOS THAT CAN REPLACE EXPENSIVE SOFTWARE",
+    "You might be paying for tools that already have open-source alternatives.",
+    "Here are 10 worth checking out:",
+    "1. AppFlowy", "Notion alternative.", "http://github.com/AppFlowy-IO/AppFlowy",
+    "2. NocoDB", "Spreadsheet-style workspace.", "http://github.com/nocodb/nocodb",
+    "3. Listmonk", "Self-hosted newsletters.", "http://github.com/knadh/listmonk",
+  ].join("\n");
+  it("detects headline + intro + list", () => {
+    assert.equal(policy.isTitledListPost(post), true);
+  });
+  it("ignores plain paragraphs and bare lists", () => {
+    assert.equal(policy.isTitledListPost("Just one short sentence here.\nAnother line of text that is long enough."), false);
+    assert.equal(policy.isTitledListPost("1. a\n2. b\n3. c\n4. d\n5. e"), false);
+  });
+});
