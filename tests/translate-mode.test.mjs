@@ -58,3 +58,29 @@ describe("translation mode helpers", () => {
     assert.equal(ctx.checkTranslationCompleteness(src, good).ok, true);
   });
 });
+
+describe("translation output shape", () => {
+  const prompts = readFileSync(new URL("../bg-prompts.js", import.meta.url), "utf8");
+  const promptStart = prompts.indexOf("const TRANSLATE_SOURCE_PROMPT");
+  const promptText = prompts.slice(promptStart, prompts.indexOf("`;", promptStart));
+
+  it("asks for a title and a short summary above the translation", () => {
+    assert.match(promptText, /tiêu đề/i);
+    assert.match(promptText, /tóm tắt ngắn/i);
+  });
+
+  it("forbids 'Phần N' labels and keeps full URLs", () => {
+    assert.match(promptText, /Phần \d/);
+    assert.match(promptText, /URL đầy đủ/);
+  });
+
+  it("strips stray 'Phần N:' label lines in post-processing", () => {
+    const start = background.indexOf("function stripPartLabels");
+    assert.ok(start >= 0, "stripPartLabels missing");
+    const code = background.slice(start, background.indexOf("\n}\n", start) + 3);
+    const c = vm.createContext({});
+    vm.runInContext(code, c);
+    assert.equal(c.stripPartLabels("Phần 1:\n· AppFlowy\nPhần 2:\n· NocoDB"), "· AppFlowy\n· NocoDB");
+    assert.equal(c.stripPartLabels("Phần 1: Giới thiệu về React"), "Phần 1: Giới thiệu về React");
+  });
+});

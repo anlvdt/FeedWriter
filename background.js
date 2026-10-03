@@ -2098,6 +2098,14 @@ function checkTranslationCompleteness(source, output) {
   };
 }
 
+// Drop bare "Phần N:" separator lines that models copy from the chunked fact
+// sheet or invent. Headings that carry text after the colon are kept.
+function stripPartLabels(text) {
+  return String(text || "")
+    .replace(/^[ \t]*Phần\s*\d+\s*[:：]?[ \t]*(?:\n|$)/gim, "")
+    .trim();
+}
+
 // Main post-processing function
 function postProcessOutput(output, sourceText, type) {
   const issues = [];
@@ -2191,6 +2199,7 @@ function postProcessOutput(output, sourceText, type) {
     .trim();
   // Strip "Đoạn 1:", "Đoạn 2:" labels that AI copies from format example
   processed = processed.replace(/^Đoạn\s*\d+\s*[:：]\s*/gim, "");
+  processed = stripPartLabels(processed);
   // Normalize "*** Giải thích" → "**Giải thích" (old prompt format)
   processed = processed.replace(/^\*{3}\s*/gm, "**");
   processed = normalizeVietnameseNumericNotation(processed);
@@ -3405,7 +3414,7 @@ async function handleStream(
     }
     shrinkBase = factSheet;
     activePrompt = synthesisBase +
-      "\n\nNguồn dưới đây là dữ kiện đã trích từ TOÀN BỘ bài gốc, theo thứ tự. Viết một bản tin từ mọi phần, không bỏ phần giữa.";
+      "\n\nNguồn dưới đây là dữ kiện đã trích từ TOÀN BỘ bài gốc, theo thứ tự. Viết một bản tin từ mọi phần, không bỏ phần giữa. Không in nhãn \"Phần N\" trong bài.";
     activeType = type;
     activePort = port;
     recordResult = true;
