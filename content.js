@@ -2649,7 +2649,7 @@ function buildCommentText(cleanUrl, author, source, options = {}) {
   // Strip any markdown bold/italic asterisks to ensure clean copy in comments
   out = out.replace(/\*\*/g, "").replace(/\*/g, "");
 
-  return out;
+  return typeof lowercaseRepoLinks === "function" ? lowercaseRepoLinks(out) : out;
 }
 
 

@@ -2755,6 +2755,7 @@ function postProcessOutput(output, sourceText, type, contentKind = "news") {
     quality = "warn";
   else if (issues.length > 0) quality = "info";
 
+  if (typeof lowercaseRepoLinks === "function") processed = lowercaseRepoLinks(processed);
   return { text: processed, quality, issues };
 }
 

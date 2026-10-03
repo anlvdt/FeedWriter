@@ -431,8 +431,16 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
     renderLinkUI();
   });
 
+  const normalizeGithubField = () => {
+    if (typeof lowercaseRepoLinks !== "function") return;
+    const lowered = lowercaseRepoLinks(githubField.value);
+    if (lowered !== githubField.value) githubField.value = lowered;
+  };
+  githubField.addEventListener("blur", normalizeGithubField);
+
   githubField.addEventListener("paste", () => {
     setTimeout(() => {
+      normalizeGithubField();
       const url = linkField.value.trim();
       const githubUrl = githubField.value.trim();
       updateComment(url, githubUrl);
@@ -777,6 +785,7 @@ function openFacebookComposer(text, sourceUrl, imageUrl, author, source, allImag
           }
           sourceLine = fallbackContent;
         }
+        if (typeof lowercaseRepoLinks === "function") sourceLine = lowercaseRepoLinks(sourceLine);
 
         // Auto-copy source comment before touching the native composer.
         let sourceCopied = false;
@@ -1089,6 +1098,7 @@ function detectTitleEmoji(title) {
 }
 
 async function pasteToLexical(element, text, file = null) {
+  if (typeof lowercaseRepoLinks === "function") text = lowercaseRepoLinks(text);
   const readText = () => (element.innerText || element.textContent || "").replace(/\r\n/g, "\n").trim();
   if (readText()) {
     throw new Error("Ô Facebook đang có nội dung. Hãy giữ hoặc xóa bản nháp đó trước khi điền lại để tránh trùng bài.");
