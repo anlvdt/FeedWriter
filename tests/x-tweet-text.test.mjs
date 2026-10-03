@@ -73,4 +73,30 @@ describe("X tweet text links", () => {
     assert.match(out, /https:\/\/github\.com\/AppFlowy-IO\/AppFlowy$/);
     assert.ok(!out.includes("…"));
   });
+
+  it("rebuilds the URL from X's hidden link spans (scheme + cut-off tail)", () => {
+    const mk = (textContent) => ({
+      textContent,
+      getAttribute: () => null,
+      replaceWith(text) { this.replacedWith = text; },
+    });
+    const long = mk("http://github.com/AppFlowy-IO/AppFlowy…");
+    const short = mk("http://github.com/nocodb/nocodb");
+    const body = {
+      get innerText() {
+        return [
+          "AppFlowy " + (long.replacedWith || "github.com/AppFlowy-IO/Ap…"),
+          "NocoDB " + (short.replacedWith || "github.com/nocodb/nocodb"),
+        ].join("\n");
+      },
+      contains: () => false,
+      cloneNode() { return this; },
+      querySelectorAll: (sel) => (/^a\b/.test(sel) ? [long, short] : []),
+    };
+    ctx.SITE = "x";
+    ctx.article = { querySelectorAll: () => [body] };
+    const out = vm.runInContext("_extractXTweetText(article)", ctx);
+    assert.match(out, /AppFlowy http:\/\/github\.com\/AppFlowy-IO\/AppFlowy\n/);
+    assert.match(out, /NocoDB http:\/\/github\.com\/nocodb\/nocodb$/);
+  });
 });

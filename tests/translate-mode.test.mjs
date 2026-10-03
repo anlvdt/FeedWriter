@@ -103,3 +103,20 @@ describe("source link preservation in summaries", () => {
     assert.equal(c.countDistinctUrls("no links"), 0);
   });
 });
+
+describe("translation headline casing", () => {
+  const start = background.indexOf("function uppercaseTitleLine");
+  const code = background.slice(start, background.indexOf("\n}\n", start) + 3);
+  const c = vm.createContext({});
+  vm.runInContext(code, c);
+  it("uppercases only the first line", () => {
+    assert.equal(
+      c.uppercaseTitleLine("10 repo mã nguồn mở thay phần mềm đắt tiền\n\nBạn có thể đang trả phí."),
+      "10 REPO MÃ NGUỒN MỞ THAY PHẦN MỀM ĐẮT TIỀN\n\nBạn có thể đang trả phí.",
+    );
+  });
+  it("leaves list items and links alone", () => {
+    assert.equal(c.uppercaseTitleLine("· AppFlowy thay Notion"), "· AppFlowy thay Notion");
+    assert.equal(c.uppercaseTitleLine("http://github.com/a/b"), "http://github.com/a/b");
+  });
+});
