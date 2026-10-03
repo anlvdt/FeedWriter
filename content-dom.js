@@ -2686,6 +2686,11 @@ function hideFeedClutter() {
 // Used by the feed filtering UI in content.js.
 
 
+// Semantic post-body nodes. story_message is what current Facebook feeds use;
+// without it we fall back to the whole card text (author, buttons, comments).
+const FB_MESSAGE_SELECTOR =
+  '[data-ad-rendering-role="story_message"], [data-ad-preview="message"], [data-ad-comet-preview="message"], [data-testid="post_message"], [data-testid="post-message"]';
+
 function _getPrimaryPostText(container) {
   if (!container) return "";
   try {
@@ -2710,8 +2715,7 @@ function _getPrimaryPostText(container) {
  */
 function _getEngagementScanText(container) {
   if (!container) return "";
-  const messageSelector =
-    '[data-ad-preview="message"], [data-ad-comet-preview="message"], [data-testid="post_message"], [data-testid="post-message"]';
+  const messageSelector = FB_MESSAGE_SELECTOR;
   const candidates = [];
   try {
     for (const node of container.querySelectorAll(messageSelector)) {
@@ -2797,8 +2801,7 @@ function extractPostContent(element) {
   // "Relevant / View quotes". Only the tweetText nodes are post content.
   if (SITE === "x") return _extractXTweetText(element.closest?.('article[data-testid="tweet"]') || postContainer);
   const sharedInner = SITE === "facebook" ? _findSharedPostArticle(postContainer) : null;
-  const messageSelector =
-    '[data-ad-preview="message"], [data-ad-comet-preview="message"], [data-testid="post_message"], [data-testid="post-message"]';
+  const messageSelector = FB_MESSAGE_SELECTOR;
 
   const extractOne = (container, excluded) => {
     if (!container) return "";
