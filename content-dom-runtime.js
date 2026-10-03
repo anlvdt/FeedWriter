@@ -2794,6 +2794,16 @@ function _extractXTweetText(article) {
     try {
       clone = node.cloneNode(true);
       clone.querySelectorAll('[data-fbs-ui], .fbs-wrap-inline, .fbs-chip-host').forEach((el) => el.remove());
+      // X shortens link text ("github.com/Foo/Ba…"); the full URL lives in the
+      // anchor's attributes. Put it back so the model sees a usable link.
+      if (typeof _expandedXAnchorUrls === "function") {
+        clone.querySelectorAll("a[href]").forEach((a) => {
+          const shown = String(a.textContent || "").trim();
+          if (!/[…]|\.\.\.$/.test(shown)) return;
+          const full = _expandedXAnchorUrls(a, "")[0];
+          if (full) a.replaceWith(full);
+        });
+      }
     } catch (_) { clone = node; }
     const text = _normalizePostBodyText(clone.innerText || clone.textContent || "");
     if (text) parts.push(text);

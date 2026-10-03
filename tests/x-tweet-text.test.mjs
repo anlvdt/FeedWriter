@@ -48,3 +48,29 @@ describe("X tweet text extraction", () => {
     assert.equal(vm.runInContext("_extractXTweetText(article)", ctx), "Available now in the Agents Window.");
   });
 });
+
+describe("X tweet text links", () => {
+  it("replaces truncated link text with the full expanded URL", () => {
+    const anchor = {
+      textContent: "github.com/AppFlowy-IO/Ap…",
+      getAttribute: (k) => (k === "title" ? "https://github.com/AppFlowy-IO/AppFlowy" : null),
+      replaceWith(text) { this.replacedWith = text; },
+    };
+    const body = {
+      get innerText() {
+        return anchor.replacedWith
+          ? "AppFlowy\n" + anchor.replacedWith
+          : "AppFlowy\ngithub.com/AppFlowy-IO/Ap…";
+      },
+      contains: () => false,
+      cloneNode() { return this; },
+      querySelectorAll: (sel) => (/^a\b/.test(sel) ? [anchor] : []),
+    };
+    ctx.SITE = "x";
+    ctx._expandedXAnchorUrls = (a) => [a.getAttribute("title")];
+    ctx.article = { querySelectorAll: () => [body] };
+    const out = vm.runInContext("_extractXTweetText(article)", ctx);
+    assert.match(out, /https:\/\/github\.com\/AppFlowy-IO\/AppFlowy$/);
+    assert.ok(!out.includes("…"));
+  });
+});

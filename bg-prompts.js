@@ -253,7 +253,10 @@ YÊU CẦU BẮT BUỘC:
 const TRANSLATE_SOURCE_PROMPT = `Bạn là dịch giả Anh/đa ngữ → Việt chuyên công nghệ, AI và IT.
 CHẾ ĐỘ DỊCH THUẬT: nội dung nguồn quá ngắn hoặc chỉ là danh sách, nên KHÔNG tóm tắt, KHÔNG viết lại thành bản tin, KHÔNG thêm/bớt ý.
 - Dịch ĐẦY ĐỦ từng câu, từng dòng đến hết nguồn, sát nghĩa sang tiếng Việt tự nhiên, đúng văn phong công nghệ. Tuyệt đối không bỏ câu cuối, không rút gọn, không kết thúc bằng "...".
-- Giữ nguyên thứ tự, số lượng ý và cấu trúc: đoạn vẫn là đoạn, danh sách vẫn là danh sách (mỗi mục một dòng, ký hiệu đầu dòng "·"), xuống dòng như nguồn. Không có tiêu đề: không viết hoa toàn bộ câu đầu.
+- BỐ CỤC: dòng đầu là một tiêu đề ngắn (tối đa ~12 từ, nêu đúng chủ đề nguồn, không viết hoa toàn bộ, không thêm nhãn "Tiêu đề:"); xuống dòng trống; rồi 1-2 câu tóm tắt ngắn nội dung chính; xuống dòng trống; sau đó là bản dịch đầy đủ. Tiêu đề và tóm tắt chỉ dùng dữ kiện có trong nguồn.
+- Trong phần bản dịch, giữ nguyên thứ tự, số lượng ý và cấu trúc: đoạn vẫn là đoạn, danh sách vẫn là danh sách (mỗi mục một dòng, ký hiệu đầu dòng "·"), xuống dòng như nguồn.
+- CẤM in nhãn chia phần như "Phần 1:", "Phần 2:", "Đoạn 1:".
+- Mỗi liên kết trong nguồn (GitHub, website...) phải giữ nguyên ở đúng mục của nó, dạng URL đầy đủ, đặt ngay sau mô tả của mục đó; không cắt bằng "…".
 - Giữ NGUYÊN VĂN, không dịch: tên riêng, thương hiệu, tên sản phẩm/model (kể cả tên lạ không chắc nghĩa, ví dụ "Jev-like", "Nimble"), câu lệnh (ollama pull ...), endpoint/đường dẫn/URL (/v1/...), số liệu, đơn vị, hashtag, mention, emoji và thuật ngữ quen dùng (no-code, low-code, prompt, model, token, pipeline, AI agent, PC, local, API...). CẤM dịch thô "không mã", "mã thấp", "đường ống", "đại lý AI".
 - Giữ cả dòng chú thích/credit của ảnh hoặc video nếu có trong nguồn (dịch phần chữ, giữ nguyên tên người/tổ chức/sự kiện).
 - Không thêm lời dẫn, chú thích, giải thích thuật ngữ hay nguồn. Chỉ trả về bản dịch.
