@@ -120,3 +120,28 @@ describe("translation headline casing", () => {
     assert.equal(c.uppercaseTitleLine("http://github.com/a/b"), "http://github.com/a/b");
   });
 });
+
+describe("formatter keeps repo links out of uppercase headers", () => {
+  const sandbox = { window: { enableUnicodeBold: true }, console, String, parseInt, Math };
+  vm.createContext(sandbox);
+  vm.runInContext(formatterCode + "\nthis.SF = StatusFormatter;", sandbox);
+  const raw = [
+    "10 repo thay thế phần mềm trả phí",
+    "",
+    "1. AppFlowy thay Notion",
+    "http://github.com/AppFlowy-IO/AppFlowy",
+    "2. NocoDB thay Airtable",
+    "https://github.com/nocodb/nocodb",
+    "3. Listmonk quản lý bản tin",
+  ].join("\n");
+  it("does not uppercase a short link line followed by a numbered item", () => {
+    const out = sandbox.SF.format(raw, "facebook", {});
+    assert.ok(out.includes("http://github.com/appflowy-io/appflowy"), out);
+    assert.ok(out.includes("https://github.com/nocodb/nocodb"), out);
+    assert.ok(!/HTTP:\/\/GITHUB/i.test(out.replace(/github\.com\/[^\s]*/gi, "")), out);
+  });
+  it("lowercases github links in translated output too", () => {
+    const out = sandbox.SF.format("⁣Tiêu đề\n\nMô tả dài hơn bốn mươi ký tự để làm đoạn văn.\nhttp://github.com/Formbricks/Formbricks", "facebook", {});
+    assert.ok(out.includes("http://github.com/formbricks/formbricks"), out);
+  });
+});

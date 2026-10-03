@@ -71,8 +71,20 @@ const StatusFormatter = {
     const profile = this.profiles[platform] || this.profiles.facebook;
     let parsed = this._parse(rawText);
     parsed = this._postProcess(parsed);
-    const formatted = this._render(parsed, profile, options);
+    const formatted = this._lowercaseRepoLinks(this._render(parsed, profile, options));
     return formatted;
+  },
+
+  // GitHub/GitLab paths are case-insensitive; show repo links in lowercase.
+  _lowercaseRepoLinks(text) {
+    return String(text || "").replace(
+      /(?:https?:\/\/)?(?:www\.)?(?:github|gitlab)\.com\/[^\s<>)\]]+/gi,
+      (url) => url.toLowerCase(),
+    );
+  },
+
+  _hasLink(line) {
+    return /https?:\/\/|\b[\w-]+\.(?:com|io|dev|org|net|ai|app|diy)\b\//i.test(line);
   },
 
   // Convenience: format for current SITE
@@ -229,7 +241,7 @@ const StatusFormatter = {
       // Heuristic header: short line (≤ 40 chars) not a bullet/number,
       // followed by bullet/numbered lines → treat as section header.
       // Catches AI output like "Điểm nổi bật" or "Lợi ích:" without **...**
-      if (!translated && trimmed.length <= 40 && !trimmed.match(/^[·•\-*✓▸▪→\d]/) && titleFound) {
+      if (!translated && trimmed.length <= 40 && !trimmed.match(/^[·•\-*✓▸▪→\d]/) && !this._hasLink(trimmed) && titleFound) {
         // Look ahead: next non-empty line should be a bullet or number
         let j = i + 1;
         while (j < lines.length && !lines[j].trim()) j++;
@@ -521,6 +533,7 @@ const StatusFormatter = {
             lines.push("");
           }
           let h = this._unwrapMarkdown(block.text);
+          if (this._hasLink(h)) { lines.push(h); break; }
           if (profile.unicodeBold) {
             const bolded = this._toUnicodeBold(h);
             // If bold produced no change (all Vietnamese), fall back to UPPERCASE
