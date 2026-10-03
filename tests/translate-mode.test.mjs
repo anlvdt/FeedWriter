@@ -84,3 +84,22 @@ describe("translation output shape", () => {
     assert.equal(c.stripPartLabels("Phần 1: Giới thiệu về React"), "Phần 1: Giới thiệu về React");
   });
 });
+
+describe("source link preservation in summaries", () => {
+  const prompts = readFileSync(new URL("../bg-prompts.js", import.meta.url), "utf8");
+  it("defines a rule that keeps each item's URL", () => {
+    const i = prompts.indexOf("const SOURCE_LINKS_INSTRUCTION");
+    assert.ok(i >= 0);
+    assert.match(prompts.slice(i, prompts.indexOf("`;", i)), /URL đầy đủ/);
+  });
+
+  it("counts distinct URLs in the source", () => {
+    const start = background.indexOf("function countDistinctUrls");
+    assert.ok(start >= 0);
+    const c = vm.createContext({});
+    vm.runInContext(background.slice(start, background.indexOf("\n}\n", start) + 3), c);
+    const src = "A\nhttps://github.com/a/b\nB\nhttps://github.com/a/b\nC\nhttps://github.com/c/d.";
+    assert.equal(c.countDistinctUrls(src), 2);
+    assert.equal(c.countDistinctUrls("no links"), 0);
+  });
+});

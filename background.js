@@ -2106,6 +2106,11 @@ function stripPartLabels(text) {
     .trim();
 }
 
+function countDistinctUrls(text) {
+  const urls = String(text || "").match(/https?:\/\/[^\s<>"')\]]+/gi) || [];
+  return new Set(urls.map((u) => u.replace(/[.,;:!?]+$/, "").toLowerCase())).size;
+}
+
 // Main post-processing function
 function postProcessOutput(output, sourceText, type) {
   const issues = [];
@@ -2916,6 +2921,9 @@ async function handleStream(
     postDate,
   );
   if (translateEligible) systemPrompt += "\n\n" + NO_SUMMARY_INSTRUCTION;
+  if (type === "summary" && countDistinctUrls(completeSource) >= 2) {
+    systemPrompt += "\n\n" + SOURCE_LINKS_INSTRUCTION;
+  }
 
   const streamFns = {
     groq: callGroqStream,
