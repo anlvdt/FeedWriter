@@ -1362,6 +1362,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           groq: callGroqNonStream,
           gemini: callGeminiNonStream,
           cerebras: callCerebrasNonStream,
+          nvidia: callNvidiaNonStream,
           sambanova: callSambanovaNonStream,
           openrouter: callOpenrouterNonStream,
         };
@@ -1804,6 +1805,7 @@ async function translateText(text, mode = "auto") {
     groq: callGroqNonStream,
     gemini: callGeminiNonStream,
     cerebras: callCerebrasNonStream,
+    nvidia: callNvidiaNonStream,
     sambanova: callSambanovaNonStream,
     openrouter: callOpenrouterNonStream,
   };
@@ -1857,6 +1859,7 @@ async function classifyContentKind(source, signal) {
     groq: callGroqNonStream,
     gemini: callGeminiNonStream,
     cerebras: callCerebrasNonStream,
+    nvidia: callNvidiaNonStream,
     sambanova: callSambanovaNonStream,
     openrouter: callOpenrouterNonStream,
   };
@@ -3099,6 +3102,7 @@ async function handleStream(
     groq: callGroqStream,
     gemini: callGeminiStream,
     cerebras: callCerebrasStream,
+    nvidia: callNvidiaStream,
     sambanova: callSambanovaStream,
     openrouter: callOpenrouterStream,
   };

@@ -780,6 +780,58 @@ async function callCerebrasNonStream(apiKey, userMessage, systemPrompt, task) {
   );
 }
 
+// === NVIDIA NIM: NVIDIA-hosted, OpenAI-compatible inference ===
+async function callNvidiaStream(
+  apiKey,
+  text,
+  systemPrompt,
+  port,
+  signal,
+  maxTokens = 512,
+  task,
+) {
+  return callWithModel("nvidia", task, (model) =>
+    callStreamAPI({
+    url: "https://integrate.api.nvidia.com/v1/chat/completions",
+    headers: { Authorization: "Bearer " + apiKey },
+    body: {
+      model,
+      stream: true,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: text },
+      ],
+      temperature: 0.3,
+      max_tokens: maxTokens,
+    },
+    extractFn: (d) => d.choices?.[0]?.delta?.content || "",
+    port,
+    signal,
+    maxTokens,
+    provider: "NVIDIA NIM",
+    }),
+  );
+}
+
+async function callNvidiaNonStream(apiKey, userMessage, systemPrompt, task) {
+  return callWithModel("nvidia", task, (model) =>
+    callNonStream(
+    "https://integrate.api.nvidia.com/v1/chat/completions",
+    { Authorization: "Bearer " + apiKey },
+    {
+      model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage },
+      ],
+      max_tokens: 1024,
+      temperature: 0.3,
+    },
+    (d) => d?.choices?.[0]?.message?.content,
+    ),
+  );
+}
+
 // === SAMBANOVA: OpenAI-compatible API, fast open-source models ===
 async function callSambanovaStream(
   apiKey,

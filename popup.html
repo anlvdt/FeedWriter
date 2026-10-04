@@ -248,7 +248,7 @@
           </div>
           <div id="newApiKeyError" class="field-error" role="alert" hidden></div>
           <button type="button" id="addKeyBtn" class="btn btn-primary btn-block keys-add-btn">Thêm API key</button>
-          <p class="field-hint keys-hint">Hỗ trợ Groq · Gemini · Cerebras · SambaNova · OpenRouter. Rotate key khi rate limit.</p>
+          <p class="field-hint keys-hint">Hỗ trợ Groq · Gemini · Cerebras · NVIDIA NIM · SambaNova · OpenRouter. Rotate key khi rate limit.</p>
         </div>
       </section>
 
@@ -278,6 +278,13 @@
             <span class="key-list-name">Cerebras</span>
           </div>
           <div id="keyListCerebrasItems" class="key-list-items"></div>
+        </div>
+        <div id="keyListNvidia" class="key-list" style="display:none">
+          <div class="key-list-header">
+            <span class="key-list-name">NVIDIA NIM</span>
+            <span class="key-limit-badge">Free endpoint</span>
+          </div>
+          <div id="keyListNvidiaItems" class="key-list-items"></div>
         </div>
         <div id="keyListSambanova" class="key-list" style="display:none">
           <div class="key-list-header">
@@ -322,6 +329,10 @@
           <a class="guide-row" href="https://cloud.cerebras.ai" target="_blank" rel="noopener">
             <span class="guide-name">Cerebras</span>
             <span class="guide-meta">csk-… · ~1 triệu token/ngày</span>
+          </a>
+          <a class="guide-row" href="https://build.nvidia.com/settings/api-keys" target="_blank" rel="noopener">
+            <span class="guide-name">NVIDIA NIM</span>
+            <span class="guide-meta">nvapi-… · Free endpoint</span>
           </a>
           <a class="guide-row" href="https://cloud.sambanova.ai" target="_blank" rel="noopener">
             <span class="guide-name">SambaNova</span>
@@ -502,9 +513,10 @@
         <div class="wizard-api-guide-title">Lấy API Key miễn phí:</div>
         <div class="wizard-api-guide-step">1. <a href="https://console.groq.com/keys" target="_blank" rel="noopener">Groq</a> — 100.000 token/ngày</div>
         <div class="wizard-api-guide-step">2. <a href="https://cloud.cerebras.ai" target="_blank" rel="noopener">Cerebras</a> — 1 triệu token/ngày</div>
-        <div class="wizard-api-guide-step">3. <a href="https://cloud.sambanova.ai" target="_blank" rel="noopener">SambaNova</a> — Miễn phí 5 USD · ~20 triệu token/ngày</div>
-        <div class="wizard-api-guide-step">4. <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Gemini</a> — 1.500 yêu cầu/ngày</div>
-        <div class="wizard-api-guide-step">5. <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">OpenRouter</a> — 50 yêu cầu/ngày</div>
+        <div class="wizard-api-guide-step">3. <a href="https://build.nvidia.com/settings/api-keys" target="_blank" rel="noopener">NVIDIA NIM</a> — free endpoint</div>
+        <div class="wizard-api-guide-step">4. <a href="https://cloud.sambanova.ai" target="_blank" rel="noopener">SambaNova</a> — Miễn phí 5 USD · ~20 triệu token/ngày</div>
+        <div class="wizard-api-guide-step">5. <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Gemini</a> — 1.500 yêu cầu/ngày</div>
+        <div class="wizard-api-guide-step">6. <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">OpenRouter</a> — 50 yêu cầu/ngày</div>
       </div>
 
       <div id="wizardKeyStatus" class="status wizard-key-status" role="status" aria-live="polite"></div>

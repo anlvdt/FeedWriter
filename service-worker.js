@@ -1548,6 +1548,7 @@ if (typeof globalThis !== "undefined") {
   const DEFAULT_MODELS = {
     groq: "openai/gpt-oss-120b",
     cerebras: "gpt-oss-120b",
+    nvidia: "meta/llama-3.3-70b-instruct",
     sambanova: "Meta-Llama-3.3-70B-Instruct",
     gemini: "gemini-3.1-flash-lite",
     openrouter: "openai/gpt-oss-120b",
@@ -1568,6 +1569,12 @@ if (typeof globalThis !== "undefined") {
     cerebras: [
       { id: "gpt-oss-120b", label: "GPT OSS 120B (mặc định)" },
       { id: "zai-glm-4.7", label: "GLM 4.7" },
+    ],
+    nvidia: [
+      { id: "meta/llama-3.3-70b-instruct", label: "Llama 3.3 70B Instruct (mặc định)" },
+      { id: "meta/llama-3.1-405b-instruct", label: "Llama 3.1 405B Instruct" },
+      { id: "deepseek-ai/deepseek-v3.1", label: "DeepSeek V3.1" },
+      { id: "qwen/qwen3-32b", label: "Qwen3 32B" },
     ],
     sambanova: [
       { id: "Meta-Llama-3.3-70B-Instruct", label: "Llama 3.3 70B (mặc định)" },
@@ -1595,6 +1602,7 @@ if (typeof globalThis !== "undefined") {
   const PROVIDER_LABELS = {
     groq: "Groq",
     cerebras: "Cerebras",
+    nvidia: "NVIDIA NIM",
     sambanova: "SambaNova",
     gemini: "Gemini",
     openrouter: "OpenRouter",
@@ -1608,6 +1616,7 @@ if (typeof globalThis !== "undefined") {
     cerebras: "gpt-oss-120b",
     // SambaNova removed Meta-Llama-3.1-8B-Instruct 2026-04-14.
     sambanova: "gpt-oss-120b",
+    nvidia: "meta/llama-3.3-70b-instruct",
     gemini: "gemini-3.1-flash-lite",
     openrouter: "openai/gpt-oss-20b",
   };
@@ -1696,6 +1705,7 @@ if (typeof globalThis !== "undefined") {
 const PROVIDER_PRIORITY = [
   "groq",
   "cerebras",
+  "nvidia",
   "sambanova",
   "gemini",
   "openrouter",
@@ -1705,6 +1715,7 @@ const EMPTY_API_KEYS = {
   groq: [],
   gemini: [],
   cerebras: [],
+  nvidia: [],
   sambanova: [],
   openrouter: [],
 };
@@ -3276,6 +3287,58 @@ async function callCerebrasNonStream(apiKey, userMessage, systemPrompt, task) {
   );
 }
 
+// === NVIDIA NIM: NVIDIA-hosted, OpenAI-compatible inference ===
+async function callNvidiaStream(
+  apiKey,
+  text,
+  systemPrompt,
+  port,
+  signal,
+  maxTokens = 512,
+  task,
+) {
+  return callWithModel("nvidia", task, (model) =>
+    callStreamAPI({
+    url: "https://integrate.api.nvidia.com/v1/chat/completions",
+    headers: { Authorization: "Bearer " + apiKey },
+    body: {
+      model,
+      stream: true,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: text },
+      ],
+      temperature: 0.3,
+      max_tokens: maxTokens,
+    },
+    extractFn: (d) => d.choices?.[0]?.delta?.content || "",
+    port,
+    signal,
+    maxTokens,
+    provider: "NVIDIA NIM",
+    }),
+  );
+}
+
+async function callNvidiaNonStream(apiKey, userMessage, systemPrompt, task) {
+  return callWithModel("nvidia", task, (model) =>
+    callNonStream(
+    "https://integrate.api.nvidia.com/v1/chat/completions",
+    { Authorization: "Bearer " + apiKey },
+    {
+      model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage },
+      ],
+      max_tokens: 1024,
+      temperature: 0.3,
+    },
+    (d) => d?.choices?.[0]?.message?.content,
+    ),
+  );
+}
+
 // === SAMBANOVA: OpenAI-compatible API, fast open-source models ===
 async function callSambanovaStream(
   apiKey,
@@ -4761,6 +4824,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           groq: callGroqNonStream,
           gemini: callGeminiNonStream,
           cerebras: callCerebrasNonStream,
+          nvidia: callNvidiaNonStream,
           sambanova: callSambanovaNonStream,
           openrouter: callOpenrouterNonStream,
         };
@@ -5203,6 +5267,7 @@ async function translateText(text, mode = "auto") {
     groq: callGroqNonStream,
     gemini: callGeminiNonStream,
     cerebras: callCerebrasNonStream,
+    nvidia: callNvidiaNonStream,
     sambanova: callSambanovaNonStream,
     openrouter: callOpenrouterNonStream,
   };
@@ -5256,6 +5321,7 @@ async function classifyContentKind(source, signal) {
     groq: callGroqNonStream,
     gemini: callGeminiNonStream,
     cerebras: callCerebrasNonStream,
+    nvidia: callNvidiaNonStream,
     sambanova: callSambanovaNonStream,
     openrouter: callOpenrouterNonStream,
   };
@@ -6498,6 +6564,7 @@ async function handleStream(
     groq: callGroqStream,
     gemini: callGeminiStream,
     cerebras: callCerebrasStream,
+    nvidia: callNvidiaStream,
     sambanova: callSambanovaStream,
     openrouter: callOpenrouterStream,
   };
