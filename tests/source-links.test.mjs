@@ -59,3 +59,12 @@ describe("two links in a news post", () => {
     assert.doesNotMatch(rule, /Nguồn là danh sách/);
   });
 });
+
+describe("broken source links", () => {
+  it("never requires or appends truncated or glued URLs", () => {
+    const links = policy.extractSourceLinks(
+      "Skills: https://github.com/luongnv89/skills…QuoteLuong\nDemo https://opsloop-dashboard.vercel.app1:5883730K\nRepo https://github.com/a/b\nDocs https://example.com/docs",
+    );
+    assert.deepEqual(links.map((l) => l.url), ["https://github.com/a/b", "https://example.com/docs"]);
+  });
+});

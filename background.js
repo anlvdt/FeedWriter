@@ -1991,12 +1991,51 @@ function detectRepetition(text) {
 
 // Normalize numeric evidence without conflating 56.9 with 569. This is a
 // warning heuristic, not verification of a number's meaning or attribution.
+// Numbers the SOURCE supports in forms the model rewrites: month names
+// ("November 2" → 2/11), compact scales ("58M", "1.2B"), number words
+// ("three weeks"). Only ever adds evidence, so a fabricated number still fails.
+const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, sept: 9, oct: 10, nov: 11, dec: 12 };
+const NUMBER_WORDS = {
+  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17,
+  eighteen: 18, nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60,
+  seventy: 70, eighty: 80, ninety: 90, hundred: 100, thousand: 1000, million: 1000000,
+  billion: 1000000000, half: 50, quarter: 25, dozen: 12, once: 1, twice: 2,
+};
+
+function sourceNumericEvidence(text) {
+  const source = String(text || "").normalize("NFKC");
+  const tokens = numericEvidenceTokens(source);
+  const monthRe = /\b(jan|feb|mar|apr|may|jun|jul|aug|sept?|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b|\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?(jan|feb|mar|apr|may|jun|jul|aug|sept?|oct|nov|dec)[a-z]*\b/gi;
+  for (const m of source.matchAll(monthRe)) {
+    tokens.add(String(MONTHS[(m[1] || m[4]).toLowerCase()]));
+    tokens.add(String(Number(m[2] || m[3])));
+  }
+  for (const m of source.matchAll(/\b(jan|feb|mar|apr|may|jun|jul|aug|sept?|oct|nov|dec)[a-z]*\b/gi)) {
+    tokens.add(String(MONTHS[m[1].toLowerCase()]));
+  }
+  const compact = { k: 1000, m: 1000000, mn: 1000000, b: 1000000000, bn: 1000000000 };
+  for (const m of source.matchAll(/(\d+(?:[.,]\d+)?)\s?(k|m|mn|b|bn)(?![\p{L}\p{N}])/giu)) {
+    const value = Number(m[1].replace(",", "."));
+    if (Number.isFinite(value)) tokens.add(String(Math.round(value * compact[m[2].toLowerCase()])));
+  }
+  for (const m of source.matchAll(/\b([a-z]+)\b/gi)) {
+    const value = NUMBER_WORDS[m[1].toLowerCase()];
+    if (value) tokens.add(String(value));
+  }
+  return tokens;
+}
+
 function numericEvidenceTokens(text) {
   const cleaned = String(text || "").normalize("NFKC")
     .replace(/https?:\/\/\S+/gi, " ")
     .replace(/^\s*(?:Bước\s+\d+\s*[:.)]|\d+[.)](?=\s))/gimu, "")
     .replace(/\b\d{1,2}(?::\d{2}|h\d{0,2})?\s*(?:ngày\s+\d{1,2}(?:[\/\-]\d{1,2})?)?\s*(?:\([^)]*giờ\s+(?:Việt\s+Nam|VN)[^)]*\)|(?:theo\s+)?giờ\s+(?:Việt\s+Nam|VN))/giu, " ")
-    .replace(/\b\d{1,2}:\d{2}\b/g, " ");
+    .replace(/\b\d{1,2}:\d{2}\b/g, " ")
+    // "UTC+7", "GMT-5" are time zones, not figures.
+    .replace(/\b(?:UTC|GMT|ICT)\s*[+−-]\s*\d{1,2}\b/gi, " ")
+    // "84 000", "5 000 USD": thousands grouped with a plain space.
+    .replace(/(?<![\d.,])\d{1,3}(?: \d{3})+(?![\d.,])/g, (m) => m.replace(/ /g, ""));
   const scales = {
     "nghìn": 1000, "ngàn": 1000, thousand: 1000, k: 1000,
     "triệu": 1000000, million: 1000000,
@@ -2259,7 +2298,9 @@ function normalizeVietnameseNumericNotation(text) {
       (_, number) => `${normalizeEnglishNumber(number)} bảng Anh`)
     .replace(/(?<![\d.,])(\d{1,3}(?:,\d{3})+(?:\.\d+)?)(?![\d.,])/g, (number) => normalizeEnglishNumber(number))
     .replace(/(?<![\d.])(\d+\.\d+)(?![\d.])(\s*(?:USD|VND|VNĐ|euro|EUR|GBP|%|°[CF]|km|cm|mm|m|kg|g|mg|l|ml|kW|W|kWh|Hz|GHz|MHz|GB|MB|KB)(?![\p{L}\p{N}])|\s*%)/giu,
-      (_, number, unit) => normalizeEnglishNumber(number) + unit)
+      // "5.000 USD" is already Vietnamese thousands (5000). Reading it as an
+      // English decimal turned it into "5,000 USD", which reads as five.
+      (match, number, unit) => /^\d{1,3}\.\d{3}$/.test(number) ? match : normalizeEnglishNumber(number) + unit)
     .replace(/\b(\d[\d.]*(?:,\d+)?)\s*(?:VND|VNĐ)\b/giu, "$1 đồng")
     .replace(/\b(\d[\d.]*(?:,\d+)?)\s*(?:EUR)\b/giu, "$1 euro")
     .replace(/\b(\d[\d.]*(?:,\d+)?)\s*(?:GBP)\b/giu, "$1 bảng Anh");
@@ -2427,6 +2468,11 @@ function postProcessOutput(output, sourceText, type, provenance = null, sourceLi
     .trim();
   // Strip "Đoạn 1:", "Đoạn 2:" labels that AI copies from format example
   processed = processed.replace(/^Đoạn\s*\d+\s*[:：]\s*/gim, "");
+  // Part labels from the long-post fact sheet ("Phần 1:", a bare "PHẦN 2")
+  // are scaffolding, not content.
+  processed = processed
+    .replace(/^[ \t]*Phần\s+\d+\s*[:：.]?[ \t]*$\n?/gimu, "")
+    .replace(/^[ \t]*Phần\s+\d+\s*[:：][ \t]*/gimu, "");
   // Normalize "*** Giải thích" → "**Giải thích" (old prompt format)
   processed = processed.replace(/^\*{3}\s*/gm, "**");
   processed = normalizeVietnameseNumericNotation(processed);
@@ -2537,10 +2583,9 @@ function postProcessOutput(output, sourceText, type, provenance = null, sourceLi
           issues.push("Đã rút tiêu đề cho trọn ý, phần chi tiết nằm ở đoạn sau.");
         }
         if (sourceText && cappedTitle) {
-          const sourceNumbers = new Set((sourceText.match(/\d+(?:[.,]\d+)*/gu) || [])
-            .map(value => value.replace(/[.,]/g, "")));
-          const unsupported = (cappedTitle.match(/\d+(?:[.,]\d+)*/gu) || [])
-            .filter(value => !sourceNumbers.has(value.replace(/[.,]/g, "")));
+          const sourceNumbers = sourceNumericEvidence(sourceText);
+          const unsupported = [...numericEvidenceTokens(cappedTitle)]
+            .filter((value) => !sourceNumbers.has(value) && !/^20(?:2\d|3[0-5])$/.test(value));
           if (unsupported.length) {
             issues.push("[!] Tiêu đề cần viết lại: số liệu không có trong nguồn.");
           }
@@ -2774,7 +2819,8 @@ function postProcessOutput(output, sourceText, type, provenance = null, sourceLi
 
     // Capitalize first letter of sentence or paragraph if lowercase
     // Skip mixed-case names: "iPhone", "macOS", "eSIM" must not become "IPhone".
-    result = result.replace(/(?:^|\n\n|[.!?]\s+)([a-zà-ỹ])(?![\p{L}\p{N}]*\p{Lu})/gu, (m, c) => m.slice(0, -1) + c.toUpperCase());
+    // URLs and domains keep their case: "Http://github.com", "Www.example.com".
+    result = result.replace(/(?:^|\n\n|[.!?]\s+)([a-zà-ỹ])(?![\p{L}\p{N}]*\p{Lu})(?![\p{L}\p{N}-]*(?::\/\/|\.[a-z]{2,}))/gu, (m, c) => m.slice(0, -1) + c.toUpperCase());
     return result.replace(/\.\s+\./g, ".").replace(/[^\S\n]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
   };
 
@@ -2817,8 +2863,10 @@ function postProcessOutput(output, sourceText, type, provenance = null, sourceLi
 
   // 10. Hallucination detection: check if output contains numbers not in source
   if (typeof sourceText === "string") {
-    const sourceNums = numericEvidenceTokens(sourceText);
-    const fabricated = [...numericEvidenceTokens(processed)].filter((n) => !sourceNums.has(n));
+    const sourceNums = sourceNumericEvidence(sourceText);
+    // A year the model adds to a date ("2/11/2026") is not a fabricated figure.
+    const fabricated = [...numericEvidenceTokens(processed)]
+      .filter((n) => !sourceNums.has(n) && !/^20(?:2\d|3[0-5])$/.test(n));
     if (fabricated.length > 0) {
       issues.push(
         "[!] Output có thể chứa số liệu bịa (" +
@@ -2990,7 +3038,7 @@ const CHUNK_EXTRACT_PROMPT = `Trích dữ kiện từ đoạn bài dưới đây
 - Giữ nguyên thuật ngữ kỹ thuật và tên sản phẩm.`;
 
 const COMPACT_NEWS_PROMPT = `Bạn là biên tập viên báo chí công nghệ tiếng Việt. Viết lại nguồn thành MỘT bản tin fact-first theo kim tự tháp ngược, bằng tiếng Việt tự nhiên.
-- Dòng đầu là tiêu đề: một câu trọn ý gồm đúng tác nhân + việc xảy ra + kết quả, chọn dữ kiện nổi bật nhất làm điểm nhấn. Không bọc **, không dừng giữa cụm. Hệ thống tự viết hoa.
+- Dòng đầu là tiêu đề: một câu trọn ý nêu TIN CHÍNH (cái mới được ra mắt, cập nhật, công bố, thay đổi) gồm đúng tác nhân + việc xảy ra + kết quả. Không lấy ý kiến, lời than hay con số minh họa của tác giả làm tiêu đề. Không bọc **, không dừng giữa cụm. Hệ thống tự viết hoa.
 - Đúng tác nhân: chỉ để hãng/sản phẩm làm chủ ngữ khi chính họ làm việc đó. Thao tác của người dùng viết "Tắt [tùy chọn] trong [sản phẩm]…". Công cụ, plugin, skill, repo do người dùng/cộng đồng làm cho một sản phẩm thì chủ ngữ là chính dự án đó (theo tên) hoặc tác giả, KHÔNG viết "[sản phẩm] ra mắt/bổ sung…". Gọi đúng loại theo nguồn; chỉ gọi là "mod" khi nguồn dùng chữ mod. Công cụ dùng được với nhiều sản phẩm thì nêu đủ.
 - Sau tiêu đề một dòng trống. Lead 1-2 câu nêu sự việc chính, thay đổi/kết quả và tác động. Mỗi ý một đoạn ngắn.
 - Chỉ viết điều có trong nguồn: không bịa số liệu, không tự thêm bối cảnh, mô tả công ty hay lợi ích mà nguồn không nêu. Nguồn ít ý thì bài ngắn; hết ý thì dừng. Không bỏ ý có giá trị.
