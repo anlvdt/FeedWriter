@@ -84,6 +84,13 @@ function isContextError(errMsg, status) {
   );
 }
 
+/** Gemini answer text: every non-thought part, not just the first one. */
+function geminiText(d) {
+  const parts = d?.candidates?.[0]?.content?.parts;
+  if (!Array.isArray(parts)) return "";
+  return parts.filter((part) => part && !part.thought && typeof part.text === "string").map((part) => part.text).join("");
+}
+
 /** gpt-oss and Qwen3 spend the output budget on hidden reasoning unless told not to. */
 function withLowReasoning(model, body) {
   if (/gpt-oss|qwen3/i.test(String(model || ""))) {
@@ -730,7 +737,7 @@ async function callGeminiStream(
       contents: [{ parts: [{ text: text }] }],
       generationConfig: { temperature: 0.3, maxOutputTokens: maxTokens },
     },
-    extractFn: (d) => d.candidates?.[0]?.content?.parts?.[0]?.text || "",
+    extractFn: geminiText,
     port,
     signal,
     maxTokens,

@@ -47,7 +47,8 @@ describe("Vietnam Timezone & Smart Time Conversion System", () => {
 
     it("NEWS_REWRITE_POLICY enforces first-person direct reporting and forbids retelling/narration", () => {
       const policy = vm.runInContext("NEWS_REWRITE_POLICY", context);
-      assert.match(policy, /ĐƯA TIN TỪ NGÔI THỨ NHẤT/);
+      assert.match(policy, /ĐƯA TIN TRỰC TIẾP/);
+      assert.doesNotMatch(policy, /ngôi thứ nhất\) tới bạn đọc/);
       assert.match(policy, /KHÔNG DẪN NGUỒN RỖNG/);
       assert.match(policy, /GIỮ QUY KẾT/);
       assert.match(policy, /QUY ĐỔI THÔNG MINH MỐC THỜI GIAN SANG GIỜ VIỆT NAM/);
