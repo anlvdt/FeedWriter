@@ -1821,7 +1821,7 @@ if (typeof globalThis !== "undefined") {
 "use strict";
 
 const FeedWriterApiKeyStore = (() => {
-  const providers = ["groq", "gemini", "cerebras", "sambanova", "openrouter"];
+  const providers = ["groq", "gemini", "cerebras", "nvidia", "sambanova", "openrouter"];
 
   function normalize(map) {
     const result = {};
@@ -2063,8 +2063,8 @@ CHẾ ĐỘ BẮT BUỘC — VIẾT LẠI THÀNH BẢN TIN:
 - Chỉ bỏ câu lặp, lời chào, lời mời tương tác, diễn biến vụn và ví dụ không mang thêm luận điểm. Không được bỏ ý chỉ để ép độ dài.
 - Sự kiện kiểm chứng được có thể viết trực tiếp. Ý kiến, dự đoán, cáo buộc hoặc trải nghiệm chủ quan phải được thể hiện là nhận định; chỉ gán cho cá nhân/tổ chức khi nguồn nêu rõ danh tính.
 - Không biến nhận định của nguồn thành sự thật. Giữ đúng người phát biểu, số người và mức chắc chắn; một lời kể không đại diện cho cộng đồng. Không mở bài bằng "tác giả chia sẻ", "người viết cho biết" hay câu dẫn nguồn chung chung.
-- ĐƯA TIN TỪ NGÔI THỨ NHẤT (VỊ THẾ NGƯỜI ĐƯA TIN TRỰC TIẾP):
-  + Người viết đóng vai trò là chủ thể trực tiếp đưa tin (ngôi thứ nhất) tới bạn đọc, tự tin, chủ động và mang lại cảm giác tin tức nóng hổi, chân thực. Có thể xưng hô và hướng tới độc giả ("bạn") một cách tự nhiên, thân thiện (ví dụ: "Nếu bạn quan tâm đến...", "Bạn có thể trải nghiệm...").
+- ĐƯA TIN TRỰC TIẾP:
+  + Người viết là biên tập viên đưa tin trực tiếp tới bạn đọc: tự tin, chủ động, khách quan. Không xưng "tôi/mình", không dùng giọng tư vấn hay mời gọi; chỉ nói với "bạn" khi nguồn là hướng dẫn thao tác cụ thể.
   + TUYỆT ĐỐI CẤM CÁC CÂU TỰ XƯNG MÁY MÓC / META-TALK: Cấm mở đầu câu hoặc bài viết bằng các cụm từ tự giới thiệu bản thân như: "Tôi đưa tin về...", "Tôi xin chia sẻ về...", "Hôm nay tôi đưa tin...", "Tôi sẽ tóm tắt...", "Tôi giới thiệu về...". Bản tin PHẢI đi thẳng vào tên sản phẩm, công nghệ hoặc sự kiện chính!
   + KHÔNG DẪN NGUỒN RỖNG: Không mở đầu bằng câu dẫn kiểu "Theo một bài đăng trên X / Facebook / mạng xã hội...", "Theo bài viết...", "Tác giả chia sẻ rằng...". Với sự việc đã xảy ra và được xác nhận, viết thẳng sự việc thay vì "[Hãng] cho biết...".
   + GIỮ QUY KẾT khi đó là tuyên bố, cam kết, dự báo, tin rò rỉ hoặc ý kiến: "Elon Musk tuyên bố Tesla sẽ ra mắt robotaxi năm sau", "Theo Reuters, OpenAI đang đàm phán gọi vốn". Bỏ người phát biểu trong trường hợp này sẽ biến lời hứa/tin đồn thành sự thật — là lỗi sai dữ kiện.
@@ -2182,7 +2182,7 @@ QUY TẮC CHÍNH TẢ VÀ HÀNH VĂN BẮT BUỘC:
 - ĐÚNG CHỦ THỂ TẠO RA SẢN PHẨM: khi nguồn viết ở ngôi thứ nhất ("my new mod", "I've released", "we built") hoặc nói về dự án/repo/skill/mod/plugin của cộng đồng, chủ thể là tác giả hoặc dự án đó — KHÔNG gán cho thương hiệu lớn được nhắc tới. Ví dụ: mod do một lập trình viên làm cho Claude Code → "Mod 'typing-speed' cho Claude Code…", KHÔNG viết "Claude Code ra mắt mod"; repo cộng đồng tổng hợp demo Opus → "Repo GitHub tổng hợp 475 demo…", KHÔNG viết "Claude Opus được cung cấp qua repository"; người được nhắc tới như nguồn cảm hứng KHÔNG phải tác giả của dự án.
 - KHÔNG tự thêm mô tả/định danh cho công ty, sản phẩm, người nếu nguồn không nêu (CẤM kiểu "Claude Code, nền tảng lập trình không mã của Anthropic"). Không đoán quan hệ giữa các thực thể.
 - Tên riêng, tên sản phẩm/dự án, tên repo, câu lệnh giữ NGUYÊN VĂN kể cả chữ hoa/thường và dấu gạch nối ASCII "-" (viết "claude-opus-5-5-demo", không viết "Claude-opus-5-5-demo"). Số phiên bản giữ dấu chấm: "Opus 5.5", không viết "Opus 5,5".
-- Diễn đạt gãy gọn, chuẩn tiếng Việt hiện đại. CẤM các cấu trúc dịch máy thô: không dùng 'cung cấp khả năng cho phép', 'được thiết kế nhằm mục đích', 'đóng vai trò như là', 'mang lại sự cải thiện', 'tiến hành thực hiện'. CẤM dịch thô từng chữ các cụm thành ngữ tiếng Anh: không dùng 'vào cuối ngày' (thay bằng 'xét cho cùng'), 'chơi một vai trò' (thay bằng 'đóng vai trò'), 'có ý nghĩa' khi dịch make sense (thay bằng 'hợp lý/dễ hiểu'). Dùng từ nối tự nhiên khi chuyển ý: 'Tuy nhiên', 'Ngoài ra', 'May thay', 'Đó là lý do'.
+- Diễn đạt gãy gọn, chuẩn tiếng Việt hiện đại. CẤM các cấu trúc dịch máy thô: không dùng 'cung cấp khả năng cho phép', 'được thiết kế nhằm mục đích', 'đóng vai trò như là', 'mang lại sự cải thiện', 'tiến hành thực hiện'. CẤM dịch thô từng chữ các cụm thành ngữ tiếng Anh: không dùng 'vào cuối ngày' (thay bằng 'xét cho cùng'), 'chơi một vai trò' (thay bằng 'đóng vai trò'), 'có ý nghĩa' khi dịch make sense (thay bằng 'hợp lý/dễ hiểu'). Chỉ dùng từ nối ('Tuy nhiên', 'Ngoài ra', 'Trong khi đó') khi giữa hai ý có quan hệ thật.
 - Độ dài câu hợp lý: ưu tiên câu 15-25 từ, tối đa 35 từ. Ngắt câu mạch lạc bằng dấu chấm, tránh câu ghép quá nhiều vế phụ rườm rà.
 - Giữ giọng điệu trung lập, khách quan: loại bỏ các từ ngữ tâng bốc PR (đột phá mang tính cách mạng, hoàn hảo, siêu phẩm, đỉnh cao, thần thánh).
 - THỊ HIẾU NGƯỜI ĐỌC VIỆT:
@@ -2383,6 +2383,13 @@ function isContextError(errMsg, status) {
       m,
     )
   );
+}
+
+/** Gemini answer text: every non-thought part, not just the first one. */
+function geminiText(d) {
+  const parts = d?.candidates?.[0]?.content?.parts;
+  if (!Array.isArray(parts)) return "";
+  return parts.filter((part) => part && !part.thought && typeof part.text === "string").map((part) => part.text).join("");
 }
 
 /** gpt-oss and Qwen3 spend the output budget on hidden reasoning unless told not to. */
@@ -3031,7 +3038,7 @@ async function callGeminiStream(
       contents: [{ parts: [{ text: text }] }],
       generationConfig: { temperature: 0.3, maxOutputTokens: maxTokens },
     },
-    extractFn: (d) => d.candidates?.[0]?.content?.parts?.[0]?.text || "",
+    extractFn: geminiText,
     port,
     signal,
     maxTokens,
@@ -5477,6 +5484,9 @@ function hasClaudeCodePromptSettingAction(sourceText) {
 }
 
 // Main post-processing function
+const SOCIAL_POST_MARKER_RE =
+  /(?<![\p{L}\p{N}])(?:X|Twitter|Facebook|FB|Threads|Reddit|LinkedIn|TikTok|Instagram|mạng\s+xã\s+hội|tài\s+khoản|người\s+dùng|user|tweet|status)(?![\p{L}\p{N}])|(?:vào\s+)?lúc\s+\d{1,2}(?::|h)\d{0,2}/iu;
+
 function postProcessOutput(output, sourceText, type, provenance = null) {
   const issues = [];
   let processed = output.trim();
@@ -5874,6 +5884,10 @@ function postProcessOutput(output, sourceText, type, provenance = null) {
       /(?:^|(\n+)|[.!?][^\S\n]*)(?:(?:theo|trong)\s+)?(?:một\s+)?(?:bài\s+(?:đăng|viết|chia\s+sẻ)|tweet|status)\s+[^\n.!?]*?(?:đã\s+)?(?:chia\s+sẻ|cho\s+biết|đăng\s+tải|giới\s+thiệu|đề\s+cập|tiết\s+lộ|nói\s+về|xác\s+nhận|mô\s+tả|công\s+bố)[^\n.!?]*[.!?]?/giu;
     if (socialNarrationRe.test(result)) {
       result = result.replace(socialNarrationRe, (m, nls) => {
+        // "Bài viết của Apple xác nhận iOS 27 ra mắt ngày 10/9" is the news
+        // itself. Only drop sentences that narrate a social post: a platform,
+        // an account/user, or the time it was posted.
+        if (!SOCIAL_POST_MARKER_RE.test(m)) return m;
         issues.push("Đã loại bỏ câu tường thuật thời điểm đăng bài trên mạng xã hội.");
         if (nls) return nls;
         if (m.match(/^[.!?]/)) return ". ";
@@ -6117,20 +6131,28 @@ const CHUNK_EXTRACT_PROMPT = `Trích dữ kiện từ đoạn bài dưới đây
 - Tối đa 12 bullet. Mỗi bullet một ý, tối đa 25 từ.
 - Giữ nguyên thuật ngữ kỹ thuật và tên sản phẩm.`;
 
-const COMPACT_NEWS_PROMPT = `Bạn là biên tập viên báo chí công nghệ tiếng Việt. Viết lại nguồn thành MỘT bản tin fact-first theo kim tự tháp ngược.
-- Dòng đầu là tiêu đề trọn ý: đúng tác nhân/thao tác + việc xảy ra + kết quả. Chỉ đặt sản phẩm làm chủ ngữ nếu sản phẩm thực hiện hành động; với thao tác của người dùng, viết "Tắt [tùy chọn] trong [sản phẩm]...", không viết "[sản phẩm] tắt...". Viết hết cụm, không dừng giữa từ. Không bọc **. Hệ thống tự viết hoa.
-- Sau tiêu đề một dòng trống. Lead nêu sản phẩm/công ty/tính năng, thay đổi hoặc kết quả, và tác động. Mỗi ý một đoạn. Không được bỏ ý chỉ để ép độ dài.
-- Chỉ viết điều có trong nguồn. Hết ý thì dừng. Không bịa số liệu, không kể chuyện, không "cho biết", không "Tôi đưa tin về".
-- Giữ thuật ngữ quen (no-code, prompt, model, AI agent, PC). Cấm dịch "không mã", "đại lý AI".
-- Tiêu đề không chứa USER, người dùng, tác giả, người đăng hay tên báo khi họ chỉ là nguồn.
-- Chỉ quy đổi mốc giờ của sự kiện công nghệ sang giờ Việt Nam (UTC+7). Không đưa giờ đăng bài mạng xã hội vào bản tin.`;
+const COMPACT_NEWS_PROMPT = `Bạn là biên tập viên báo chí công nghệ tiếng Việt. Viết lại nguồn thành MỘT bản tin fact-first theo kim tự tháp ngược, bằng tiếng Việt tự nhiên.
+- Dòng đầu là tiêu đề: một câu trọn ý gồm đúng tác nhân + việc xảy ra + kết quả, chọn dữ kiện nổi bật nhất làm điểm nhấn. Không bọc **, không dừng giữa cụm. Hệ thống tự viết hoa.
+- Đúng tác nhân: chỉ để hãng/sản phẩm làm chủ ngữ khi chính họ làm việc đó. Thao tác của người dùng viết "Tắt [tùy chọn] trong [sản phẩm]…". Mod, plugin, skill, repo do người dùng/cộng đồng làm cho một sản phẩm thì chủ ngữ là mod/dự án hoặc tác giả, KHÔNG viết "[sản phẩm] ra mắt/bổ sung…".
+- Sau tiêu đề một dòng trống. Lead 1-2 câu nêu sự việc chính, thay đổi/kết quả và tác động. Mỗi ý một đoạn ngắn.
+- Chỉ viết điều có trong nguồn: không bịa số liệu, không tự thêm bối cảnh, mô tả công ty hay lợi ích mà nguồn không nêu. Nguồn ít ý thì bài ngắn; hết ý thì dừng. Không bỏ ý có giá trị.
+- Tin đã xác nhận thì viết thẳng sự việc. Tuyên bố, cam kết, dự báo, tin rò rỉ hay ý kiến thì GIỮ người phát biểu ("Elon Musk tuyên bố…", "Theo Reuters…") và mức chắc chắn ("có thể", "dự kiến"). Trải nghiệm một người không biến thành sự thật chung.
+- Không mở bằng câu dẫn rỗng ("Theo một bài đăng trên X…", "Tác giả chia sẻ…", "Tôi đưa tin về…"), không kể chuyện theo trình tự, không đưa giờ đăng bài vào bản tin.
+- Tiêu đề không chứa USER, người dùng, tác giả, người đăng hay tên báo khi họ chỉ là nguồn tin.
+- Giữ nguyên tên riêng, tên sản phẩm/repo, câu lệnh, URL và số phiên bản ("Opus 5.5"). Giữ thuật ngữ quen (no-code, prompt, model, token, AI agent, PC); cấm dịch thô "không mã", "đại lý AI", "đường ống".
+- Số và đơn vị: dấu chấm hàng nghìn, dấu phẩy thập phân (1.234,5); số cách đơn vị ("16 GB", "120 Hz", "30 °C"), riêng "50%". Tiền tệ viết "USD", "euro", "đồng" sau số.
+- Chỉ quy đổi mốc giờ của sự kiện công nghệ có múi giờ nước ngoài sang giờ Việt Nam (UTC+7).`;
 
 function estimateTokens(text) {
   const s = String(text || "");
   if (!s) return 0;
-  // ~4 characters per token matches observed Groq counts closely enough to
-  // decide whether a request fits the free-tier minute budget.
-  return Math.ceil(s.length / 4);
+  // ~4 characters per token holds for English. Vietnamese with diacritics
+  // splits into more tokens (~3 chars/token), and the system prompt alone is
+  // ~22k Vietnamese characters, so a flat /4 under-counted and requests hit
+  // Groq's per-minute limit instead of being routed or chunked up front.
+  const diacritics = (s.match(/[\u00C0-\u024F\u1EA0-\u1EF9]/g) || []).length;
+  const charsPerToken = diacritics / s.length > 0.04 ? 3 : 4;
+  return Math.ceil(s.length / charsPerToken);
 }
 
 function requestFits(prompt, source, outTokens) {
@@ -6309,6 +6331,17 @@ async function handleStream(
       : null;
   const provenanceRule = provenance ? FeedWriterSummaryPolicy.buildProvenanceInstruction(provenance) : "";
   if (provenanceRule) systemPrompt += "\n\n" + provenanceRule;
+  // Groq's free tier allows ~8k tokens per minute and the full prompt alone
+  // is close to that. Groq calls get the compact prompt plus the same
+  // per-request rules; every other provider keeps the full prompt.
+  const promptExtras = [lengthBudget, provenanceRule].filter(Boolean).map((rule) => "\n\n" + rule).join("");
+  const compactSystemPrompt = compactNewsPrompt(systemPrompt.slice(0, systemPrompt.length - promptExtras.length)) + promptExtras;
+
+  function groqSizedPrompt(prompt, source, outTokens) {
+    if (requestFits(prompt, source, outTokens) || !prompt.startsWith(systemPrompt)) return prompt;
+    // Keep what was appended after the system prompt (fact-sheet note, revision).
+    return compactSystemPrompt + prompt.slice(systemPrompt.length);
+  }
 
   const streamFns = {
     groq: callGroqStream,
@@ -6384,8 +6417,10 @@ async function handleStream(
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       if (signal.aborted) return { error: "Đã hủy." };
 
+      // The ledger only tracks Groq, so cost what Groq would actually receive.
+      const groqPrompt = groqSizedPrompt(activePrompt, shrinkBase, localMax);
       const estimatedCost =
-        estimateTokens(activePrompt) +
+        estimateTokens(groqPrompt) +
         estimateTokens(shrinkBase) +
         Number(localMax || 0) +
         200;
@@ -6512,7 +6547,7 @@ async function handleStream(
       const result = await callFn(
         keyInfo.key,
         sourceMessage,
-        activePrompt,
+        keyInfo.provider === "groq" ? groqPrompt : activePrompt,
         activePort,
         signal,
         localMax,
@@ -6711,7 +6746,10 @@ async function handleStream(
 
   activePrompt = systemPrompt;
 
-  if (!requestFits(systemPrompt, completeSource, maxTokens)) {
+  // Split only when the source itself is too long: judged against the
+  // compact prompt, since the full prompt never fits Groq's minute budget and
+  // other providers take the full prompt with the whole source.
+  if (!requestFits(compactSystemPrompt, completeSource, maxTokens)) {
     const pieces = splitSourceIntoChunks(completeSource, chunkCharBudget());
     const savedMax = maxTokens;
     let notes = [];
@@ -6731,7 +6769,7 @@ async function handleStream(
     let folded = false;
     for (let round = 0; round < 4 && notes.length > 1; round++) {
       const sheet = notes.map((note, index) => "Phần " + (index + 1) + ":\n" + note).join("\n\n");
-      if (requestFits(systemPrompt, sheet, savedMax)) break;
+      if (requestFits(compactSystemPrompt, sheet, savedMax)) break;
       folded = true;
       const groups = [];
       for (let i = 0; i < notes.length; i += MAX_COVERAGE_CHUNKS) {
@@ -6751,14 +6789,12 @@ async function handleStream(
       notes = merged;
     }
     let factSheet = notes.map((note, index) => "Phần " + (index + 1) + ":\n" + note).join("\n\n");
-    let synthesisBase = systemPrompt;
-    if (!requestFits(synthesisBase, factSheet, savedMax)) {
-      synthesisBase = compactNewsPrompt(systemPrompt);
-    }
-    if (!requestFits(synthesisBase, factSheet, savedMax)) {
+    // Groq calls compact this per request (groqSizedPrompt).
+    const synthesisBase = systemPrompt;
+    if (!requestFits(compactSystemPrompt, factSheet, savedMax)) {
       const room = Math.max(
         1500,
-        (TPM_SAFE_TOKENS - estimateTokens(synthesisBase) - savedMax - 200) * 4,
+        (TPM_SAFE_TOKENS - estimateTokens(compactSystemPrompt) - savedMax - 200) * 3,
       );
       factSheet = truncateSourceForBudget(factSheet, room);
       coverageNote = "Bài cực dài — dữ kiện đã được gộp và rút để vừa hạn mức free tier.";
@@ -7168,7 +7204,7 @@ async function callGeminiNonStream(apiKey, userMessage, systemPrompt, task) {
         contents: [{ parts: [{ text: userMessage }] }],
         generationConfig: { maxOutputTokens: 1024, temperature: 0.3 },
       },
-      (d) => d?.candidates?.[0]?.content?.parts?.[0]?.text,
+      geminiText,
     ),
   );
 }

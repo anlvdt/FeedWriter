@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const require = createRequire(import.meta.url);
@@ -75,4 +76,22 @@ test("legacy key is kept and sync is only removed after a verified local write",
   await assert.rejects(store.migrate(failed.api), /write failed/);
   assert.equal(failed.syncRemoved, false);
   assert.equal(failed.sync.apiKey, "legacy-B");
+});
+
+test("NVIDIA keys survive migration and backup recovery", async () => {
+  const state = fixture(
+    { apiKeys: { nvidia: ["nvapi-A"] }, backupApiKeys: { groq: ["old"] } },
+    { apiKeys: { groq: ["sync-B"] } },
+  );
+  const result = await store.migrate(state.api);
+  assert.deepEqual(result.apiKeys.nvidia, ["nvapi-A"]);
+  assert.deepEqual(state.local.apiKeys.nvidia, ["nvapi-A"]);
+  assert.deepEqual(state.local.backupApiKeys.nvidia, ["nvapi-A"]);
+  assert.equal(result.restoredFromBackup, false);
+});
+
+test("provider list matches the rotation providers", () => {
+  const source = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "lib", "provider-rotation.js"), "utf8");
+  const listed = [...source.match(/const PROVIDER_PRIORITY = \[([\s\S]*?)\]/)[1].matchAll(/"([a-z]+)"/g)].map((m) => m[1]);
+  assert.deepEqual([...store.providers].sort(), [...listed].sort());
 });

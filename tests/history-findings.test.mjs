@@ -109,3 +109,15 @@ describe("history entries", () => {
     assert.equal(state.history[0].postTitle, "");
   });
 });
+
+describe("news sentences that mention a post", () => {
+  it("keeps 'Bài viết của Apple xác nhận…' and drops only social-post narration", () => {
+    const keep = postProcess("Tiêu đề thử nghiệm cho bài\n\nBài viết của Apple xác nhận iOS 27 ra mắt ngày 10/9. Bản cập nhật hỗ trợ iPhone 12 trở lên.").text;
+    assert.match(keep, /Bài viết của Apple xác nhận iOS 27 ra mắt ngày 10\/9\./);
+    const blog = postProcess("Tiêu đề thử nghiệm cho bài\n\nBài đăng trên blog của Google công bố Gemini 4 có cửa sổ ngữ cảnh 2 triệu token.").text;
+    assert.match(blog, /Gemini 4 có cửa sổ ngữ cảnh/);
+    const social = postProcess("Tiêu đề thử nghiệm cho bài\n\nBài đăng trên X của người dùng A lúc 17:10 đã chia sẻ thông tin về bản cập nhật. Bản cập nhật sửa lỗi pin.").text;
+    assert.doesNotMatch(social, /Bài đăng trên X/);
+    assert.match(social, /Bản cập nhật sửa lỗi pin\./);
+  });
+});
