@@ -1281,6 +1281,8 @@ if (typeof globalThis !== "undefined") {
 
   function buildLengthBudgetInstruction(text, type = "summary") {
     if (type === "comment_summary") return "";
+    // A list of links is content to keep, not prose to compress.
+    if (extractSourceLinks(text).length >= LINK_LIST_MIN) return "";
     const words = countWords(text);
     if (!words || words > LENGTH_BUDGET_MAX_SOURCE_WORDS) return "";
     const ceiling = Math.max(40, Math.round(words * 1.1));
@@ -1421,7 +1423,91 @@ if (typeof globalThis !== "undefined") {
     return "";
   }
 
+  // === SOURCE LINKS: list posts ("10 GitHub projects for…") ===
+  // The output must carry every link of the source. The model is told which
+  // links exist, the output is checked, and missing ones are appended.
+  const URL_RE = /https?:\/\/[^\s<>"'`)\]]+/gi;
+
+  function cleanUrl(url) {
+    return String(url || "").replace(/[.,;:!?…»”’]+$/u, "");
+  }
+
+  function urlKey(url) {
+    return cleanUrl(url)
+      .toLowerCase()
+      .replace(/^https?:\/\/(?:www\.)?/, "")
+      .replace(/[?#].*$/, "")
+      .replace(/\/+$/, "");
+  }
+
+  function labelFromUrl(url) {
+    const path = cleanUrl(url).replace(/^https?:\/\/[^/]+\/?/, "").replace(/[?#].*$/, "").replace(/\/+$/, "");
+    const parts = path.split("/").filter(Boolean);
+    return parts.length ? parts[parts.length - 1] : cleanUrl(url).replace(/^https?:\/\//, "");
+  }
+
+  function extractSourceLinks(text) {
+    const lines = String(text || "").split("\n");
+    const links = [];
+    const seen = new Set();
+    lines.forEach((line, index) => {
+      let previousEnd = 0;
+      for (const match of line.matchAll(URL_RE)) {
+        const before = line.slice(previousEnd, match.index);
+        previousEnd = match.index + match[0].length;
+        const url = cleanUrl(match[0]);
+        const key = urlKey(url);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        // Label: text before the URL on the same line, else the nearest
+        // short non-link line above it ("01 OpenScholar"), else the repo name.
+        let label = before.replace(/^[\s.,;:)]+/u, "").replace(/[▸►▶•·\-*→:–—(\[\s]+$/u, "").replace(/^[\s▸►▶•·\-*]+/u, "").trim();
+        if (!label || label.length > 60) {
+          label = "";
+          for (let i = index - 1; i >= Math.max(0, index - 2); i--) {
+            const prev = lines[i].trim();
+            if (!prev) continue;
+            if (!/https?:\/\//i.test(prev) && prev.length <= 60) label = prev;
+            break;
+          }
+        }
+        label = label.replace(/^\d{1,3}[.)]?\s+/, "").trim() || labelFromUrl(url);
+        links.push({ url, label });
+      }
+    });
+    return links;
+  }
+
+  // Two or more links means the links are part of the content, not a footer.
+  const LINK_LIST_MIN = 2;
+
+  function buildLinksInstruction(links) {
+    if (!Array.isArray(links) || links.length < LINK_LIST_MIN) return "";
+    return "LINK TRONG NGUỒN — BẮT BUỘC GIỮ ĐỦ " + links.length + " LINK:\n" +
+      links.map((link) => "- " + link.label + ": " + link.url).join("\n") + "\n" +
+      (links.length >= 3
+        ? "- Nguồn là danh sách. Giữ MỌI mục và đúng thứ tự, nhóm như nguồn; mỗi mục một dòng: \"· Tên: mô tả ngắn bằng tiếng Việt — link\".\n"
+        : "- Đặt mỗi link ngay sau ý nó minh chứng trong bài.\n") +
+      "- Chép link NGUYÊN VĂN như trên (không rút gọn, không đổi chữ hoa/thường, không bọc markdown [..](..)). Không gom link xuống cuối bài, không bỏ mục nào để rút ngắn.";
+  }
+
+  function findMissingLinks(output, links) {
+    if (!Array.isArray(links) || !links.length) return [];
+    const present = new Set([...String(output || "").matchAll(URL_RE)].map((m) => urlKey(m[0])));
+    return links.filter((link) => !present.has(urlKey(link.url)));
+  }
+
+  function appendMissingLinks(output, missing) {
+    if (!Array.isArray(missing) || !missing.length) return String(output || "");
+    return String(output || "").trimEnd() + "\n\nLiên kết:\n" +
+      missing.map((link) => "· " + link.label + ": " + link.url).join("\n");
+  }
+
   const api = {
+    extractSourceLinks,
+    buildLinksInstruction,
+    findMissingLinks,
+    appendMissingLinks,
     detectProvenance,
     buildProvenanceInstruction,
     findMisattribution,
@@ -5487,7 +5573,7 @@ function hasClaudeCodePromptSettingAction(sourceText) {
 const SOCIAL_POST_MARKER_RE =
   /(?<![\p{L}\p{N}])(?:X|Twitter|Facebook|FB|Threads|Reddit|LinkedIn|TikTok|Instagram|mạng\s+xã\s+hội|tài\s+khoản|người\s+dùng|user|tweet|status)(?![\p{L}\p{N}])|(?:vào\s+)?lúc\s+\d{1,2}(?::|h)\d{0,2}/iu;
 
-function postProcessOutput(output, sourceText, type, provenance = null) {
+function postProcessOutput(output, sourceText, type, provenance = null, sourceLinks = null) {
   const issues = [];
   let processed = output.trim();
 
@@ -5957,6 +6043,17 @@ function postProcessOutput(output, sourceText, type, provenance = null) {
     if (misattribution) issues.push(misattribution);
   }
 
+  // 9f. Every link of a list post must survive ("10 GitHub projects…").
+  if (Array.isArray(sourceLinks) && sourceLinks.length >= 2 && typeof FeedWriterSummaryPolicy !== "undefined") {
+    const missingLinks = FeedWriterSummaryPolicy.findMissingLinks(processed, sourceLinks);
+    if (missingLinks.length) {
+      issues.push(
+        "[!] Thiếu link nguồn: " + missingLinks.length + "/" + sourceLinks.length +
+          " link không có trong bài (" + missingLinks.slice(0, 3).map((link) => link.label).join(", ") + ").",
+      );
+    }
+  }
+
   // 10. Hallucination detection: check if output contains numbers not in source
   if (typeof sourceText === "string") {
     const sourceNums = numericEvidenceTokens(sourceText);
@@ -6331,10 +6428,16 @@ async function handleStream(
       : null;
   const provenanceRule = provenance ? FeedWriterSummaryPolicy.buildProvenanceInstruction(provenance) : "";
   if (provenanceRule) systemPrompt += "\n\n" + provenanceRule;
+  const sourceLinks =
+    typeof FeedWriterSummaryPolicy !== "undefined" && FeedWriterSummaryPolicy.extractSourceLinks
+      ? FeedWriterSummaryPolicy.extractSourceLinks(completeSource)
+      : [];
+  const linksRule = sourceLinks.length ? FeedWriterSummaryPolicy.buildLinksInstruction(sourceLinks) : "";
+  if (linksRule) systemPrompt += "\n\n" + linksRule;
   // Groq's free tier allows ~8k tokens per minute and the full prompt alone
   // is close to that. Groq calls get the compact prompt plus the same
   // per-request rules; every other provider keeps the full prompt.
-  const promptExtras = [lengthBudget, provenanceRule].filter(Boolean).map((rule) => "\n\n" + rule).join("");
+  const promptExtras = [lengthBudget, provenanceRule, linksRule].filter(Boolean).map((rule) => "\n\n" + rule).join("");
   const compactSystemPrompt = compactNewsPrompt(systemPrompt.slice(0, systemPrompt.length - promptExtras.length)) + promptExtras;
 
   function groqSizedPrompt(prompt, source, outTokens) {
@@ -6660,8 +6763,8 @@ async function handleStream(
           );
         }
         const postResult = recordResult
-          ? postProcessOutput(result.summary, text, type, provenance)
-          : postProcessOutput(result.summary, text, activeType, provenance);
+          ? postProcessOutput(result.summary, text, type, provenance, sourceLinks)
+          : postProcessOutput(result.summary, text, activeType, provenance, sourceLinks);
         if (postResult.failure) {
           const reason = postResult.failure === "provider_refusal"
             ? "provider-refusal"
@@ -6828,6 +6931,7 @@ async function handleStream(
     activePrompt = basePrompt;
     finalResult = pickRevisedResult(finalResult, revised);
   }
+  finalResult = appendMissingSourceLinks(finalResult, sourceLinks);
   if (recordResult && finalResult && finalResult.summary) await recordSummary(finalResult);
   if (finalResult && finalResult.summary && coverageNote) {
     finalResult.quality = finalResult.quality === "good" ? "info" : finalResult.quality;
@@ -6845,6 +6949,7 @@ const BLOCKING_ISSUE_MARKERS = [
   "Lead có thể đảo",
   "viết như người trải nghiệm",
   "Gán nhầm cho hãng",
+  "Thiếu link nguồn",
 ];
 
 function blockingQualityIssues(result) {
@@ -6863,6 +6968,23 @@ function buildRevisionInstruction(draft, issues) {
     "BẢN NHÁP TRƯỚC (chỉ để tham khảo lỗi, không phải nguồn):\n\"\"\"\n" +
     String(draft || "").slice(0, 6000) +
     "\n\"\"\"";
+}
+
+// Last resort after the revision pass: links the model still dropped are
+// appended so the article always carries every source link.
+function appendMissingSourceLinks(result, sourceLinks) {
+  if (!result || !result.summary || !Array.isArray(sourceLinks) || sourceLinks.length < 2) return result;
+  const missing = FeedWriterSummaryPolicy.findMissingLinks(result.summary, sourceLinks);
+  if (!missing.length) return result;
+  const issues = (result.issues || []).filter((issue) => !String(issue).includes("Thiếu link nguồn"));
+  issues.push("Đã bổ sung " + missing.length + " link còn thiếu ở cuối bài.");
+  const quality = issues.some((issue) => String(issue).includes("[!]")) ? "warn" : "info";
+  return {
+    ...result,
+    summary: FeedWriterSummaryPolicy.appendMissingLinks(result.summary, missing),
+    issues,
+    quality: result.quality === "fail" ? "fail" : quality,
+  };
 }
 
 // Keep the revision unless it failed or came back with more blocking issues.
