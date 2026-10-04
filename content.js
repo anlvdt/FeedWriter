@@ -3102,9 +3102,13 @@ function extractPostTitle(element) {
   );
   if (liTitle) return (liTitle.textContent || "").trim();
 
-  // og:title for single post pages
+  // og:title for single post pages. On X it is the shell title of whatever
+  // page is open ("Home / X" on the timeline), never the post's own headline,
+  // and it was reaching the model as source_title.
+  if (SITE === "x") return "";
   const ogTitle = document.querySelector('meta[property="og:title"]');
-  if (ogTitle && ogTitle.content) return ogTitle.content;
+  const ogValue = String(ogTitle?.content || "").trim();
+  if (ogValue && !/^(?:Home|Trang chủ)?\s*[\/|·-]?\s*(?:X|Twitter|Facebook)$/i.test(ogValue)) return ogValue;
 
   // Fallback: empty — AI will generate title from summary
   return "";
