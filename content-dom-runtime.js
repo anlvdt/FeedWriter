@@ -2788,7 +2788,35 @@ function _extractXTweetText(article) {
   for (const node of article.querySelectorAll('[data-testid="tweetText"]')) {
     if (seen.some((other) => other.contains(node))) continue;
     seen.push(node);
-    const text = _normalizePostBodyText(node.innerText || node.textContent || "");
+    // FeedWriter's own inline button ("Tóm tắt" / "Đang tóm tắt…") can be
+    // mounted inside the tweet text; it must never reach the model.
+    let clone = node;
+    try {
+      clone = node.cloneNode(true);
+      clone.querySelectorAll('[data-fbs-ui], .fbs-wrap-inline, .fbs-chip-host').forEach((el) => el.remove());
+      // X renders a link as hidden spans ("http://", the cut-off tail) around the
+      // visible text, so innerText loses the scheme and shows "Ap…". textContent
+      // keeps the whole URL; fall back to the title/data attributes if absent.
+      clone.querySelectorAll("a[href]").forEach((a) => {
+        const raw = String(a.textContent || "");
+        let full = raw.replace(/\s*…+\s*$/, "").trim();
+        if (!/^https?:\/\/\S+$/i.test(full)) {
+          full = "";
+          if (/[…]|\.\.\.$/.test(raw) && typeof _expandedXAnchorUrls === "function") {
+            full = _expandedXAnchorUrls(a, "")[0] || "";
+          }
+          // Links to other X posts are deliberately not expanded above, so a
+          // cut-off display ("x.com/user/stat…") reached the model and the
+          // summary verbatim. The anchor's href (t.co or x.com) still resolves.
+          if (!full && /[…]|\.\.\.$/.test(raw)) {
+            const href = String(a.href || a.getAttribute?.("href") || "");
+            if (/^https?:\/\/\S+$/i.test(href)) full = href;
+          }
+        }
+        if (full) a.replaceWith(full);
+      });
+    } catch (_) { clone = node; }
+    const text = _normalizePostBodyText(clone.innerText || clone.textContent || "");
     if (text) parts.push(text);
   }
   return parts.join("\n\n");

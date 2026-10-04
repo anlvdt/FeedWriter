@@ -4847,12 +4847,7 @@ function _mountPostChip(article) {
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
     e.preventDefault();
-    const platformText =
-      SITE === "x"
-        ? article.querySelector('[data-testid="tweetText"]')
-        : null;
     const t = (
-      (platformText && (platformText.innerText || platformText.textContent)) ||
       (typeof window.fbsExtractPostContent === "function" &&
         window.fbsExtractPostContent(article)) ||
       article.innerText ||
