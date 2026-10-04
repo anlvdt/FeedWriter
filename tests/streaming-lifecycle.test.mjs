@@ -140,16 +140,13 @@ describe("streaming lifecycle", () => {
     const background = readFileSync(path.join(root, "background.js"), "utf8");
     assert.match(
       background,
-      /async function handleStream\([\s\S]*?preferredProvider = null,\s*type = "summary",\s*formatOverride = null,?\s*\)/,
+      /async function handleStream\([\s\S]*?preferredProvider = null,\s*type = "summary",\s*\)/,
     );
     assert.match(
       background,
-      /msg\.preferredProvider \|\| null,\s*msg\.type \|\| "summary",\s*msg\.formatOverride \|\| null,\s*\)/,
+      /msg\.preferredProvider \|\| null,\s*msg\.type \|\| "summary",\s*\)/,
     );
-    assert.match(
-      background,
-      /postProcessOutput\(\s*result\.summary,\s*text,\s*translateMode \? "translate" : type,\s*translateMode \? "translate" : \(contentKind \|\| "news"\),?\s*\)/,
-    );
+    assert.match(background, /postProcessOutput\(result\.summary, text, type\)/);
     assert.match(background, /saveHistory\([\s\S]*?site,\s*type,/);
   });
 

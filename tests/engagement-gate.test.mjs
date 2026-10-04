@@ -19,11 +19,7 @@ function loadEngagementDetector() {
   const detectEnd = src.indexOf("/** @deprecated name kept for callers");
   const normalizeEnd = src.indexOf("function extractPostContent");
 
-  const selectorStart = src.indexOf("const FB_MESSAGE_SELECTOR");
-  const selectorDecl = src.slice(selectorStart, src.indexOf(";\n", selectorStart) + 2);
-
   const code =
-    selectorDecl +
     src.slice(helpersStart, src.indexOf("function _fbIsCommentActivityLink")) +
     src.slice(helpersMid, normalizeEnd) +
     "\n" +

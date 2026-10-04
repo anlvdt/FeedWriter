@@ -343,17 +343,6 @@ function formatVietnameseNumber(value, options) {
 /**
  * Truncate text with ellipsis
  */
-/**
- * GitHub/GitLab paths are case-insensitive; keep every repo link lowercase from
- * summary through draft to the Facebook post. Other domains keep their case.
- */
-function lowercaseRepoLinks(text) {
-  return String(text || "").replace(
-    /(?:https?:\/\/)?(?:www\.)?(?:github|gitlab)\.com\/[^\s<>)\]]+/gi,
-    (url) => url.toLowerCase(),
-  );
-}
-
 function truncate(text, maxLength) {
   if (!text || text.length <= maxLength) return text;
   return text.substring(0, maxLength) + '...';
@@ -420,7 +409,6 @@ if (typeof module !== 'undefined' && module.exports) {
     formatVietnamDateTime,
     formatVietnamIsoString,
     truncate,
-    lowercaseRepoLinks,
     Logger,
     logger,
     featureFlags

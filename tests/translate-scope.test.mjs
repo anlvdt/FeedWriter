@@ -15,7 +15,7 @@ test("translation cache distinguishes case while reusing identical input", async
     buildTranslatePrompt: text => ({ system: "", prompt: text }),
     getAvailableKey: async () => ({ key: "fake", provider: "groq" }),
     callGroqNonStream: async (_key, prompt) => { providerCalls++; return `result:${prompt}`; },
-    callGeminiNonStream() {}, callCerebrasNonStream() {}, callNvidiaNonStream() {}, callSambanovaNonStream() {}, callOpenrouterNonStream() {},
+    callGeminiNonStream() {}, callCerebrasNonStream() {}, callSambanovaNonStream() {}, callOpenrouterNonStream() {},
     translateInParts: async () => { throw new Error("unexpected long input"); },
   });
   vm.runInContext(snippet, context);

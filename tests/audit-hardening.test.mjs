@@ -17,9 +17,9 @@ const { isTranslatable } = require(path.join(root, "lib/translate-eligibility.js
 
 describe("audit hardening", () => {
   it("keeps README, popup badge, and manifest on the same version", () => {
-    assert.equal(manifest.version, "2.8.0");
-    assert.match(popup, /v2\.8\.0/);
-    assert.match(readme, /version-2\.8\.0/);
+    assert.equal(manifest.version, "2.7.0");
+    assert.match(popup, /v2\.7\.0/);
+    assert.match(readme, /version-2\.7\.0/);
   });
 
   it("binds screenshots to the sender X tab", () => {

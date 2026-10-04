@@ -50,32 +50,10 @@ function isTpmError(errMsg, status) {
   return status === 413 || /too large|requested|limit|exceed|rate_limit/.test(m);
 }
 
-/**
- * True when the error is a *per-interval token/request quota* rather than a
- * fixed context-window overflow. Groq answers HTTP 413 "Request too large …
- * on tokens per minute (TPM)" and Gemini answers RESOURCE_EXHAUSTED: both are
- * rate limits that clear on their own, and shrinking an already-short post
- * never helps — the budget is dominated by the system prompt + the reserved
- * output tokens, not the user's text. Must be checked before isContextError so
- * these never get reported as "your post is too long".
- */
-function isTokenRateLimit(errMsg, status) {
-  const m = String(errMsg || "").toLowerCase();
-  return (
-    /tokens? per (minute|day|hour)|\btp[md]\b|requests? per (minute|day|hour)|\brp[md]\b|rate.?limit|rate_limit_exceeded|resource.?exhausted|too many requests|try again in\b|request too large/i.test(
-      m,
-    )
-  );
-}
-
 /** True when the input/output size exceeds what the model accepts. */
 function isContextError(errMsg, status) {
   if (isTpmError(errMsg, status)) return false;
   const m = String(errMsg || "").toLowerCase();
-  // A token-per-minute/day quota is a rate limit, not a context-window
-  // overflow. Groq surfaces it as HTTP 413 "Request too large … (TPM)", so the
-  // 413 status alone cannot be trusted to mean "input too long".
-  if (isTokenRateLimit(errMsg, status)) return false;
   return (
     status === 413 ||
     /context.{0,20}(length|window|size|limit)|context_length_exceeded|maximum context|too many tokens|max.?tokens.{0,30}(too large|exceed|invalid|maximum)|max.?completion|maxoutputtokens|reduce.{0,20}length|prompt.{0,20}too long|payload.{0,15}too large|request.{0,20}too large/i.test(
@@ -362,21 +340,6 @@ async function clearAllKeyCooldowns() {
   return changed;
 }
 
-function parseRetryAfter(errorMessage) {
-  const match = errorMessage?.match(/try again in (\d+)m([\d.]+)s/i);
-  if (match) return (parseInt(match[1]) * 60 + parseFloat(match[2])) * 1000;
-  const secMatch = errorMessage?.match(/retry.?after:?\s*(\d+)/i);
-  if (secMatch) return parseInt(secMatch[1]) * 1000;
-  // "Please try again in 2m30s" style
-  const m2 = errorMessage?.match(/in\s+(\d+)\s*m(?:in(?:ute)?s?)?/i);
-  if (m2) return parseInt(m2[1], 10) * 60 * 1000;
-  // Seconds-only form, e.g. Groq TPM "please try again in 8.35s" — these clear
-  // fast, so honor the real hint instead of a sticky 15-minute default.
-  const secOnly = errorMessage?.match(/(?:try again|again)\s+in\s+([\d.]+)\s*s(?:ec(?:ond)?s?)?\b/i);
-  if (secOnly) return Math.ceil(parseFloat(secOnly[1]) * 1000);
-  return 15 * 60 * 1000; // default 15 min (was 30 — less sticky)
-}
-
 /** Classify provider error for cooldown + user message */
 function classifyProviderError(errMsg = "", status = 0) {
   const m = String(errMsg || "").toLowerCase();
@@ -387,12 +350,6 @@ function classifyProviderError(errMsg = "", status = 0) {
   }
   if (isTpmError(errMsg, status)) {
     return { kind: "tpm", cooldownMs: 20 * 1000 };
-  }
-  // Per-minute/day token quotas (Groq's 413 "Request too large … (TPM)",
-  // Gemini's RESOURCE_EXHAUSTED) must be treated as rate limits, not as a
-  // context-window overflow — otherwise a short post gets blamed as "too long".
-  if (isTokenRateLimit(errMsg, status)) {
-    return { kind: "rate", cooldownMs: parseRetryAfter(errMsg) };
   }
   if (isContextError(errMsg, status)) {
     return { kind: "context", cooldownMs: 30 * 1000 };
@@ -437,7 +394,6 @@ async function getSystemPrompt(
   glossaryDecision = null,
   postTime = null,
   postDate = null,
-  contentKind = null,
 ) {
   const data = await chrome.storage.sync.get([
     "customSummaryPrompt",
@@ -453,25 +409,10 @@ async function getSystemPrompt(
 
   let prompt;
 
-  // A classified non-news content kind routes to its dedicated template.
-  // This intentionally wins over customSummaryPrompt/promptStyle/summaryLength:
-  // those global presets shape the NEWS rewrite; a tutorial/review/opinion
-  // source needs its own structure, and an explicit "Đổi khuôn" chip is a
-  // per-request user choice.
-  const kindTemplateKey =
-    type === "summary" && contentKind && contentKind !== "news"
-      ? "summary_" + contentKind
-      : null;
-
   // 1. Non-summary task types must keep their dedicated behavior. A global
   // custom summary prompt must never turn comment analysis into article copy.
   if (type !== "summary" && PROMPT_TEMPLATES[type]) {
     prompt = PROMPT_TEMPLATES[type];
-  }
-  // 1b. Content-kind template (tutorial/review/opinion) — per-request or
-  // auto-detected. Skipped for news so existing presets keep working.
-  else if (kindTemplateKey && PROMPT_TEMPLATES[kindTemplateKey]) {
-    prompt = PROMPT_TEMPLATES[kindTemplateKey];
   }
   // 2. Custom user prompt controls summary style, while hard product policies
   // are appended below and cannot be replaced.
@@ -514,14 +455,10 @@ async function getSystemPrompt(
     prompt += siteHints[site];
   }
 
-  // Detect source material only to separate facts from claims. For news the
-  // output mode never changes with the source's voice; non-news kinds keep
-  // their own template contract instead.
+  // Detect source material only to separate facts from claims. Output mode is
+  // always a news rewrite and must never change with the source's voice.
   prompt +=
-    "\n\nTRƯỚC KHI VIẾT, hãy xác định phần nào là sự kiện, dữ kiện, ý kiến, trải nghiệm hoặc hướng dẫn." +
-    (kindTemplateKey
-      ? " Đầu ra PHẢI theo đúng khuôn thể loại được giao ở trên."
-      : " Dù nguồn thuộc loại nào, đầu ra vẫn phải là BẢN TIN KHÁCH QUAN.");
+    "\n\nTRƯỚC KHI VIẾT, hãy xác định phần nào là sự kiện, dữ kiện, ý kiến, trải nghiệm hoặc hướng dẫn. Dù nguồn thuộc loại nào, đầu ra vẫn phải là BẢN TIN KHÁCH QUAN.";
 
   prompt +=
     "\n- Tiêu đề (dòng đầu tiên) viết bình thường, hệ thống sẽ tự động viết hoa." +
@@ -555,12 +492,11 @@ async function getSystemPrompt(
   // Style rules are active for every template, including a custom summary prompt.
   prompt += "\n\n" + VNREVIEW_RULES;
 
-  // Hard product invariant: FeedWriter always treats input as a source.
-  // News keeps the full news-rewrite policy (inverted pyramid, hook recipe,
-  // first-person ban); non-news kinds get the fidelity subset so step-by-step
-  // guides, first-person reviews and opinion attribution stay legal.
-  prompt +=
-    "\n\n" + (kindTemplateKey ? SOURCE_FIDELITY_POLICY : NEWS_REWRITE_POLICY);
+  // Hard product invariant: FeedWriter always treats input as a source and
+  // rewrites it as news. Appending near-last ensures custom prompts cannot
+  // switch the output back to narration or first-person storytelling. The
+  // user-chosen tone block appended after it may only restyle presentation.
+  prompt += "\n\n" + NEWS_REWRITE_POLICY;
 
   const policy =
     typeof FeedWriterSummaryPolicy !== "undefined"
@@ -595,10 +531,6 @@ async function getSystemPrompt(
         "- Câu mở đầu nêu ngay điểm khiến người đọc phải dừng lại (kết quả/tác động trước, bối cảnh sau). Câu ngắn, nhịp nhanh, năng lượng cao.\n" +
         "- Nội dung vẫn là bản tin fact-first, mỗi ý một đoạn. CẤM kể chuyện, khung mở/thân/kết và câu hỏi mở.\n" +
         "- CẤM từ ngữ giật gân, phóng đại (gây sốc, chấn động, toang, không thể tin nổi); không thổi phồng mức chắc chắn của nguồn.",
-      list: "\n\nGHI ĐÈ TONE — DANH SÁCH KÈM LINK (chỉ dẫn trình bày cuối — ĐỔI FORMAT):\n" +
-        "- Viết lại thành bài DANH SÁCH: dòng đầu là tiêu đề (đúng số mục thực tế), một dòng trống, 1-2 câu dẫn ngắn, một dòng trống, rồi các mục.\n" +
-        "- Mỗi mục là MỘT khối: dòng 1 \"số. Tên mục\"; dòng 2 mô tả ngắn 1-2 câu; dòng 3 là URL đầy đủ, nguyên văn của mục đó (GitHub/website). Giữ đủ tất cả các mục theo đúng thứ tự nguồn, không gộp, không bỏ.\n" +
-        "- Chỉ dùng URL có trong nguồn, không cắt bằng \"…\", không tự bịa. Mục không có URL trong nguồn thì bỏ dòng URL. KHÔNG khung mở/thân/kết, không câu hỏi mở.",
       bullet: "\n\nGHI ĐÈ TONE — BULLET POINTS THUẦN (chỉ dẫn trình bày cuối — ĐỔI FORMAT):\n" +
         "- Sau tiêu đề (1 dòng + 1 dòng trống), TOÀN BỘ thân bài trình bày bằng bullets bắt đầu bằng \"·\". Mỗi bullet: · Keyword/Dữ kiện: giải thích kèm số liệu cụ thể.\n" +
         "- Xếp bullet từ quan trọng đến bổ sung, một bullet một dữ kiện riêng biệt trong nguồn. KHÔNG đoạn văn, không kể lại, không khung mở/thân/kết, không câu hỏi mở.",
@@ -808,58 +740,6 @@ async function callCerebrasNonStream(apiKey, userMessage, systemPrompt, task) {
   return callWithModel("cerebras", task, (model) =>
     callNonStream(
     "https://api.cerebras.ai/v1/chat/completions",
-    { Authorization: "Bearer " + apiKey },
-    {
-      model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userMessage },
-      ],
-      max_tokens: 1024,
-      temperature: 0.3,
-    },
-    (d) => d?.choices?.[0]?.message?.content,
-    ),
-  );
-}
-
-// === NVIDIA NIM: NVIDIA-hosted, OpenAI-compatible inference ===
-async function callNvidiaStream(
-  apiKey,
-  text,
-  systemPrompt,
-  port,
-  signal,
-  maxTokens = 512,
-  task,
-) {
-  return callWithModel("nvidia", task, (model) =>
-    callStreamAPI({
-    url: "https://integrate.api.nvidia.com/v1/chat/completions",
-    headers: { Authorization: "Bearer " + apiKey },
-    body: {
-      model,
-      stream: true,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: text },
-      ],
-      temperature: 0.3,
-      max_tokens: maxTokens,
-    },
-    extractFn: (d) => d.choices?.[0]?.delta?.content || "",
-    port,
-    signal,
-    maxTokens,
-    provider: "NVIDIA NIM",
-    }),
-  );
-}
-
-async function callNvidiaNonStream(apiKey, userMessage, systemPrompt, task) {
-  return callWithModel("nvidia", task, (model) =>
-    callNonStream(
-    "https://integrate.api.nvidia.com/v1/chat/completions",
     { Authorization: "Bearer " + apiKey },
     {
       model,

@@ -16,7 +16,7 @@ describe("complete-source news rewrite", () => {
     assert.doesNotMatch(background, /cleanedText\.substring\(0,\s*MAX_INPUT_CHARS\)/);
     assert.doesNotMatch(background, /bài viết đã được cắt ngắn/);
     assert.doesNotMatch(background, /const maxLen = 2000/);
-    assert.match(background, /let completeSource = cleanedText/);
+    assert.match(background, /const completeSource = cleanedText/);
     assert.match(background, /const coverageTokens = Math\.ceil\(completeSource\.length \/ 10\)/);
     assert.match(background, /splitSourceIntoChunks/);
     assert.match(background, /MAX_COVERAGE_CHUNKS/);

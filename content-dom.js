@@ -2686,11 +2686,6 @@ function hideFeedClutter() {
 // Used by the feed filtering UI in content.js.
 
 
-// Semantic post-body nodes. story_message is what current Facebook feeds use;
-// without it we fall back to the whole card text (author, buttons, comments).
-const FB_MESSAGE_SELECTOR =
-  '[data-ad-rendering-role="story_message"], [data-ad-preview="message"], [data-ad-comet-preview="message"], [data-testid="post_message"], [data-testid="post-message"]';
-
 function _getPrimaryPostText(container) {
   if (!container) return "";
   try {
@@ -2715,7 +2710,8 @@ function _getPrimaryPostText(container) {
  */
 function _getEngagementScanText(container) {
   if (!container) return "";
-  const messageSelector = FB_MESSAGE_SELECTOR;
+  const messageSelector =
+    '[data-ad-preview="message"], [data-ad-comet-preview="message"], [data-testid="post_message"], [data-testid="post-message"]';
   const candidates = [];
   try {
     for (const node of container.querySelectorAll(messageSelector)) {
@@ -2781,55 +2777,12 @@ function _normalizePostBodyText(raw) {
  * Prefer Facebook's semantic message node; fall back to a chrome/comment-free
  * clone. For shares, keep the sharer's note followed by the original body.
  */
-function _extractXTweetText(article) {
-  if (!article?.querySelectorAll) return "";
-  const parts = [];
-  const seen = [];
-  for (const node of article.querySelectorAll('[data-testid="tweetText"]')) {
-    if (seen.some((other) => other.contains(node))) continue;
-    seen.push(node);
-    // FeedWriter's own inline button ("Tóm tắt" / "Đang tóm tắt…") can be
-    // mounted inside the tweet text; it must never reach the model.
-    let clone = node;
-    try {
-      clone = node.cloneNode(true);
-      clone.querySelectorAll('[data-fbs-ui], .fbs-wrap-inline, .fbs-chip-host').forEach((el) => el.remove());
-      // X renders a link as hidden spans ("http://", the cut-off tail) around the
-      // visible text, so innerText loses the scheme and shows "Ap…". textContent
-      // keeps the whole URL; fall back to the title/data attributes if absent.
-      clone.querySelectorAll("a[href]").forEach((a) => {
-        const raw = String(a.textContent || "");
-        let full = raw.replace(/\s*…+\s*$/, "").trim();
-        if (!/^https?:\/\/\S+$/i.test(full)) {
-          full = "";
-          if (/[…]|\.\.\.$/.test(raw) && typeof _expandedXAnchorUrls === "function") {
-            full = _expandedXAnchorUrls(a, "")[0] || "";
-          }
-          // Links to other X posts are deliberately not expanded above, so a
-          // cut-off display ("x.com/user/stat…") reached the model and the
-          // summary verbatim. The anchor's href (t.co or x.com) still resolves.
-          if (!full && /[…]|\.\.\.$/.test(raw)) {
-            const href = String(a.href || a.getAttribute?.("href") || "");
-            if (/^https?:\/\/\S+$/i.test(href)) full = href;
-          }
-        }
-        if (full) a.replaceWith(full);
-      });
-    } catch (_) { clone = node; }
-    const text = _normalizePostBodyText(clone.innerText || clone.textContent || "");
-    if (text) parts.push(text);
-  }
-  return parts.join("\n\n");
-}
-
 function extractPostContent(element) {
   if (!element) return "";
   const postContainer = _findPostContainer(element) || element;
-  // X: the article also holds handle, timestamp, view/like counts and
-  // "Relevant / View quotes". Only the tweetText nodes are post content.
-  if (SITE === "x") return _extractXTweetText(element.closest?.('article[data-testid="tweet"]') || postContainer);
   const sharedInner = SITE === "facebook" ? _findSharedPostArticle(postContainer) : null;
-  const messageSelector = FB_MESSAGE_SELECTOR;
+  const messageSelector =
+    '[data-ad-preview="message"], [data-ad-comet-preview="message"], [data-testid="post_message"], [data-testid="post-message"]';
 
   const extractOne = (container, excluded) => {
     if (!container) return "";
@@ -3687,8 +3640,7 @@ function _cleanRelatedUrl(rawUrl) {
       ) url.searchParams.delete(key);
     }
     url.hash = "";
-    const clean = url.toString().replace(/\?$/, "");
-    return typeof lowercaseRepoLinks === "function" ? lowercaseRepoLinks(clean) : clean;
+    return url.toString().replace(/\?$/, "");
   } catch (_) {
     return "";
   }

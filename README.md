@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.8.0-blue" alt="Version 2.8.0">
+  <img src="https://img.shields.io/badge/version-2.7.0-blue" alt="Version 2.7.0">
   <img src="https://img.shields.io/badge/manifest-v3-blue" alt="Manifest V3">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License">
   <img src="https://img.shields.io/badge/dependencies-zero-brightgreen" alt="Zero deps">
@@ -88,7 +88,6 @@ Sau mỗi lần sửa code trên EXTERNAL, chạy lại `./scripts/sync-local.sh
 | Dịch vụ | Free tier | Link |
 |---------|-----------|------|
 | **Groq** (khuyên dùng) | 14.400 request/ngày | [console.groq.com/keys](https://console.groq.com/keys) |
-| NVIDIA NIM | Free endpoint | [build.nvidia.com/settings/api-keys](https://build.nvidia.com/settings/api-keys) |
 | Google Gemini | 15 request/phút | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
 
 ## Cách sử dụng
