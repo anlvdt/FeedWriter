@@ -10,6 +10,7 @@ const background = readFileSync(new URL("../background.js", import.meta.url), "u
 const context = vm.createContext({ FeedWriterSummaryPolicy: require("../lib/summary-policy.js") });
 vm.runInContext(readFileSync(new URL("../utils.js", import.meta.url), "utf8"), context);
 vm.runInContext(background.slice(background.indexOf("function computeNgramOverlap("), background.indexOf("async function handleStream(")), context);
+vm.runInContext(background.slice(background.indexOf("function cleanInputText("), background.indexOf("// === POST-PROCESSING GUARDRAILS")), context);
 const post = (output, source) => {
   context.output = output;
   context.source = source;
@@ -67,5 +68,34 @@ describe("generic is 'chung chung', not 'chung'", () => {
     const { text, issues } = post("Ứng dụng có giao diện chung cho mọi màn hình\n\nGiao diện chung giúp đồng bộ.", "One shared UI for every screen.");
     assert.match(text, /Giao diện chung giúp/);
     assert.ok(!issues.some((i) => i.includes("Dịch sai nghĩa")));
+  });
+});
+
+describe("posts written in Unicode bold/italic", () => {
+  const raw = readFileSync(new URL("./fixtures/design-md-post.txt", import.meta.url), "utf8");
+  // The article the app produced for this post, as reported by the user.
+  const reported =
+    "DESIGN.md ngăn Claude Code và Codex phát hành UI AI chung\n\n" +
+    "DESIGN.md, định dạng mở của Google, giúp ngăn các công cụ này tạo ra giao diện AI chung cho mọi màn hình.";
+
+  it("maps the bold/italic letters to plain text for the model, keeping m²", () => {
+    const clean = vm.runInContext("cleanInputText(raw)", Object.assign(context, { raw: raw + "\n20 m²" }));
+    assert.match(clean, /This DESIGN\.md stops Claude Code and Codex from shipping generic AI UI\./);
+    assert.match(clean, /add one line to AGENTS\.md:/);
+    assert.match(clean, /"Read DESIGN\.md before any UI work\."/);
+    assert.match(clean, /every screen looks like the same product/);
+    assert.match(clean, /20 m²/);
+  });
+
+  it("fixes 'generic' and 'shipping' in the reported article", () => {
+    const { text, issues } = post(reported, raw);
+    assert.match(text, /^DESIGN\.md NGĂN CLAUDE CODE VÀ CODEX TẠO RA UI AI CHUNG CHUNG\n/);
+    assert.match(text, /giao diện AI chung chung cho mọi màn hình/);
+    assert.ok(!issues.some((i) => i.includes("Dịch sai nghĩa")));
+  });
+
+  it("does not report bold digits as fabricated numbers", () => {
+    const { issues } = post("10 dự án giúp AI agent kiểm chứng\n\nDanh sách gồm 10 dự án.", "𝟭𝟬 open-source projects");
+    assert.ok(!issues.some((i) => i.includes("số liệu bịa")));
   });
 });
