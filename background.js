@@ -2765,6 +2765,12 @@ function postProcessOutput(output, sourceText, type, provenance = null, sourceLi
     if (misattribution) issues.push(misattribution);
   }
 
+  // 9e2. "Mod …" for something the source never calls a mod.
+  if (typeof FeedWriterSummaryPolicy !== "undefined" && FeedWriterSummaryPolicy.findWrongArtifactKind) {
+    const wrongKind = FeedWriterSummaryPolicy.findWrongArtifactKind(processed, sourceText);
+    if (wrongKind) issues.push(wrongKind);
+  }
+
   // 9f. Every link of a list post must survive ("10 GitHub projects…").
   if (Array.isArray(sourceLinks) && sourceLinks.length >= 2 && typeof FeedWriterSummaryPolicy !== "undefined") {
     const missingLinks = FeedWriterSummaryPolicy.findMissingLinks(processed, sourceLinks);
@@ -2952,7 +2958,7 @@ const CHUNK_EXTRACT_PROMPT = `Trích dữ kiện từ đoạn bài dưới đây
 
 const COMPACT_NEWS_PROMPT = `Bạn là biên tập viên báo chí công nghệ tiếng Việt. Viết lại nguồn thành MỘT bản tin fact-first theo kim tự tháp ngược, bằng tiếng Việt tự nhiên.
 - Dòng đầu là tiêu đề: một câu trọn ý gồm đúng tác nhân + việc xảy ra + kết quả, chọn dữ kiện nổi bật nhất làm điểm nhấn. Không bọc **, không dừng giữa cụm. Hệ thống tự viết hoa.
-- Đúng tác nhân: chỉ để hãng/sản phẩm làm chủ ngữ khi chính họ làm việc đó. Thao tác của người dùng viết "Tắt [tùy chọn] trong [sản phẩm]…". Mod, plugin, skill, repo do người dùng/cộng đồng làm cho một sản phẩm thì chủ ngữ là mod/dự án hoặc tác giả, KHÔNG viết "[sản phẩm] ra mắt/bổ sung…".
+- Đúng tác nhân: chỉ để hãng/sản phẩm làm chủ ngữ khi chính họ làm việc đó. Thao tác của người dùng viết "Tắt [tùy chọn] trong [sản phẩm]…". Công cụ, plugin, skill, repo do người dùng/cộng đồng làm cho một sản phẩm thì chủ ngữ là chính dự án đó (theo tên) hoặc tác giả, KHÔNG viết "[sản phẩm] ra mắt/bổ sung…". Gọi đúng loại theo nguồn; chỉ gọi là "mod" khi nguồn dùng chữ mod. Công cụ dùng được với nhiều sản phẩm thì nêu đủ.
 - Sau tiêu đề một dòng trống. Lead 1-2 câu nêu sự việc chính, thay đổi/kết quả và tác động. Mỗi ý một đoạn ngắn.
 - Chỉ viết điều có trong nguồn: không bịa số liệu, không tự thêm bối cảnh, mô tả công ty hay lợi ích mà nguồn không nêu. Nguồn ít ý thì bài ngắn; hết ý thì dừng. Không bỏ ý có giá trị.
 - Tin đã xác nhận thì viết thẳng sự việc. Tuyên bố, cam kết, dự báo, tin rò rỉ hay ý kiến thì GIỮ người phát biểu ("Elon Musk tuyên bố…", "Theo Reuters…") và mức chắc chắn ("có thể", "dự kiến"). Trải nghiệm một người không biến thành sự thật chung.
@@ -3655,6 +3661,7 @@ async function handleStream(
     finalResult = pickRevisedResult(finalResult, revised);
   }
   finalResult = appendMissingSourceLinks(finalResult, sourceLinks);
+  finalResult = replaceLeftoverArtifactKind(finalResult, text);
   if (recordResult && finalResult && finalResult.summary) await recordSummary(finalResult);
   if (finalResult && finalResult.summary && coverageNote) {
     finalResult.quality = finalResult.quality === "good" ? "info" : finalResult.quality;
@@ -3674,6 +3681,7 @@ const BLOCKING_ISSUE_MARKERS = [
   "Gán nhầm cho hãng",
   "Thiếu link nguồn",
   "Dịch sai nghĩa",
+  "Gọi sai loại sản phẩm",
 ];
 
 function blockingQualityIssues(result) {
@@ -3708,6 +3716,22 @@ function appendMissingSourceLinks(result, sourceLinks) {
     summary: FeedWriterSummaryPolicy.appendMissingLinks(result.summary, missing),
     issues,
     quality: result.quality === "fail" ? "fail" : quality,
+  };
+}
+
+// Last resort after the revision pass: a "mod" the source never mentions is
+// replaced by the kind the source does use (công cụ, plugin, ứng dụng…).
+function replaceLeftoverArtifactKind(result, sourceText) {
+  if (!result || !result.summary || typeof FeedWriterSummaryPolicy === "undefined") return result;
+  const source = plainLetters(sourceText);
+  if (!FeedWriterSummaryPolicy.findWrongArtifactKind(result.summary, source)) return result;
+  const issues = (result.issues || []).filter((issue) => !String(issue).includes("Gọi sai loại sản phẩm"));
+  issues.push("Đã đổi \"mod\" thành \"" + FeedWriterSummaryPolicy.artifactNoun(source) + "\" theo nguồn.");
+  return {
+    ...result,
+    summary: FeedWriterSummaryPolicy.replaceWrongArtifactKind(result.summary, source),
+    issues,
+    quality: result.quality === "fail" ? "fail" : issues.some((issue) => String(issue).includes("[!]")) ? "warn" : "info",
   };
 }
 

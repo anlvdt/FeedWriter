@@ -1389,21 +1389,69 @@ if (typeof globalThis !== "undefined") {
       return { kind: "unknown", brands, creator: "", signals };
     }
     const creator = handle ? "@" + handle : author || (communityRepo ? "tác giả repo " + communityRepo : "");
-    return { kind: "community", brands, creator, signals };
+    return { kind: "community", brands, creator, signals, noun: artifactNoun(text) };
+  }
+
+  // What the source calls the thing. "Mod" was hard-coded in the example,
+  // so every community repo came back as "Mod … cho Claude Code".
+  const ARTIFACT_KINDS = [
+    { re: /\bmods?\b/i, noun: "mod" },
+    { re: /\bplug-?ins?\b/i, noun: "plugin" },
+    { re: /\bskills?\b/i, noun: "skill" },
+    { re: /\bmcp\s+servers?\b/i, noun: "MCP server" },
+    { re: /\b(?:browser\s+)?extensions?\b/i, noun: "tiện ích mở rộng" },
+    { re: /\bstatus\s?line\b/i, noun: "status line" },
+    { re: /\b(?:cli|command[- ]line)\b/i, noun: "công cụ dòng lệnh" },
+    { re: /\b(?:apps?|application)\b/i, noun: "ứng dụng" },
+    { re: /\b(?:librar(?:y|ies)|sdk|framework)\b/i, noun: "thư viện" },
+    { re: /\b(?:tools?|visuali[sz]er|dashboard|monitor|viewer|utility)\b/i, noun: "công cụ" },
+    { re: /(?:\bmình|\btôi|\bem)\s+(?:vừa\s+)?(?:làm|viết|tạo)\s+(?:một\s+|cái\s+)?(plugin|skill|mod|công\s+cụ|ứng\s+dụng|tiện\s+ích)/iu, noun: null },
+  ];
+
+  function artifactNoun(text) {
+    const source = String(text || "");
+    for (const kind of ARTIFACT_KINDS) {
+      const m = source.match(kind.re);
+      if (m) return kind.noun || m[1].toLowerCase();
+    }
+    return "dự án";
   }
 
   function buildProvenanceInstruction(provenance) {
     if (!provenance || provenance.kind !== "community" || !provenance.brands.length) return "";
     const names = provenance.brands.map((b) => b.name);
     const vendors = [...new Set(provenance.brands.map((b) => b.vendor))];
+    const noun = provenance.noun || "dự án";
     const who = provenance.creator
       ? "do " + provenance.creator + " (người dùng/lập trình viên cộng đồng) tạo ra"
       : "do một người dùng/lập trình viên cộng đồng tạo ra";
+    const products = names.length > 1
+      ? names.join(", ") + " (nêu đủ các sản phẩm này, KHÔNG gắn riêng cho một sản phẩm)"
+      : names[0];
     return "NGUỒN GỐC SẢN PHẨM — DỮ KIỆN HỆ THỐNG ĐÃ XÁC ĐỊNH:\n" +
-      "- Thứ được nói tới trong nguồn (mod, plugin, skill, repo, công cụ...) " + who + " cho " + names.join(", ") +
+      "- Thứ được nói tới trong nguồn là " + noun + " " + who + ", dùng với " + products +
       ". Đây KHÔNG phải sản phẩm hay tính năng chính hãng của " + names.concat(vendors).filter((v, i, a) => a.indexOf(v) === i).join("/") + ".\n" +
-      "- Chủ ngữ của tiêu đề và lead là chính mod/dự án đó hoặc tác giả của nó: viết \"Mod 'X' cho " + names[0] + " giúp…\", \"Lập trình viên tạo mod… cho " + names[0] + "\".\n" +
+      "- Gọi đúng loại theo nguồn: \"" + noun + "\". " +
+      (noun === "mod" ? "" : "KHÔNG gọi là \"mod\" vì nguồn không dùng từ này. ") +
+      "Chủ ngữ của tiêu đề và lead là chính " + noun + " đó (theo tên riêng) hoặc tác giả của nó.\n" +
       "- CẤM viết " + names[0] + " / " + vendors[0] + " \"ra mắt\", \"giới thiệu\", \"bổ sung\", \"thêm\", \"cập nhật\", \"phát hành\" thứ này; CẤM gọi là \"tính năng mới của " + names[0] + "\" hay \"chính thức\".";
+  }
+
+  // "Mod …" when the source never says mod: a wrong kind, usually copied from
+  // a prompt example. Returns an issue string or "".
+  function findWrongArtifactKind(output, sourceText) {
+    if (/\bmods?\b/i.test(String(sourceText || ""))) return "";
+    if (!/(?<![\p{L}\p{N}])mods?(?![\p{L}\p{N}])/iu.test(String(output || ""))) return "";
+    return "[!] Gọi sai loại sản phẩm: nguồn không gọi đây là mod; dùng đúng loại (" + artifactNoun(sourceText) + ").";
+  }
+
+  // Fallback after the revision pass: replace a leftover "mod" with the kind
+  // the source uses.
+  function replaceWrongArtifactKind(output, sourceText) {
+    if (!findWrongArtifactKind(output, sourceText)) return String(output || "");
+    const noun = artifactNoun(sourceText);
+    return String(output || "").replace(/(?<![\p{L}\p{N}])(mods?)(?![\p{L}\p{N}])/giu, (m) =>
+      m === m.toUpperCase() ? noun.toUpperCase() : m[0] === "M" ? noun.charAt(0).toUpperCase() + noun.slice(1) : noun);
   }
 
   const VENDOR_ACTION =
@@ -1518,6 +1566,9 @@ if (typeof globalThis !== "undefined") {
     detectProvenance,
     buildProvenanceInstruction,
     findMisattribution,
+    artifactNoun,
+    findWrongArtifactKind,
+    replaceWrongArtifactKind,
     countWords,
     buildLengthBudgetInstruction,
     decideSummary,
@@ -2273,7 +2324,7 @@ QUY TẮC CHÍNH TẢ VÀ HÀNH VĂN BẮT BUỘC:
     * Metadata mạng xã hội: TUYỆT ĐỐI KHÔNG đưa mốc thời gian đăng bài, chia sẻ link hay bình luận của người dùng trên mạng xã hội vào bản tin (CẤM các câu như: 'Bài đăng trên X của người dùng A vào lúc 17:10 ngày 10/9 đã chia sẻ...', 'Lúc 8h sáng một tài khoản đăng bài...', 'Theo một bài đăng trên X vào lúc...'). Thời điểm ai đó bấm nút đăng status/tweet là metadata vô nghĩa, không phải tin tức công nghệ. Đi thẳng vào sản phẩm, tính năng và bản chất sự kiện.
 - Không viết tắt địa danh trong văn xuôi: Việt Nam, Hà Nội. Không thêm emoji hoặc icon; chữ tiếng Việt và ký hiệu đơn vị vẫn được giữ.
 - Không bịa tên, số, thông số, mức độ phổ biến hay phản ứng cộng đồng. Một lời kể chỉ đại diện người kể; không biến thành 'nhiều người dùng' hoặc cam kết của sản phẩm.
-- ĐÚNG CHỦ THỂ TẠO RA SẢN PHẨM: khi nguồn viết ở ngôi thứ nhất ("my new mod", "I've released", "we built") hoặc nói về dự án/repo/skill/mod/plugin của cộng đồng, chủ thể là tác giả hoặc dự án đó — KHÔNG gán cho thương hiệu lớn được nhắc tới. Ví dụ: mod do một lập trình viên làm cho Claude Code → "Mod 'typing-speed' cho Claude Code…", KHÔNG viết "Claude Code ra mắt mod"; repo cộng đồng tổng hợp demo Opus → "Repo GitHub tổng hợp 475 demo…", KHÔNG viết "Claude Opus được cung cấp qua repository"; người được nhắc tới như nguồn cảm hứng KHÔNG phải tác giả của dự án.
+- ĐÚNG CHỦ THỂ TẠO RA SẢN PHẨM: khi nguồn viết ở ngôi thứ nhất ("my new tool", "I've released", "we built") hoặc nói về dự án/repo/công cụ/plugin/skill của cộng đồng, chủ thể là tác giả hoặc chính dự án đó — KHÔNG gán cho thương hiệu lớn được nhắc tới. Gọi đúng loại mà nguồn dùng (công cụ, ứng dụng, repo, plugin, skill, mod…); chỉ gọi là "mod" khi nguồn dùng chữ "mod". Công cụ dùng được với nhiều sản phẩm (ví dụ "visualizer for Codex, Claude Code or Pi traces") thì nêu đủ các sản phẩm, không gắn riêng cho một sản phẩm. Ví dụ ĐÚNG: "Agent Monitor trực quan hóa trace của Codex, Claude Code và Pi"; SAI: "Mod Agent Monitor cho Claude Code", "Claude Code ra mắt…". Người được nhắc tới như nguồn cảm hứng KHÔNG phải tác giả của dự án.
 - KHÔNG tự thêm mô tả/định danh cho công ty, sản phẩm, người nếu nguồn không nêu (CẤM kiểu "Claude Code, nền tảng lập trình không mã của Anthropic"). Không đoán quan hệ giữa các thực thể.
 - "generic" (UI/nội dung/câu trả lời generic) dịch là "chung chung", "rập khuôn" hoặc "na ná nhau"; KHÔNG dịch thành "chung" vì "chung" nghĩa là dùng chung/chia sẻ. Ví dụ: "generic AI UI" → "UI AI chung chung", SAI: "UI AI chung".
 - Tên file giữ nguyên văn và liền dấu chấm: "DESIGN.md", "AGENTS.md", "package.json"; SAI: "DESIGN. MD", "DESIGN .md".
@@ -6142,6 +6193,12 @@ function postProcessOutput(output, sourceText, type, provenance = null, sourceLi
     if (misattribution) issues.push(misattribution);
   }
 
+  // 9e2. "Mod …" for something the source never calls a mod.
+  if (typeof FeedWriterSummaryPolicy !== "undefined" && FeedWriterSummaryPolicy.findWrongArtifactKind) {
+    const wrongKind = FeedWriterSummaryPolicy.findWrongArtifactKind(processed, sourceText);
+    if (wrongKind) issues.push(wrongKind);
+  }
+
   // 9f. Every link of a list post must survive ("10 GitHub projects…").
   if (Array.isArray(sourceLinks) && sourceLinks.length >= 2 && typeof FeedWriterSummaryPolicy !== "undefined") {
     const missingLinks = FeedWriterSummaryPolicy.findMissingLinks(processed, sourceLinks);
@@ -6329,7 +6386,7 @@ const CHUNK_EXTRACT_PROMPT = `Trích dữ kiện từ đoạn bài dưới đây
 
 const COMPACT_NEWS_PROMPT = `Bạn là biên tập viên báo chí công nghệ tiếng Việt. Viết lại nguồn thành MỘT bản tin fact-first theo kim tự tháp ngược, bằng tiếng Việt tự nhiên.
 - Dòng đầu là tiêu đề: một câu trọn ý gồm đúng tác nhân + việc xảy ra + kết quả, chọn dữ kiện nổi bật nhất làm điểm nhấn. Không bọc **, không dừng giữa cụm. Hệ thống tự viết hoa.
-- Đúng tác nhân: chỉ để hãng/sản phẩm làm chủ ngữ khi chính họ làm việc đó. Thao tác của người dùng viết "Tắt [tùy chọn] trong [sản phẩm]…". Mod, plugin, skill, repo do người dùng/cộng đồng làm cho một sản phẩm thì chủ ngữ là mod/dự án hoặc tác giả, KHÔNG viết "[sản phẩm] ra mắt/bổ sung…".
+- Đúng tác nhân: chỉ để hãng/sản phẩm làm chủ ngữ khi chính họ làm việc đó. Thao tác của người dùng viết "Tắt [tùy chọn] trong [sản phẩm]…". Công cụ, plugin, skill, repo do người dùng/cộng đồng làm cho một sản phẩm thì chủ ngữ là chính dự án đó (theo tên) hoặc tác giả, KHÔNG viết "[sản phẩm] ra mắt/bổ sung…". Gọi đúng loại theo nguồn; chỉ gọi là "mod" khi nguồn dùng chữ mod. Công cụ dùng được với nhiều sản phẩm thì nêu đủ.
 - Sau tiêu đề một dòng trống. Lead 1-2 câu nêu sự việc chính, thay đổi/kết quả và tác động. Mỗi ý một đoạn ngắn.
 - Chỉ viết điều có trong nguồn: không bịa số liệu, không tự thêm bối cảnh, mô tả công ty hay lợi ích mà nguồn không nêu. Nguồn ít ý thì bài ngắn; hết ý thì dừng. Không bỏ ý có giá trị.
 - Tin đã xác nhận thì viết thẳng sự việc. Tuyên bố, cam kết, dự báo, tin rò rỉ hay ý kiến thì GIỮ người phát biểu ("Elon Musk tuyên bố…", "Theo Reuters…") và mức chắc chắn ("có thể", "dự kiến"). Trải nghiệm một người không biến thành sự thật chung.
@@ -7032,6 +7089,7 @@ async function handleStream(
     finalResult = pickRevisedResult(finalResult, revised);
   }
   finalResult = appendMissingSourceLinks(finalResult, sourceLinks);
+  finalResult = replaceLeftoverArtifactKind(finalResult, text);
   if (recordResult && finalResult && finalResult.summary) await recordSummary(finalResult);
   if (finalResult && finalResult.summary && coverageNote) {
     finalResult.quality = finalResult.quality === "good" ? "info" : finalResult.quality;
@@ -7051,6 +7109,7 @@ const BLOCKING_ISSUE_MARKERS = [
   "Gán nhầm cho hãng",
   "Thiếu link nguồn",
   "Dịch sai nghĩa",
+  "Gọi sai loại sản phẩm",
 ];
 
 function blockingQualityIssues(result) {
@@ -7085,6 +7144,22 @@ function appendMissingSourceLinks(result, sourceLinks) {
     summary: FeedWriterSummaryPolicy.appendMissingLinks(result.summary, missing),
     issues,
     quality: result.quality === "fail" ? "fail" : quality,
+  };
+}
+
+// Last resort after the revision pass: a "mod" the source never mentions is
+// replaced by the kind the source does use (công cụ, plugin, ứng dụng…).
+function replaceLeftoverArtifactKind(result, sourceText) {
+  if (!result || !result.summary || typeof FeedWriterSummaryPolicy === "undefined") return result;
+  const source = plainLetters(sourceText);
+  if (!FeedWriterSummaryPolicy.findWrongArtifactKind(result.summary, source)) return result;
+  const issues = (result.issues || []).filter((issue) => !String(issue).includes("Gọi sai loại sản phẩm"));
+  issues.push("Đã đổi \"mod\" thành \"" + FeedWriterSummaryPolicy.artifactNoun(source) + "\" theo nguồn.");
+  return {
+    ...result,
+    summary: FeedWriterSummaryPolicy.replaceWrongArtifactKind(result.summary, source),
+    issues,
+    quality: result.quality === "fail" ? "fail" : issues.some((issue) => String(issue).includes("[!]")) ? "warn" : "info",
   };
 }
 

@@ -97,12 +97,60 @@ describe("background wiring", () => {
 
   it("misattribution is a blocking issue that triggers the revision pass", () => {
     context.provenance = policy.detectProvenance(modTweet);
-    const result = vm.runInContext('postProcessOutput("Claude Code ra mắt mod typing-speed\\n\\nMod giúp xem tốc độ gõ prompt.", "", "summary", provenance)', context);
+    context.source = modTweet.text;
+    const result = vm.runInContext('postProcessOutput("Claude Code ra mắt mod typing-speed\\n\\nMod giúp xem tốc độ gõ prompt.", source, "summary", provenance)', context);
     context.result = { summary: result.text, issues: result.issues };
     assert.equal(vm.runInContext("blockingQualityIssues(result).length", context), 1);
   });
 
   it("adds the provenance rule to the system prompt", () => {
     assert.match(background, /if \(provenanceRule\) systemPrompt \+= "\\n\\n" \+ provenanceRule;/);
+  });
+});
+
+describe("community tools are not all 'mods'", () => {
+  const agentMonitor = {
+    text: "If you want to entertain yourself, download Agent Monitor\n\nIt's a visualizer of your Codex, Claude Code or Pi traces\n\nMore fun if you're using subagents\nhttps://github.com/donvito/agent-monitor",
+    author: "Melvin Vivas",
+    sourceUrl: "https://x.com/donvito/status/1",
+  };
+  const p = policy.detectProvenance(agentMonitor);
+
+  it("uses the source's own kind and lists every product", () => {
+    assert.equal(p.kind, "community");
+    assert.equal(p.noun, "công cụ");
+    const rule = policy.buildProvenanceInstruction(p);
+    assert.match(rule, /là công cụ do @donvito/);
+    assert.match(rule, /KHÔNG gọi là "mod"/);
+    assert.match(rule, /Claude Code, Codex \(nêu đủ/);
+    assert.doesNotMatch(rule, /Mod 'X'/);
+  });
+
+  it("keeps 'mod' when the source says mod", () => {
+    const mod = policy.detectProvenance(modTweet);
+    assert.equal(mod.noun, "mod");
+    assert.doesNotMatch(policy.buildProvenanceInstruction(mod), /KHÔNG gọi là "mod"/);
+    assert.equal(policy.findWrongArtifactKind("Mod typing-speed cho Claude Code", modTweet.text), "");
+  });
+
+  it("flags and replaces a 'mod' the source never mentions", () => {
+    const reported = "MOD “AGENT MONITOR” CHO CLAUDE CODE GIÚP HIỂN THỊ TRỰC QUAN CÁC TRACE\n\nMod “Agent Monitor” do donvito phát hành, cho phép người dùng xem trực quan các trace của Claude Code, Codex hoặc Pi.";
+    assert.match(policy.findWrongArtifactKind(reported, agentMonitor.text), /Gọi sai loại sản phẩm/);
+    const fixed = policy.replaceWrongArtifactKind(reported, agentMonitor.text);
+    assert.match(fixed, /^CÔNG CỤ “AGENT MONITOR”/);
+    assert.match(fixed, /\n\nCông cụ “Agent Monitor” do donvito/);
+    assert.doesNotMatch(fixed, /\bmod\b/i);
+  });
+
+  it("wrong kind is blocking, so the revision pass runs", () => {
+    const background = readFileSync(new URL("../background.js", import.meta.url), "utf8");
+    const context = vm.createContext({ FeedWriterSummaryPolicy: policy });
+    vm.runInContext(readFileSync(new URL("../utils.js", import.meta.url), "utf8"), context);
+    vm.runInContext(background.slice(background.indexOf("function computeNgramOverlap("), background.indexOf("async function handleStream(")), context);
+    vm.runInContext(background.slice(background.indexOf("// === SELF-CORRECTION ==="), background.indexOf("// === HISTORY ===")), context);
+    context.source = agentMonitor.text;
+    const result = vm.runInContext('postProcessOutput("Mod Agent Monitor cho Claude Code hiển thị trace\\n\\nMod giúp xem trace của Claude Code, Codex và Pi.", source, "summary")', context);
+    context.result = { summary: result.text, issues: result.issues };
+    assert.equal(vm.runInContext("blockingQualityIssues(result).length", context), 1);
   });
 });
