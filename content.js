@@ -1439,6 +1439,17 @@ function ensureOverlay() {
         '<button type="button" class="fbs-tone-btn" data-tone="bullet">Bullet</button>' +
       '</div>' +
     '</div>' +
+    '<div class="fbs-format-row" hidden>' +
+      '<span class="fbs-tone-label">Đổi khuôn</span>' +
+      '<span class="fbs-kind-badge" hidden></span>' +
+      '<div class="fbs-tone-chips" role="group" aria-label="Khuôn thể loại">' +
+        '<button type="button" class="fbs-tone-btn fbs-format-btn fbs-format-default" data-format="auto" title="Tự nhận dạng thể loại nguồn">Tự động</button>' +
+        '<button type="button" class="fbs-tone-btn fbs-format-btn" data-format="news" title="Bản tin fact-first">Tin tức</button>' +
+        '<button type="button" class="fbs-tone-btn fbs-format-btn" data-format="tutorial" title="Giữ bước, lệnh, đường dẫn">Hướng dẫn</button>' +
+        '<button type="button" class="fbs-tone-btn fbs-format-btn" data-format="review" title="Ưu/nhược điểm + verdict">Review</button>' +
+        '<button type="button" class="fbs-tone-btn fbs-format-btn" data-format="opinion" title="Luận điểm vs dẫn chứng">Góc nhìn</button>' +
+      '</div>' +
+    '</div>' +
     '<div class="fbs-panel-footer">' +
       '<div class="fbs-footer-tools">' +
         '<button type="button" class="fbs-tool-btn fbs-edit-btn" title="Chỉnh sửa (' + shortcutMod + '+E)">' +
@@ -1515,19 +1526,32 @@ function ensureOverlay() {
       first.focus();
     }
   });
-  panel.querySelectorAll(".fbs-tone-btn").forEach((btn) => {
+  panel.querySelectorAll(".fbs-tone-btn:not(.fbs-format-btn)").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (!lastSummarizeParams) return;
       const tone = btn.dataset.tone === "default" ? null : (btn.dataset.tone || null);
-      panel.querySelectorAll(".fbs-tone-btn").forEach((b) => b.classList.remove("active"));
+      panel.querySelectorAll(".fbs-tone-btn:not(.fbs-format-btn)").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       const { text, type, _element } = lastSummarizeParams;
       summarizeText(text, type, _element, tone);
     });
   });
+  panel.querySelectorAll(".fbs-format-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (!lastSummarizeParams) return;
+      const format = btn.dataset.format === "auto" ? null : (btn.dataset.format || null);
+      panel.querySelectorAll(".fbs-format-btn").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      const { text, type, _element, tone } = lastSummarizeParams;
+      summarizeText(text, type, _element, tone, format);
+    });
+  });
 }
 
 let lastSummarizeParams = null;
+// Last kind the classifier picked for the most recent summary (from the
+// background's done message); null while streaming or for non-summary types.
+let lastDetectedKind = null;
 
 // Undo/Redo system for textarea
 const undoRedoHistory = {
@@ -1650,12 +1674,12 @@ function toggleEdit() {
 
 function regenerate() {
   if (!lastSummarizeParams) return;
-  const { text, type, _element, tone } = lastSummarizeParams;
+  const { text, type, _element, tone, formatOverride } = lastSummarizeParams;
   const prefix = hashText(text) + "_" + type;
   for (const k of summaryCache.keys()) {
     if (k.startsWith(prefix)) summaryCache.delete(k);
   }
-  summarizeText(text, type, _element, tone);
+  summarizeText(text, type, _element, tone, formatOverride);
 }
 
 function openOverlay(html, streaming, type = "summary") {
@@ -1785,13 +1809,42 @@ function openOverlay(html, streaming, type = "summary") {
   }
   if (showTone && lastSummarizeParams) {
     const selectedTone = lastSummarizeParams.tone || "default";
-    panel.querySelectorAll(".fbs-tone-btn").forEach((b) => {
+    panel.querySelectorAll(".fbs-tone-btn:not(.fbs-format-btn)").forEach((b) => {
       b.classList.toggle("active", b.dataset.tone === selectedTone);
     });
   } else if (!showTone) {
     panel
-      .querySelectorAll(".fbs-tone-btn")
+      .querySelectorAll(".fbs-tone-btn:not(.fbs-format-btn)")
       .forEach((b) => b.classList.remove("active"));
+  }
+
+  // Format ("Đổi khuôn") row mirrors the tone row's visibility gate: only on a
+  // finished summary result. Active chip = forced format or "auto"; the kind
+  // badge shows the classifier's pick only while the user hasn't forced one.
+  const formatRow = panel.querySelector(".fbs-format-row");
+  const showFormat = showTone;
+  if (formatRow) {
+    formatRow.hidden = !showFormat;
+    formatRow.classList.toggle("fbs-tone-visible", showFormat);
+  }
+  const kindBadge = panel.querySelector(".fbs-kind-badge");
+  const KIND_LABELS = { news: "Tin tức", tutorial: "Hướng dẫn", review: "Review", opinion: "Góc nhìn" };
+  if (showFormat && lastSummarizeParams) {
+    const selectedFormat = lastSummarizeParams.formatOverride || "auto";
+    panel.querySelectorAll(".fbs-format-btn").forEach((b) => {
+      b.classList.toggle("active", b.dataset.format === selectedFormat);
+    });
+    if (kindBadge) {
+      const detected = lastDetectedKind;
+      const showBadge = !lastSummarizeParams.formatOverride && detected && detected !== "news";
+      kindBadge.hidden = !showBadge;
+      if (showBadge) kindBadge.textContent = "Khuôn: " + (KIND_LABELS[detected] || detected);
+    }
+  } else {
+    panel
+      .querySelectorAll(".fbs-format-btn")
+      .forEach((b) => b.classList.remove("active"));
+    if (kindBadge) kindBadge.hidden = true;
   }
   if (streaming && panelBody.scrollHeight - panelBody.scrollTop < 500)
     panelBody.scrollTop = panelBody.scrollHeight;
@@ -3313,7 +3366,7 @@ function showBatchResults() {
   }
 }
 
-async function summarizeText(text, type = "summary", contextElement = null, tone = null) {
+async function summarizeText(text, type = "summary", contextElement = null, tone = null, formatOverride = null) {
   const invocationId = ++summaryInvocationId;
   if (activeSummaryRequest) stopSummarize();
   if (isFacebookPersonalProfileHome()) {
@@ -3380,14 +3433,16 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
     hashText(settings.customInstructions || "") +
     "_" +
     hashText(settings.customSummaryPrompt || "") +
-    (tone ? "_" + tone : "");
+    (tone ? "_" + tone : "") +
+    (formatOverride ? "_fmt" + formatOverride : "");
 
   // Refresh the source even on a cache hit. X can replace timeline articles
   // while the summary panel is open; keep the original tweet identity.
   lastSummarizeParams = {
-    text, type, _element: contextElement, tone,
+    text, type, _element: contextElement, tone, formatOverride,
     xPostIdentity: SITE === "x" ? getXPostIdentity(contextElement) : null,
   };
+  lastDetectedKind = null;
   if (summaryCache.has(cacheKey)) {
     lastPanelRawText = summaryCache.get(cacheKey);
     openOverlay(
@@ -3538,6 +3593,7 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
     site: SITE,
     type,
     tone: tone || null,
+    formatOverride: formatOverride || null,
     preferredProvider: _preferredProvider || null,
     sourceUrl: _sourceUrl,
     imageUrl: _imageUrl,
@@ -3698,6 +3754,7 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
       }
       isSummarizing = false;
       summaryCache.set(cacheKey, msg.full);
+      lastDetectedKind = msg.contentKind || null;
       const discoveryElement = lastSummarizeParams?._element;
       if (discoveryElement && typeof window.fbsDiscoverRelatedSourceLinks === "function") {
         pendingSourceDiscovery = {

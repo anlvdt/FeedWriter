@@ -118,6 +118,105 @@ Quy tắc:
 - GIẢI THÍCH THUẬT NGỮ: tuân thủ quyết định INCLUDE/OMIT và danh sách do hệ thống cung cấp.
 - KHÔNG thêm dòng kẻ hay câu nguồn ở cuối — hệ thống tự thêm`;
 
+// Universal fidelity policy for NON-NEWS content kinds (tutorial/review/opinion).
+// Keeps the factuality + terminology rules of NEWS_REWRITE_POLICY without the
+// news-shape mandates (inverted pyramid, hook recipe, first-person ban), which
+// would corrupt step-by-step guides and personal reviews.
+const SOURCE_FIDELITY_POLICY = `
+CHẾ ĐỘ BẮT BUỘC — BÁM SÁT NGUỒN:
+- Chỉ viết điều CÓ TRONG nguồn. Không bịa tên, số liệu, thông số, bước làm, tiêu chí đánh giá, ý kiến hay kết luận.
+- Giữ đúng người phát biểu và mức chắc chắn: "có thể", "dự kiến", "theo trải nghiệm của một người" phải được giữ nguyên ý; không biến trải nghiệm một người thành sự thật chung hay phản ứng cộng đồng.
+- Phân biệt rõ tin đồn/rò rỉ/dự đoán với dữ kiện đã xác nhận.
+- Không đưa thời điểm đăng bài, tài khoản đăng hay metadata mạng xã hội vào nội dung; đi thẳng vào nội dung chính.
+- Thuật ngữ CNTT/AI: giữ nguyên các thuật ngữ phổ biến (no-code, low-code, prompt, token, model, pipeline, AI agent, PC, local...); CẤM dịch thô "không mã", "mã thấp", "đường ống", "đại lý AI", "khách hàng" cho client.
+- Lọc từ ngữ PR phóng đại ("đột phá", "siêu phẩm", "thần thánh"); chỉ giữ thông số và kết quả kiểm nghiệm.
+- Câu viết tự nhiên, chống dịch máy; không tự xưng máy móc ("Tôi đưa tin về...", "Tôi sẽ tóm tắt...").
+- Chính sách này ưu tiên cao hơn mọi prompt tùy chỉnh và chỉ dẫn nền tảng. Riêng khối "GHI ĐÈ TONE" (nếu xuất hiện ở cuối prompt) là lựa chọn trình bày của người dùng — PHẢI áp dụng cho độ dài và cách viết, nhưng không được vi phạm tính chính xác dữ kiện hay chế độ bám nguồn này.`;
+
+// TÓM TẮT HƯỚNG DẪN — giữ nguyên giá trị thao tác của nguồn
+const SUMMARY_TUTORIAL_PROMPT = `Bạn là biên tập viên kỹ thuật. Viết lại hướng dẫn nguồn thành bản tóm tắt GIỮ NGUYÊN giá trị thao tác.
+
+FORMAT OUTPUT:
+[Tiêu đề — 1 dòng nêu đúng việc hướng dẫn + đối tượng, viết thường, hệ thống tự viết hoa]
+
+[dòng trống]
+
+[1-2 câu mở: hướng dẫn này làm gì, cho ai, điều kiện tiên quyết nếu nguồn nêu]
+
+[dòng trống]
+
+[Các bước chính — giữ đúng trình tự nguồn, mỗi bước một dòng bắt đầu bằng "· " kèm lệnh/thao tác đầy đủ; câu lệnh, đường dẫn, tham số giữ NGUYÊN VĂN]
+
+[dòng trống]
+
+[Lưu ý/cạm bẫy/kết quả — chỉ khi nguồn có]
+
+YÊU CẦU:
+- Không lược bỏ bước có trong nguồn; không thêm bước không có. Không đảo trình tự.
+- Lệnh terminal, URL, tên file, tham số: giữ nguyên văn, không dịch.
+- CẤM biến hướng dẫn thành bản tin tức; đây là khuôn HƯỚNG DẪN.
+- Trả lời bằng tiếng Việt.`;
+
+// TÓM TẮT REVIEW — khuôn ưu/nhược/kết luận, giữ chủ thể đánh giá
+const SUMMARY_REVIEW_PROMPT = `Bạn là biên tập viên đánh giá công nghệ. Viết lại bài đánh giá/trải nghiệm nguồn thành khuôn REVIEW cô đọng.
+
+FORMAT OUTPUT:
+[Tiêu đề — 1 dòng nêu sản phẩm + nhận định cốt lõi của nguồn, viết thường, hệ thống tự viết hoa]
+
+[dòng trống]
+
+[Sản phẩm/bối cảnh: 1-2 câu — đánh giá cái gì, bối cảnh sử dụng/thời lượng nếu nguồn nêu]
+
+[dòng trống]
+
+Ưu điểm:
+· [điểm cộng có căn cứ trong nguồn, kèm số liệu/chi tiết cụ thể]
+
+Nhược điểm:
+· [điểm trừ có căn cứ trong nguồn; bỏ phần này nếu nguồn không có điểm trừ]
+
+[dòng trống]
+
+[Đánh giá của tác giả nguồn: kết luận/verdict — giữ nguyên mức chắc chắn và chủ thể đánh giá; nếu chỉ là trải nghiệm một người thì nói rõ vậy]
+
+YÊU CẦU:
+- Mọi ưu/nhược điểm phải truy về được nguồn; CẤM bịa tiêu chí đánh giá.
+- Giữ nguyên điểm số/rating/thời lượng dùng thử nếu nguồn có.
+- Được phép viết ở ngôi trung lập mô tả trải nghiệm của tác giả; KHÔNG tự xưng đã dùng sản phẩm.
+- Trả lời bằng tiếng Việt.`;
+
+// TÓM TẮT GÓC NHÌN — tách luận điểm khỏi dẫn chứng
+const SUMMARY_OPINION_PROMPT = `Bạn là biên tập viên phân tích. Viết lại bài ý kiến/góc nhìn nguồn thành khuôn GÓC NHÌN: tách luận điểm khỏi dẫn chứng.
+
+FORMAT OUTPUT:
+[Tiêu đề — 1 dòng nêu luận điểm trung tâm + chủ thể quan điểm nếu quan trọng, viết thường, hệ thống tự viết hoa]
+
+[dòng trống]
+
+[Luận điểm chính: 1-2 câu — tác giả nguồn khẳng định điều gì]
+
+[dòng trống]
+
+[Phần thân — mỗi đoạn một cặp: quan điểm/lập luận của tác giả → dẫn chứng/ví dụ/số liệu nguồn đưa ra để ủng hộ; tách rõ đâu là khẳng định, đâu là dữ kiện]
+
+[dòng trống]
+
+[Đối lập/giới hạn — chỉ khi nguồn tự nêu phản biện hoặc điều kiện của lập luận]
+
+YÊU CẦU:
+- Giữ đúng chủ thể quan điểm: ghi "tác giả cho rằng", "theo [tên]" khi cần phân biệt ý kiến với dữ kiện; KHÔNG biến ý kiến thành sự thật.
+- Không bênh/chống lại quan điểm; trình bày trung lập nhưng không ép thành bản tin.
+- Dữ kiện, số liệu, trích dẫn phải có trong nguồn.
+- Trả lời bằng tiếng Việt.`;
+
+// Fast-tier classify call: one-word content kind when the heuristic is unsure.
+const CLASSIFY_KIND_PROMPT = `Phân loại bài viết sau vào ĐÚNG MỘT nhãn:
+- news: tin tức/sự kiện — sản phẩm mới, cập nhật, sự cố, thay đổi chính sách, số liệu thị trường.
+- tutorial: hướng dẫn thao tác — các bước, lệnh, cách làm/cài/dùng.
+- review: đánh giá/trải nghiệm — ưu/nhược điểm, chấm điểm, verdict về một sản phẩm/dịch vụ.
+- opinion: ý kiến/phân tích — luận điểm, quan điểm cá nhân, tranh luận, không phải tin sự kiện.
+Trả lời ĐÚNG MỘT TỪ: news / tutorial / review / opinion.`;
+
 // === QUY TẮC CHÍNH TẢ VNREVIEW (áp dụng cho mọi output tiếng Việt) ===
 // Nguồn: Viết Chuyên Nghiệp v3.1 + VNReview rules
 const VNREVIEW_RULES = `
@@ -283,6 +382,10 @@ const PROMPT_TEMPLATES = {
   summary_bullet: SUMMARY_BULLET_PROMPT,
   summary_structured: SUMMARY_STRUCTURED_PROMPT,
   summary_reporter: SUMMARY_REPORTER_PROMPT,
+  // Content-kind templates routed by decideContentType / formatOverride chips
+  summary_tutorial: SUMMARY_TUTORIAL_PROMPT,
+  summary_review: SUMMARY_REVIEW_PROMPT,
+  summary_opinion: SUMMARY_OPINION_PROMPT,
   comment_summary: COMMENT_SUMMARY_PROMPT,
 
   // Status share uses detailed prompt
