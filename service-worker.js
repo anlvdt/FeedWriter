@@ -558,8 +558,15 @@ const UPPERCASE_UNIT_RESTORE = {
   GBPS: "Gbps", MBPS: "Mbps", "KM²": "km²", "M²": "m²", "CM²": "cm²", "M³": "m³",
 };
 
+// URLs, `code` and file names (DESIGN.md, package.json) keep their case.
+const UPPERCASE_KEEP_RE = /(https?:\/\/\S+|`[^`\n]*`|(?<![\p{L}\p{N}_./-])[\p{L}\p{N}_-]+\.(?:md|mdx|json|jsonc|ya?ml|toml|js|mjs|cjs|ts|tsx|jsx|py|sh|txt|css|html|env|lock|xml|ini|cfg|rs|go|rb|java|kt|swift|sql|csv|ipynb)(?![\p{L}\p{N}]))/iu;
+
 function uppercaseKeepingUnits(text) {
-  return String(text || "").toUpperCase().replace(
+  return String(text || "")
+    .split(UPPERCASE_KEEP_RE)
+    .map((part, index) => (index % 2 ? part : part.toUpperCase()))
+    .join("")
+    .replace(
     /(\d) (KM\/H|KM²|CM²|M²|M³|KHZ|MHZ|GHZ|KWH|MAH|GBPS|MBPS|FPS|KM|CM|MM|NM|ΜM|KG|MG|ML|HZ|KW|WH|MS|DB)(?![\p{L}\p{N}])/gu,
     (_, digit, unit) => digit + " " + UPPERCASE_UNIT_RESTORE[unit],
   );
@@ -2267,6 +2274,8 @@ QUY TẮC CHÍNH TẢ VÀ HÀNH VĂN BẮT BUỘC:
 - Không bịa tên, số, thông số, mức độ phổ biến hay phản ứng cộng đồng. Một lời kể chỉ đại diện người kể; không biến thành 'nhiều người dùng' hoặc cam kết của sản phẩm.
 - ĐÚNG CHỦ THỂ TẠO RA SẢN PHẨM: khi nguồn viết ở ngôi thứ nhất ("my new mod", "I've released", "we built") hoặc nói về dự án/repo/skill/mod/plugin của cộng đồng, chủ thể là tác giả hoặc dự án đó — KHÔNG gán cho thương hiệu lớn được nhắc tới. Ví dụ: mod do một lập trình viên làm cho Claude Code → "Mod 'typing-speed' cho Claude Code…", KHÔNG viết "Claude Code ra mắt mod"; repo cộng đồng tổng hợp demo Opus → "Repo GitHub tổng hợp 475 demo…", KHÔNG viết "Claude Opus được cung cấp qua repository"; người được nhắc tới như nguồn cảm hứng KHÔNG phải tác giả của dự án.
 - KHÔNG tự thêm mô tả/định danh cho công ty, sản phẩm, người nếu nguồn không nêu (CẤM kiểu "Claude Code, nền tảng lập trình không mã của Anthropic"). Không đoán quan hệ giữa các thực thể.
+- "generic" (UI/nội dung/câu trả lời generic) dịch là "chung chung", "rập khuôn" hoặc "na ná nhau"; KHÔNG dịch thành "chung" vì "chung" nghĩa là dùng chung/chia sẻ. Ví dụ: "generic AI UI" → "UI AI chung chung", SAI: "UI AI chung".
+- Tên file giữ nguyên văn và liền dấu chấm: "DESIGN.md", "AGENTS.md", "package.json"; SAI: "DESIGN. MD", "DESIGN .md".
 - Tên riêng, tên sản phẩm/dự án, tên repo, câu lệnh giữ NGUYÊN VĂN kể cả chữ hoa/thường và dấu gạch nối ASCII "-" (viết "claude-opus-5-5-demo", không viết "Claude-opus-5-5-demo"). Số phiên bản giữ dấu chấm: "Opus 5.5", không viết "Opus 5,5".
 - Diễn đạt gãy gọn, chuẩn tiếng Việt hiện đại. CẤM các cấu trúc dịch máy thô: không dùng 'cung cấp khả năng cho phép', 'được thiết kế nhằm mục đích', 'đóng vai trò như là', 'mang lại sự cải thiện', 'tiến hành thực hiện'. CẤM dịch thô từng chữ các cụm thành ngữ tiếng Anh: không dùng 'vào cuối ngày' (thay bằng 'xét cho cùng'), 'chơi một vai trò' (thay bằng 'đóng vai trò'), 'có ý nghĩa' khi dịch make sense (thay bằng 'hợp lý/dễ hiểu'). Chỉ dùng từ nối ('Tuy nhiên', 'Ngoài ra', 'Trong khi đó') khi giữa hai ý có quan hệ thật.
 - Độ dài câu hợp lý: ưu tiên câu 15-25 từ, tối đa 35 từ. Ngắt câu mạch lạc bằng dấu chấm, tránh câu ghép quá nhiều vế phụ rườm rà.
@@ -5272,7 +5281,7 @@ function cleanInputText(text) {
   // Keep paragraph breaks. Collapsing every newline into one space made long
   // articles look like a single blob, so the model dumped several facts into
   // the headline and lost section boundaries.
-  return String(text || "")
+  return joinSplitFileNames(String(text || ""))
     .replace(/\r\n?/g, "\n")
     .replace(/[^\S\n]+/g, " ")
     .replace(/ *\n */g, "\n")
@@ -5393,6 +5402,70 @@ function numericEvidenceTokens(text) {
 
 // Normalize common English-style numbers and currency symbols in Vietnamese
 // prose. Identifiers, versions and bare dot-separated numbers are left alone.
+// === FILE NAMES (DESIGN.md, AGENTS.md, package.json) ===
+// Posts about agent tooling name files constantly. Facebook/X auto-link
+// "DESIGN.md" (.md is a country TLD) and models echo the split, producing
+// "DESIGN. MD" / "DESIGN .md"; the headline uppercase made "DESIGN.MD".
+const FILE_EXTENSIONS = "md|mdx|json|jsonc|ya?ml|toml|js|mjs|cjs|ts|tsx|jsx|py|sh|txt|css|html|env|lock|xml|ini|cfg|rs|go|rb|java|kt|swift|sql|csv|ipynb";
+const FILE_NAME_RE = new RegExp("(?<![\\p{L}\\p{N}_./-])[\\p{L}\\p{N}_-]+\\.(?:" + FILE_EXTENSIONS + ")(?![\\p{L}\\p{N}])", "giu");
+// "DESIGN .md", "DESIGN. MD", "DESIGN . md" — the name, a dot with a space
+// on at least one side, a known extension.
+const SPLIT_FILE_NAME_RE = new RegExp("(?<![\\p{L}\\p{N}_./-])([\\p{L}\\p{N}_-]{2,})(?:[ \\t]+\\.[ \\t]*|\\.[ \\t]+)(" + FILE_EXTENSIONS + ")(?![\\p{L}\\p{N}])", "giu");
+
+function sourceFileNames(sourceText) {
+  const names = new Map();
+  for (const m of joinSplitFileNames(String(sourceText || "")).matchAll(FILE_NAME_RE)) {
+    names.set(m[0].toLowerCase(), m[0]);
+  }
+  return names;
+}
+
+// Join split names. Without a source to confirm them, only an ALL-CAPS name
+// (DESIGN, AGENTS, README) is treated as a file, so a sentence ending in
+// "…JSON." followed by "Md" is left alone.
+function joinSplitFileNames(text, known = null) {
+  return String(text || "").replace(SPLIT_FILE_NAME_RE, (match, name, ext) => {
+    const joined = name + "." + ext;
+    const canonical = known?.get(joined.toLowerCase());
+    if (canonical) return canonical;
+    if (/^[\p{Lu}\p{N}_-]+$/u.test(name) && /\p{Lu}/u.test(name)) return name + "." + ext.toLowerCase();
+    return match;
+  });
+}
+
+// Spell every file name the way the source does ("DESIGN.MD" → "DESIGN.md").
+function restoreFileNames(text, sourceText) {
+  const known = sourceFileNames(sourceText);
+  const joined = joinSplitFileNames(text, known);
+  if (!known.size) return joined;
+  return joined.replace(FILE_NAME_RE, (m) => known.get(m.toLowerCase()) || m);
+}
+
+// === MISTRANSLATIONS with a known right answer ===
+// "generic UI" came back as "UI chung" (shared UI) instead of "chung chung"
+// (bland, cookie-cutter). Each entry fixes the common wrong phrasing and, if
+// no right rendering is present at all, raises a blocking issue.
+const MISTRANSLATIONS = [
+  {
+    term: "generic",
+    source: /\bgeneric\b/i,
+    wrong: /((?:UI|giao\s+diện|thiết\s+kế|nội\s+dung|câu\s+trả\s+lời|output|kết\s+quả|văn\s+bản|bài\s+viết|hình\s+ảnh|code)(?:\s+(?:AI|do\s+AI\s+tạo))?\s+)chung(?!\s+chung)(?![\p{L}\p{N}])/giu,
+    fix: "$1chung chung",
+    right: /chung\s+chung|rập\s+khuôn|na\s+ná|đại\s+trà|nhàm\s+chán|generic/iu,
+    advice: "'generic' phải là 'chung chung' hoặc 'rập khuôn', không phải 'chung' (dùng chung)",
+  },
+];
+
+function fixKnownMistranslations(text, sourceText, issues) {
+  let out = String(text || "");
+  for (const rule of MISTRANSLATIONS) {
+    if (!rule.source.test(String(sourceText || ""))) continue;
+    out = mapOutsideIdentifiers(out, (segment) => segment.replace(rule.wrong, rule.fix));
+    if (!rule.right.test(out)) issues.push("[!] Dịch sai nghĩa: " + rule.advice + ".");
+  }
+  return out;
+}
+
 // URLs, domains, @handles, `code` and multi-part slugs are identifiers:
 // recasing or respacing them breaks links ("https://GitHub.com/...",
 // "Claude-opus-5-5-demo"). Apply `fn` only to the prose between them.
@@ -5685,6 +5758,8 @@ function postProcessOutput(output, sourceText, type, provenance = null, sourceLi
   processed = processed.replace(/^\*{3}\s*/gm, "**");
   processed = normalizeVietnameseNumericNotation(processed);
   processed = normalizeTcvnTypography(processed);
+  processed = restoreFileNames(processed, sourceText);
+  processed = fixKnownMistranslations(processed, sourceText, issues);
 
   // Xử lý tiêu đề dòng đầu tiên
   if (type && type.startsWith("summary")) {
@@ -6236,7 +6311,8 @@ const COMPACT_NEWS_PROMPT = `Bạn là biên tập viên báo chí công nghệ 
 - Tin đã xác nhận thì viết thẳng sự việc. Tuyên bố, cam kết, dự báo, tin rò rỉ hay ý kiến thì GIỮ người phát biểu ("Elon Musk tuyên bố…", "Theo Reuters…") và mức chắc chắn ("có thể", "dự kiến"). Trải nghiệm một người không biến thành sự thật chung.
 - Không mở bằng câu dẫn rỗng ("Theo một bài đăng trên X…", "Tác giả chia sẻ…", "Tôi đưa tin về…"), không kể chuyện theo trình tự, không đưa giờ đăng bài vào bản tin.
 - Tiêu đề không chứa USER, người dùng, tác giả, người đăng hay tên báo khi họ chỉ là nguồn tin.
-- Giữ nguyên tên riêng, tên sản phẩm/repo, câu lệnh, URL và số phiên bản ("Opus 5.5"). Giữ thuật ngữ quen (no-code, prompt, model, token, AI agent, PC); cấm dịch thô "không mã", "đại lý AI", "đường ống".
+- Giữ nguyên tên riêng, tên sản phẩm/repo, câu lệnh, URL và số phiên bản ("Opus 5.5"). Giữ thuật ngữ quen (no-code, prompt, model, token, AI agent, PC); cấm dịch thô "không mã", "đại lý AI", "đường ống". "generic" là "chung chung"/"rập khuôn", không phải "chung".
+- Tên file giữ nguyên văn, liền dấu chấm: "DESIGN.md", "AGENTS.md", "package.json" (không viết "DESIGN. MD").
 - Số và đơn vị: dấu chấm hàng nghìn, dấu phẩy thập phân (1.234,5); số cách đơn vị ("16 GB", "120 Hz", "30 °C"), riêng "50%". Tiền tệ viết "USD", "euro", "đồng" sau số.
 - Chỉ quy đổi mốc giờ của sự kiện công nghệ có múi giờ nước ngoài sang giờ Việt Nam (UTC+7).`;
 
@@ -6950,6 +7026,7 @@ const BLOCKING_ISSUE_MARKERS = [
   "viết như người trải nghiệm",
   "Gán nhầm cho hãng",
   "Thiếu link nguồn",
+  "Dịch sai nghĩa",
 ];
 
 function blockingQualityIssues(result) {
