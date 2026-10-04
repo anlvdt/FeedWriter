@@ -15,44 +15,35 @@ vm.runInContext(
 const run = (code, vars = {}) => { Object.assign(context, vars); return vm.runInContext(code, context); };
 
 describe("token estimate", () => {
-  it("counts Vietnamese at ~3 chars per token and English at ~4", () => {
+  it("counts ~4 characters per token, as the 2026-09-28 build did", () => {
     assert.equal(run('estimateTokens("a".repeat(400))'), 100);
     const vi = "Bản cập nhật sửa lỗi pin và cải thiện hiệu năng. ".repeat(10);
-    assert.equal(run("estimateTokens(vi)", { vi }), Math.ceil(vi.length / 3));
+    assert.equal(run("estimateTokens(vi)", { vi }), Math.ceil(vi.length / 4));
   });
 });
 
 describe("compact prompt", () => {
   const compact = run("COMPACT_NEWS_PROMPT");
 
-  it("stays small and keeps the core rules", () => {
-    assert.ok(compact.length < 3000, String(compact.length));
-    assert.match(compact, /GIỮ người phát biểu/);
-    assert.match(compact, /cộng đồng/);
-    assert.match(compact, /Nguồn ít ý thì bài ngắn/);
-    assert.doesNotMatch(compact, /không "cho biết"/);
-  });
-
-  it("a short post fits Groq with the compact prompt", () => {
-    const post = "OpenAI vừa mở API giọng nói cho mọi nhà phát triển, giá 0,06 USD mỗi phút. ".repeat(8);
-    assert.equal(run("requestFits(COMPACT_NEWS_PROMPT, post, 1280)", { post }), true);
+  it("is the short 2026-09-28 prompt, used only when the full one does not fit", () => {
+    assert.ok(compact.length < 2000, String(compact.length));
+    assert.match(compact, /fact-first theo kim tự tháp ngược/);
   });
 });
 
-describe("handleStream routing", () => {
-  it("sends the compact prompt only to Groq and costs Groq by it", () => {
-    assert.match(background, /keyInfo\.provider === "groq" \? groqPrompt : activePrompt/);
-    assert.match(background, /const groqPrompt = groqSizedPrompt\(activePrompt, shrinkBase, localMax\);\s*const estimatedCost =\s*estimateTokens\(groqPrompt\)/);
+describe("handleStream routing (2026-09-28 behaviour)", () => {
+  it("sends the same prompt to every provider", () => {
+    assert.doesNotMatch(background, /groqSizedPrompt|compactSystemPrompt/);
+    assert.match(background, /const result = await callFn\(\s*keyInfo\.key,\s*sourceMessage,\s*activePrompt,/);
   });
 
-  it("splits a source only when it is long, judged against the compact prompt", () => {
-    assert.match(background, /if \(!requestFits\(compactSystemPrompt, completeSource, maxTokens\)\)/);
-    assert.doesNotMatch(background, /if \(!requestFits\(systemPrompt, completeSource, maxTokens\)\)/);
+  it("splits a source only when the full prompt plus the source does not fit", () => {
+    assert.match(background, /if \(!requestFits\(systemPrompt, completeSource, maxTokens\)\)/);
+    assert.match(background, /synthesisBase = compactNewsPrompt\(systemPrompt\);/);
   });
 
-  it("keeps per-request rules and appended instructions when compacting", () => {
-    assert.match(background, /const compactSystemPrompt = compactNewsPrompt\(systemPrompt\.slice\(0, systemPrompt\.length - promptExtras\.length\)\) \+ promptExtras;/);
-    assert.match(background, /return compactSystemPrompt \+ prompt\.slice\(systemPrompt\.length\);/);
+  it("has no length budget", () => {
+    assert.doesNotMatch(background, /buildLengthBudgetInstruction\(/);
   });
 });
 

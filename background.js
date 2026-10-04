@@ -3037,32 +3037,23 @@ const CHUNK_EXTRACT_PROMPT = `Trích dữ kiện từ đoạn bài dưới đây
 - Tối đa 12 bullet. Mỗi bullet một ý, tối đa 25 từ.
 - Giữ nguyên thuật ngữ kỹ thuật và tên sản phẩm.`;
 
-const COMPACT_NEWS_PROMPT = `Bạn là biên tập viên báo chí công nghệ tiếng Việt. Viết lại nguồn thành MỘT bản tin fact-first theo kim tự tháp ngược, bằng tiếng Việt tự nhiên.
-- Dòng đầu là tiêu đề: một câu trọn ý nêu TIN CHÍNH (cái mới được ra mắt, cập nhật, công bố, thay đổi) gồm đúng tác nhân + việc xảy ra + kết quả. Không lấy ý kiến, lời than hay con số minh họa của tác giả làm tiêu đề. Không bọc **, không dừng giữa cụm. Hệ thống tự viết hoa.
-- Đúng tác nhân: chỉ để hãng/sản phẩm làm chủ ngữ khi chính họ làm việc đó. Thao tác của người dùng viết "Tắt [tùy chọn] trong [sản phẩm]…". Công cụ, plugin, skill, repo do người dùng/cộng đồng làm cho một sản phẩm thì chủ ngữ là chính dự án đó (theo tên) hoặc tác giả, KHÔNG viết "[sản phẩm] ra mắt/bổ sung…". Gọi đúng loại theo nguồn; chỉ gọi là "mod" khi nguồn dùng chữ mod. Công cụ dùng được với nhiều sản phẩm thì nêu đủ.
-- Sau tiêu đề một dòng trống. Lead 1-2 câu nêu sự việc chính, thay đổi/kết quả và tác động. Mỗi ý một đoạn ngắn.
-- Chỉ viết điều có trong nguồn: không bịa số liệu, không tự thêm bối cảnh, mô tả công ty hay lợi ích mà nguồn không nêu. Nguồn ít ý thì bài ngắn; hết ý thì dừng. Không bỏ ý có giá trị.
-- Tin đã xác nhận thì viết thẳng sự việc. Tuyên bố, cam kết, dự báo, tin rò rỉ hay ý kiến thì GIỮ người phát biểu ("Elon Musk tuyên bố…", "Theo Reuters…") và mức chắc chắn ("có thể", "dự kiến"). Trải nghiệm một người không biến thành sự thật chung.
-- Câu mệnh lệnh hay điều kiện của tác giả ("Add X…", "If they…", "would/could") là đề xuất hoặc giả định, KHÔNG phải việc đã xảy ra: viết "nếu…", "tác giả cho rằng…".
-- Tiêu đề gọn, thường dưới 20 từ, một ý chính; không liệt kê nhiều ý sau dấu hai chấm.
-- Không thêm mô tả cho tên quen thuộc ("Claude Code, môi trường…", "Anthropic, công ty…").
-- Không mở bằng câu dẫn rỗng ("Theo một bài đăng trên X…", "Tác giả chia sẻ…", "Tôi đưa tin về…"), không kể chuyện theo trình tự, không đưa giờ đăng bài vào bản tin.
-- Tiêu đề không chứa USER, người dùng, tác giả, người đăng hay tên báo khi họ chỉ là nguồn tin.
-- Giữ nguyên tên riêng, tên sản phẩm/repo, câu lệnh, URL và số phiên bản ("Opus 5.5"). Giữ thuật ngữ quen (no-code, prompt, model, token, AI agent, PC); cấm dịch thô "không mã", "đại lý AI", "đường ống". "generic" là "chung chung"/"rập khuôn", không phải "chung".
-- Tên file giữ nguyên văn, liền dấu chấm: "DESIGN.md", "AGENTS.md", "package.json" (không viết "DESIGN. MD").
-- Số và đơn vị: dấu chấm hàng nghìn, dấu phẩy thập phân (1.234,5); số cách đơn vị ("16 GB", "120 Hz", "30 °C"), riêng "50%". Tiền tệ viết "USD", "euro", "đồng" sau số.
-- Ngày tháng viết "2/11" hoặc "2/11/2026", không có dấu cách quanh "/". Chỉ quy đổi mốc giờ của sự kiện công nghệ có múi giờ nước ngoài sang giờ Việt Nam (UTC+7).`;
+const COMPACT_NEWS_PROMPT = `Bạn là biên tập viên báo chí công nghệ tiếng Việt. Viết lại nguồn thành MỘT bản tin fact-first theo kim tự tháp ngược.
+- Dòng đầu là tiêu đề trọn ý: đúng tác nhân/thao tác + việc xảy ra + kết quả. Chỉ đặt sản phẩm làm chủ ngữ nếu sản phẩm thực hiện hành động; với thao tác của người dùng, viết "Tắt [tùy chọn] trong [sản phẩm]...", không viết "[sản phẩm] tắt...". Viết hết cụm, không dừng giữa từ. Không bọc **. Hệ thống tự viết hoa.
+- Sau tiêu đề một dòng trống. Lead nêu sản phẩm/công ty/tính năng, thay đổi hoặc kết quả, và tác động. Mỗi ý một đoạn. Không được bỏ ý chỉ để ép độ dài.
+- Chỉ viết điều có trong nguồn. Hết ý thì dừng. Không bịa số liệu, không kể chuyện, không "cho biết", không "Tôi đưa tin về".
+- Giữ thuật ngữ quen (no-code, prompt, model, AI agent, PC). Cấm dịch "không mã", "đại lý AI".
+- Tiêu đề không chứa USER, người dùng, tác giả, người đăng hay tên báo khi họ chỉ là nguồn.
+- Chỉ quy đổi mốc giờ của sự kiện công nghệ sang giờ Việt Nam (UTC+7). Không đưa giờ đăng bài mạng xã hội vào bản tin.`;
 
 function estimateTokens(text) {
   const s = String(text || "");
   if (!s) return 0;
-  // ~4 characters per token holds for English. Vietnamese with diacritics
-  // splits into more tokens (~3 chars/token), and the system prompt alone is
-  // ~22k Vietnamese characters, so a flat /4 under-counted and requests hit
-  // Groq's per-minute limit instead of being routed or chunked up front.
-  const diacritics = (s.match(/[\u00C0-\u024F\u1EA0-\u1EF9]/g) || []).length;
-  const charsPerToken = diacritics / s.length > 0.04 ? 3 : 4;
-  return Math.ceil(s.length / charsPerToken);
+  // ~4 characters per token matches observed Groq counts closely enough to
+  // decide whether a request fits the free-tier minute budget. (A /3 estimate
+  // for Vietnamese pushed every Groq request onto the compact prompt; the
+  // 2026-09-28 build, which users rate higher, wrote short posts with the full
+  // prompt on every provider.)
+  return Math.ceil(s.length / 4);
 }
 
 function requestFits(prompt, source, outTokens) {
@@ -3214,13 +3205,6 @@ async function handleStream(
     };
   }
 
-  const lengthBudget =
-    typeof FeedWriterSummaryPolicy !== "undefined" &&
-    FeedWriterSummaryPolicy.buildLengthBudgetInstruction
-      ? FeedWriterSummaryPolicy.buildLengthBudgetInstruction(completeSource, type)
-      : "";
-  // A glossary under a two-sentence item only adds bulk.
-  if (lengthBudget) summaryPolicy.glossary = { mode: "omit", candidates: [], limit: 0 };
 
   let systemPrompt = await getSystemPrompt(
     site,
@@ -3234,7 +3218,6 @@ async function handleStream(
     postTime,
     postDate,
   );
-  if (lengthBudget) systemPrompt += "\n\n" + lengthBudget;
   const provenance =
     typeof FeedWriterSummaryPolicy !== "undefined" && FeedWriterSummaryPolicy.detectProvenance
       ? FeedWriterSummaryPolicy.detectProvenance({ text: completeSource, author, sourceUrl })
@@ -3247,17 +3230,6 @@ async function handleStream(
       : [];
   const linksRule = sourceLinks.length ? FeedWriterSummaryPolicy.buildLinksInstruction(sourceLinks) : "";
   if (linksRule) systemPrompt += "\n\n" + linksRule;
-  // Groq's free tier allows ~8k tokens per minute and the full prompt alone
-  // is close to that. Groq calls get the compact prompt plus the same
-  // per-request rules; every other provider keeps the full prompt.
-  const promptExtras = [lengthBudget, provenanceRule, linksRule].filter(Boolean).map((rule) => "\n\n" + rule).join("");
-  const compactSystemPrompt = compactNewsPrompt(systemPrompt.slice(0, systemPrompt.length - promptExtras.length)) + promptExtras;
-
-  function groqSizedPrompt(prompt, source, outTokens) {
-    if (requestFits(prompt, source, outTokens) || !prompt.startsWith(systemPrompt)) return prompt;
-    // Keep what was appended after the system prompt (fact-sheet note, revision).
-    return compactSystemPrompt + prompt.slice(systemPrompt.length);
-  }
 
   const streamFns = {
     groq: callGroqStream,
@@ -3334,10 +3306,8 @@ async function handleStream(
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       if (signal.aborted) return { error: "Đã hủy." };
 
-      // The ledger only tracks Groq, so cost what Groq would actually receive.
-      const groqPrompt = groqSizedPrompt(activePrompt, shrinkBase, localMax);
       const estimatedCost =
-        estimateTokens(groqPrompt) +
+        estimateTokens(activePrompt) +
         estimateTokens(shrinkBase) +
         Number(localMax || 0) +
         200;
@@ -3464,7 +3434,7 @@ async function handleStream(
       const result = await callFn(
         keyInfo.key,
         sourceMessage,
-        keyInfo.provider === "groq" ? groqPrompt : activePrompt,
+        activePrompt,
         activePort,
         signal,
         localMax,
@@ -3663,10 +3633,7 @@ async function handleStream(
 
   activePrompt = systemPrompt;
 
-  // Split only when the source itself is too long: judged against the
-  // compact prompt, since the full prompt never fits Groq's minute budget and
-  // other providers take the full prompt with the whole source.
-  if (!requestFits(compactSystemPrompt, completeSource, maxTokens)) {
+  if (!requestFits(systemPrompt, completeSource, maxTokens)) {
     const pieces = splitSourceIntoChunks(completeSource, chunkCharBudget());
     const savedMax = maxTokens;
     let notes = [];
@@ -3686,7 +3653,7 @@ async function handleStream(
     let folded = false;
     for (let round = 0; round < 4 && notes.length > 1; round++) {
       const sheet = notes.map((note, index) => "Phần " + (index + 1) + ":\n" + note).join("\n\n");
-      if (requestFits(compactSystemPrompt, sheet, savedMax)) break;
+      if (requestFits(systemPrompt, sheet, savedMax)) break;
       folded = true;
       const groups = [];
       for (let i = 0; i < notes.length; i += MAX_COVERAGE_CHUNKS) {
@@ -3706,12 +3673,14 @@ async function handleStream(
       notes = merged;
     }
     let factSheet = notes.map((note, index) => "Phần " + (index + 1) + ":\n" + note).join("\n\n");
-    // Groq calls compact this per request (groqSizedPrompt).
-    const synthesisBase = systemPrompt;
-    if (!requestFits(compactSystemPrompt, factSheet, savedMax)) {
+    let synthesisBase = systemPrompt;
+    if (!requestFits(synthesisBase, factSheet, savedMax)) {
+      synthesisBase = compactNewsPrompt(systemPrompt);
+    }
+    if (!requestFits(synthesisBase, factSheet, savedMax)) {
       const room = Math.max(
         1500,
-        (TPM_SAFE_TOKENS - estimateTokens(compactSystemPrompt) - savedMax - 200) * 3,
+        (TPM_SAFE_TOKENS - estimateTokens(synthesisBase) - savedMax - 200) * 4,
       );
       factSheet = truncateSourceForBudget(factSheet, room);
       coverageNote = "Bài cực dài — dữ kiện đã được gộp và rút để vừa hạn mức free tier.";
