@@ -2107,6 +2107,32 @@ function fixKnownMistranslations(text, sourceText, issues) {
   return out;
 }
 
+// === INVENTED DESCRIPTORS ===
+// "Claude Code, môi trường phát triển AI, đã…", "Claude Code, nền tảng lập
+// trình không mã của Anthropic, …": a category the model made up for a
+// well-known product, often wrong. Readers know these names; drop the
+// appositive and keep the sentence.
+const WELL_KNOWN_BRANDS = [
+  "Claude Code", "Claude", "ChatGPT", "Codex", "Gemini", "GitHub", "GitHub Copilot", "Copilot",
+  "Cursor", "Anthropic", "OpenAI", "Google", "Microsoft", "Apple", "Meta", "Nvidia", "NVIDIA",
+  "VS Code", "Grok", "xAI", "DeepSeek", "Hugging Face",
+];
+const BRAND_APPOSITIVE_RE = new RegExp(
+  "(?<![\\p{L}\\p{N}])(" + WELL_KNOWN_BRANDS.sort((a, b) => b.length - a.length).map((b) => b.replace(/\s+/g, "\\s+")).join("|") + ")" +
+    ",\\s+((?:một|là)\\s+)?(?:môi\\s+trường|nền\\s+tảng|công\\s+cụ|mô\\s+hình|dịch\\s+vụ|ứng\\s+dụng|hệ\\s+thống|trợ\\s+lý|công\\s+ty|hãng|phần\\s+mềm|trình|tập\\s+đoàn|gã\\s+khổng\\s+lồ)[^,.\\n]{0,80},\\s+",
+  "gu",
+);
+
+function stripBrandAppositives(text, issues) {
+  let removed = false;
+  const out = String(text || "").replace(BRAND_APPOSITIVE_RE, (_, brand) => {
+    removed = true;
+    return brand + " ";
+  });
+  if (removed && Array.isArray(issues)) issues.push("Đã bỏ mô tả tự thêm cho thương hiệu quen thuộc.");
+  return out;
+}
+
 // URLs, domains, @handles, `code` and multi-part slugs are identifiers:
 // recasing or respacing them breaks links ("https://GitHub.com/...",
 // "Claude-opus-5-5-demo"). Apply `fn` only to the prose between them.
@@ -2407,6 +2433,7 @@ function postProcessOutput(output, sourceText, type, provenance = null, sourceLi
   processed = normalizeTcvnTypography(processed);
   processed = restoreFileNames(processed, sourceText);
   processed = fixKnownMistranslations(processed, sourceText, issues);
+  processed = stripBrandAppositives(processed, issues);
 
   // Xử lý tiêu đề dòng đầu tiên
   if (type && type.startsWith("summary")) {
@@ -2771,6 +2798,12 @@ function postProcessOutput(output, sourceText, type, provenance = null, sourceLi
     if (wrongKind) issues.push(wrongKind);
   }
 
+  // 9e3. The author's suggestion ("Add X to the paid plans…") stated as done.
+  if (typeof FeedWriterSummaryPolicy !== "undefined" && FeedWriterSummaryPolicy.findSuggestedAsFact) {
+    const suggested = FeedWriterSummaryPolicy.findSuggestedAsFact(processed, sourceText);
+    if (suggested) issues.push(suggested);
+  }
+
   // 9f. Every link of a list post must survive ("10 GitHub projects…").
   if (Array.isArray(sourceLinks) && sourceLinks.length >= 2 && typeof FeedWriterSummaryPolicy !== "undefined") {
     const missingLinks = FeedWriterSummaryPolicy.findMissingLinks(processed, sourceLinks);
@@ -2962,6 +2995,9 @@ const COMPACT_NEWS_PROMPT = `Bạn là biên tập viên báo chí công nghệ 
 - Sau tiêu đề một dòng trống. Lead 1-2 câu nêu sự việc chính, thay đổi/kết quả và tác động. Mỗi ý một đoạn ngắn.
 - Chỉ viết điều có trong nguồn: không bịa số liệu, không tự thêm bối cảnh, mô tả công ty hay lợi ích mà nguồn không nêu. Nguồn ít ý thì bài ngắn; hết ý thì dừng. Không bỏ ý có giá trị.
 - Tin đã xác nhận thì viết thẳng sự việc. Tuyên bố, cam kết, dự báo, tin rò rỉ hay ý kiến thì GIỮ người phát biểu ("Elon Musk tuyên bố…", "Theo Reuters…") và mức chắc chắn ("có thể", "dự kiến"). Trải nghiệm một người không biến thành sự thật chung.
+- Câu mệnh lệnh hay điều kiện của tác giả ("Add X…", "If they…", "would/could") là đề xuất hoặc giả định, KHÔNG phải việc đã xảy ra: viết "nếu…", "tác giả cho rằng…".
+- Tiêu đề gọn, thường dưới 20 từ, một ý chính; không liệt kê nhiều ý sau dấu hai chấm.
+- Không thêm mô tả cho tên quen thuộc ("Claude Code, môi trường…", "Anthropic, công ty…").
 - Không mở bằng câu dẫn rỗng ("Theo một bài đăng trên X…", "Tác giả chia sẻ…", "Tôi đưa tin về…"), không kể chuyện theo trình tự, không đưa giờ đăng bài vào bản tin.
 - Tiêu đề không chứa USER, người dùng, tác giả, người đăng hay tên báo khi họ chỉ là nguồn tin.
 - Giữ nguyên tên riêng, tên sản phẩm/repo, câu lệnh, URL và số phiên bản ("Opus 5.5"). Giữ thuật ngữ quen (no-code, prompt, model, token, AI agent, PC); cấm dịch thô "không mã", "đại lý AI", "đường ống". "generic" là "chung chung"/"rập khuôn", không phải "chung".
@@ -3220,6 +3256,7 @@ async function handleStream(
       author,
       postTitle,
       postDate,
+      result.provider,
     );
   }
   let jobMaxTokens = maxTokens;
@@ -3682,6 +3719,7 @@ const BLOCKING_ISSUE_MARKERS = [
   "Thiếu link nguồn",
   "Dịch sai nghĩa",
   "Gọi sai loại sản phẩm",
+  "Biến giả định thành sự thật",
 ];
 
 function blockingQualityIssues(result) {
@@ -3765,6 +3803,10 @@ function compactHistoryForStorage(items) {
         : String(raw?.imageUrl || "").slice(0, 4096),
       author: String(raw?.author || "").slice(0, 300),
       postTitle: String(raw?.postTitle || "").slice(0, 500),
+      // Which build and provider wrote it, so exported history can tell a
+      // prompt bug from a weak model or an old version.
+      ...(raw?.version ? { version: String(raw.version).slice(0, 20) } : {}),
+      ...(raw?.provider ? { provider: String(raw.provider).slice(0, 40) } : {}),
     };
     const entryBytes = new TextEncoder().encode(JSON.stringify(entry)).length + 1;
     if (compacted.length >= HISTORY_MAX_ITEMS || bytes + entryBytes > HISTORY_MAX_BYTES) break;
@@ -3888,8 +3930,11 @@ async function saveHistory(
   author,
   postTitle,
   postDate = null,
+  provider = "",
 ) {
   const entry = {
+    version: chrome.runtime?.getManifest?.()?.version || "",
+    provider: String(provider || "").slice(0, 40),
     id: crypto.randomUUID(),
     text: text.substring(0, 2000),
     summary,

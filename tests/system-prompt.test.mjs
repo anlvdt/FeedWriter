@@ -173,7 +173,10 @@ describe("getSystemPrompt", () => {
     );
 
     assert.match(prompt, /QUYẾT ĐỊNH GIẢI THÍCH THUẬT NGỮ: INCLUDE/);
-    assert.match(prompt, /Chỉ được giải thích các thuật ngữ sau: RAG, LLM/);
+    // LLM is common for this audience; RAG gets its canonical full name.
+    assert.match(prompt, /Chỉ được giải thích các thuật ngữ sau: RAG\./);
+    assert.match(prompt, /RAG = Retrieval-Augmented Generation/);
+    assert.match(prompt, /Không giải thích tên sản phẩm, công ty hay dự án/);
     assert.match(prompt, /Không thêm thuật ngữ khác/);
   });
 
