@@ -2170,6 +2170,10 @@ function moveOpenSyllableTone(first, toned) {
 function normalizeTcvnTypography(text) {
   const nfc = String(text || "")
     .normalize("NFC")
+    // Dates and fractions: "2 /11", "2 / 11", "2/ 11/2026" → "2/11", "2/11/2026".
+    // Done before the identifier guard, which would shield "11/2026" as a
+    // slug; URLs never contain spaces, so they cannot match.
+    .replace(/(\d)[ \t\u00a0\u202f]*\/[ \t\u00a0\u202f]*(?=\d)/g, "$1/")
     // "km/h" looks like a slug to the identifier guard; space it up front.
     .replace(/(?<![\p{L}\p{N}_.])(\d+(?:[.,]\d+)*)\s?(?:km\/h|Km\/h|KM\/H|kmh)(?![\p{L}\p{N}])/gu, "$1 km/h");
   return mapOutsideIdentifiers(nfc, (segment) => segment
@@ -2957,7 +2961,7 @@ const COMPACT_NEWS_PROMPT = `Bạn là biên tập viên báo chí công nghệ 
 - Giữ nguyên tên riêng, tên sản phẩm/repo, câu lệnh, URL và số phiên bản ("Opus 5.5"). Giữ thuật ngữ quen (no-code, prompt, model, token, AI agent, PC); cấm dịch thô "không mã", "đại lý AI", "đường ống". "generic" là "chung chung"/"rập khuôn", không phải "chung".
 - Tên file giữ nguyên văn, liền dấu chấm: "DESIGN.md", "AGENTS.md", "package.json" (không viết "DESIGN. MD").
 - Số và đơn vị: dấu chấm hàng nghìn, dấu phẩy thập phân (1.234,5); số cách đơn vị ("16 GB", "120 Hz", "30 °C"), riêng "50%". Tiền tệ viết "USD", "euro", "đồng" sau số.
-- Chỉ quy đổi mốc giờ của sự kiện công nghệ có múi giờ nước ngoài sang giờ Việt Nam (UTC+7).`;
+- Ngày tháng viết "2/11" hoặc "2/11/2026", không có dấu cách quanh "/". Chỉ quy đổi mốc giờ của sự kiện công nghệ có múi giờ nước ngoài sang giờ Việt Nam (UTC+7).`;
 
 function estimateTokens(text) {
   const s = String(text || "");
