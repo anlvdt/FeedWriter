@@ -5281,7 +5281,7 @@ function cleanInputText(text) {
   // Keep paragraph breaks. Collapsing every newline into one space made long
   // articles look like a single blob, so the model dumped several facts into
   // the headline and lost section boundaries.
-  return joinSplitFileNames(String(text || ""))
+  return joinSplitFileNames(plainLetters(text))
     .replace(/\r\n?/g, "\n")
     .replace(/[^\S\n]+/g, " ")
     .replace(/ *\n */g, "\n")
@@ -5414,7 +5414,7 @@ const SPLIT_FILE_NAME_RE = new RegExp("(?<![\\p{L}\\p{N}_./-])([\\p{L}\\p{N}_-]{
 
 function sourceFileNames(sourceText) {
   const names = new Map();
-  for (const m of joinSplitFileNames(String(sourceText || "")).matchAll(FILE_NAME_RE)) {
+  for (const m of joinSplitFileNames(plainLetters(sourceText)).matchAll(FILE_NAME_RE)) {
     names.set(m[0].toLowerCase(), m[0]);
   }
   return names;
@@ -5441,6 +5441,14 @@ function restoreFileNames(text, sourceText) {
   return joined.replace(FILE_NAME_RE, (m) => known.get(m.toLowerCase()) || m);
 }
 
+// X/LinkedIn posts fake bold/italic with Mathematical Alphanumeric Symbols
+// ("𝗗𝗘𝗦𝗜𝗚𝗡.𝗺𝗱", "𝘀𝗵𝗶𝗽𝗽𝗶𝗻𝗴 𝗴𝗲𝗻𝗲𝗿𝗶𝗰 𝗔𝗜 𝗨𝗜"). They look like words but match no
+// rule ("generic", file names) and models misread them. Map only that block
+// to plain letters; NFKC on the whole text would also turn "m²" into "m2".
+function plainLetters(text) {
+  return String(text || "").replace(/[\u{1D400}-\u{1D7FF}]/gu, (c) => c.normalize("NFKC"));
+}
+
 // === MISTRANSLATIONS with a known right answer ===
 // "generic UI" came back as "UI chung" (shared UI) instead of "chung chung"
 // (bland, cookie-cutter). Each entry fixes the common wrong phrasing and, if
@@ -5454,14 +5462,23 @@ const MISTRANSLATIONS = [
     right: /chung\s+chung|rập\s+khuôn|na\s+ná|đại\s+trà|nhàm\s+chán|generic/iu,
     advice: "'generic' phải là 'chung chung' hoặc 'rập khuôn', không phải 'chung' (dùng chung)",
   },
+  {
+    // "stops Codex from shipping generic AI UI": ship = build and deliver,
+    // not publish a release.
+    term: "shipping",
+    source: /\bship(?:s|ped|ping)?\b/i,
+    wrong: /phát\s+hành((?:\s+ra)?\s+(?:UI|giao\s+diện|thiết\s+kế|tính\s+năng|code))/giu,
+    fix: "tạo ra$1",
+  },
 ];
 
 function fixKnownMistranslations(text, sourceText, issues) {
   let out = String(text || "");
+  const source = plainLetters(sourceText);
   for (const rule of MISTRANSLATIONS) {
-    if (!rule.source.test(String(sourceText || ""))) continue;
+    if (!rule.source.test(source)) continue;
     out = mapOutsideIdentifiers(out, (segment) => segment.replace(rule.wrong, rule.fix));
-    if (!rule.right.test(out)) issues.push("[!] Dịch sai nghĩa: " + rule.advice + ".");
+    if (rule.right && !rule.right.test(out)) issues.push("[!] Dịch sai nghĩa: " + rule.advice + ".");
   }
   return out;
 }
@@ -5647,6 +5664,8 @@ const SOCIAL_POST_MARKER_RE =
   /(?<![\p{L}\p{N}])(?:X|Twitter|Facebook|FB|Threads|Reddit|LinkedIn|TikTok|Instagram|mạng\s+xã\s+hội|tài\s+khoản|người\s+dùng|user|tweet|status)(?![\p{L}\p{N}])|(?:vào\s+)?lúc\s+\d{1,2}(?::|h)\d{0,2}/iu;
 
 function postProcessOutput(output, sourceText, type, provenance = null, sourceLinks = null) {
+  // Compare against plain letters: "𝟭𝟬 𝗽𝗿𝗼𝗷𝗲𝗰𝘁𝘀" must count as "10 projects".
+  if (typeof sourceText === "string") sourceText = plainLetters(sourceText);
   const issues = [];
   let processed = output.trim();
 

@@ -1,0 +1,25 @@
+This 𝗗𝗘𝗦𝗜𝗚𝗡.𝗺𝗱 stops Claude Code and Codex from 𝘀𝗵𝗶𝗽𝗽𝗶𝗻𝗴 𝗴𝗲𝗻𝗲𝗿𝗶𝗰 𝗔𝗜 𝗨𝗜.
+
+It's Google's open format. Stitch reads it natively. Claude Code and Codex read it once you add one line to AGENTS .md: 
+
+"Read DESIGN .md before any UI work."
+
+Tokens on top, rules below:
+→ Overview
+→ Colors
+→ Typography
+→ Layout
+→ Elevation & Depth
+→ Shapes
+→ Components
+→ Do's and Don'ts
+
+The agent stops inventing a new color and spacing value on each screen, so 𝗲𝘃𝗲𝗿𝘆 𝘀𝗰𝗿𝗲𝗲𝗻 𝗹𝗼𝗼𝗸𝘀 𝗹𝗶𝗸𝗲 𝘁𝗵𝗲 𝘀𝗮𝗺𝗲 𝗽𝗿𝗼𝗱𝘂𝗰𝘁.
+
+Claude Code users: also install the official frontend plugin:
+/plugin install frontend-design@claude-plugins-official
+
+Check your file against the spec:
+npx @google/design.md lint DESIGN .md
+
+Copy and paste it into your DESIGN .md
