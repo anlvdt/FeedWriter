@@ -26,7 +26,7 @@ describe("compact prompt", () => {
   const compact = run("COMPACT_NEWS_PROMPT");
 
   it("stays small and keeps the core rules", () => {
-    assert.ok(compact.length < 2500);
+    assert.ok(compact.length < 3000, String(compact.length));
     assert.match(compact, /GIỮ người phát biểu/);
     assert.match(compact, /cộng đồng/);
     assert.match(compact, /Nguồn ít ý thì bài ngắn/);

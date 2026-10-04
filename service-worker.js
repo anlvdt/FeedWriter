@@ -1028,7 +1028,7 @@ if (typeof globalThis !== "undefined") {
     "ceo", "chatgpt", "chrome", "comment", "cpu", "css", "facebook", "fb",
     "feed", "firefox", "gb", "google", "gpu", "hcm", "html", "http", "https",
     "ibm", "iphone", "internet", "link", "local", "low-code", "nasa", "no-code", "node",
-    "openai", "pc", "pipeline", "plugin", "post", "prompt", "ram", "sdk", "share",
+    "openai", "open-source", "open source", "llm", "cli", "pc", "pipeline", "plugin", "post", "prompt", "ram", "sdk", "share",
     "smartphone", "ssd", "tb", "tiktok", "token", "tp", "ui", "update", "url",
     "usb", "usd", "ux", "vnd", "vn", "website", "wifi", "windows", "workflow",
     "youtube",
@@ -1040,7 +1040,7 @@ if (typeof globalThis !== "undefined") {
     "end-to-end encryption", "exploit", "fine-tuning", "fine tuning", "firmware",
     "foundry", "function calling", "generative ai", "hallucination", "inference",
     "jailbreak", "large language model", "latency", "lora", "machine learning",
-    "microkernel", "multimodal", "oauth", "open-source", "open source", "ota update",
+    "microkernel", "multimodal", "oauth", "ota update",
     "parameter", "payload", "prompt injection", "quantization", "refresh rate",
     "retrieval-augmented generation", "rag", "sandbox", "side-loading", "sideloading",
     "smart contract", "soc", "system on chip", "telemetry", "thermal throttling",
@@ -1052,13 +1052,32 @@ if (typeof globalThis !== "undefined") {
   // Do not treat arbitrary ALL-CAPS words as terminology: social posts often
   // capitalize ordinary English words such as LOT, NEW, BIG, or FREE.
   const KNOWN_TECH_ACRONYMS = new Set([
-    "agi", "asi", "cdn", "cli", "crm", "cuda", "cve", "ddr", "dlss",
+    "agi", "asi", "cdn", "crm", "cuda", "cve", "ddr", "dlss",
     "ecc", "erp", "fov", "fps", "gan", "gpt", "hdr", "ide", "iot",
-    "isp", "json", "k8s", "llm", "mcp", "moe", "nlp", "npu", "nvme",
+    "isp", "json", "k8s", "mcp", "moe", "nlp", "npu", "nvme",
     "ocr", "oled", "ota", "pcie", "pwa", "pwm", "rag", "rest", "rpc",
     "rtx", "saas", "sdk", "sla", "soc", "sql", "ssh", "ssl", "sso",
     "tdp", "tls", "tps", "tpu", "ui", "ux", "vpn", "vram", "wan", "wasm",
   ]);
+
+  // Full names for acronyms the model has guessed wrong ("MCP: giao diện
+  // quản lý phiên"). Facts, not style: the glossary must use these.
+  const GLOSSARY_EXPANSIONS = {
+    mcp: "Model Context Protocol, giao thức mở để AI kết nối với công cụ và nguồn dữ liệu",
+    rag: "Retrieval-Augmented Generation, kỹ thuật cho AI tra cứu tài liệu trước khi trả lời",
+    moe: "Mixture of Experts, kiến trúc chỉ kích hoạt một phần mô hình cho mỗi yêu cầu",
+    npu: "Neural Processing Unit, bộ xử lý chuyên cho tác vụ AI",
+    tpu: "Tensor Processing Unit, chip AI của Google",
+    agi: "Artificial General Intelligence, trí tuệ nhân tạo tổng quát",
+    lora: "Low-Rank Adaptation, cách tinh chỉnh mô hình bằng ít tham số",
+    sso: "Single Sign-On, đăng nhập một lần cho nhiều dịch vụ",
+    cve: "Common Vulnerabilities and Exposures, mã định danh lỗ hổng bảo mật",
+    ota: "Over-the-Air, cập nhật qua mạng không dây",
+    vram: "bộ nhớ của card đồ họa",
+    tps: "tokens per second, số token tạo ra mỗi giây",
+    saas: "Software as a Service, phần mềm dùng qua internet theo thuê bao",
+    sla: "Service Level Agreement, cam kết chất lượng dịch vụ",
+  };
 
   function normalizeText(value) {
     return String(value || "")
@@ -1167,8 +1186,12 @@ if (typeof globalThis !== "undefined") {
 
   function isGlossaryAcronym(source, term) {
     const normalized = normalizeText(term);
+    // A digit alone does not make a token a term: "T3", "K3", "H100" are
+    // product names, and the model invented descriptions for them.
+    // A versioned standard (DDR5, PCIE5) still counts when its letters are a
+    // known acronym.
     return KNOWN_TECH_ACRONYMS.has(normalized) ||
-      /\d/.test(String(term || "")) ||
+      KNOWN_TECH_ACRONYMS.has(normalized.replace(/\d+$/, "")) ||
       sourceDefinesAcronym(source, term);
   }
 
@@ -1233,9 +1256,14 @@ if (typeof globalThis !== "undefined") {
       ].join("\n");
     }
     const terms = glossary.candidates.map((item) => item.term).join(", ");
+    const expansions = glossary.candidates
+      .map((item) => GLOSSARY_EXPANSIONS[normalizeText(item.term)] ? item.term + " = " + GLOSSARY_EXPANSIONS[normalizeText(item.term)] : "")
+      .filter(Boolean);
     return [
       "QUYẾT ĐỊNH GIẢI THÍCH THUẬT NGỮ: INCLUDE.",
       "- Chỉ được giải thích các thuật ngữ sau: " + terms + ".",
+      ...(expansions.length ? ["- Nghĩa chuẩn (bắt buộc dùng, không tự suy đoán): " + expansions.join("; ") + "."] : []),
+      "- Không giải thích tên sản phẩm, công ty hay dự án. Nếu không chắc nghĩa của thuật ngữ thì bỏ mục đó.",
       "- Tối đa " + glossary.limit + " mục; mỗi mục đúng một dòng theo dạng · Thuật ngữ: Một câu dễ hiểu (nêu chức năng thực tế hoặc tác dụng, tránh định nghĩa sách vở phức tạp).",
       "- Đặt mục này ở cuối bài. Không thêm thuật ngữ khác dù có vẻ liên quan.",
     ].join("\n");
@@ -1337,6 +1365,9 @@ if (typeof globalThis !== "undefined") {
     /\b(?:community[- ]made|community|unofficial|fan[- ]made|third[- ]party|open[- ]source(?:d)?\s+by)\b/i,
     new RegExp("(?:mình|tôi|em|bọn\\s+mình|chúng\\s+tôi|team\\s+mình)\\s+(?:vừa\\s+|mới\\s+|đã\\s+)?(?:làm|viết|tạo|build|phát\\s+triển|code|ra\\s+mắt|chia\\s+sẻ|open[- ]?source|xây\\s+dựng)\\s+(?:được\\s+)?(?:một\\s+|cái\\s+|con\\s+|bộ\\s+)?(?:" + COMMUNITY_ARTIFACT + "|công\\s+cụ|ứng\\s+dụng|tiện\\s+ích|dự\\s+án|tính\\s+năng)", "iu"),
     /\b(?:cộng\s+đồng|không\s+chính\s+thức|bên\s+thứ\s+ba)\b/iu,
+    // Vendors do not call their own features "mods": "one of those Mods that
+    // should be installed in every Claude Code setup" is community work.
+    /\bmods?\b/i,
   ];
 
   const STRONG_SIGNAL_INDEXES = new Set([0, 1, 2, 4]);
@@ -1465,7 +1496,7 @@ if (typeof globalThis !== "undefined") {
     const subjects = [...new Set(provenance.brands.flatMap((b) => [b.name, b.vendor]))];
     for (const subject of subjects) {
       const name = subject.replace(/\s+/g, "\\s+");
-      const active = new RegExp("(?<![\\p{L}\\p{N}])" + name + "\\s+" + VENDOR_ACTION + "(?![\\p{L}])", "iu");
+      const active = new RegExp("(?<![\\p{L}\\p{N}])" + name + "(?:\\s*,[^,.\\n]{1,80},)?\\s+" + VENDOR_ACTION + "(?![\\p{L}])", "iu");
       const passive = new RegExp("được\\s+" + name + "\\s+" + VENDOR_ACTION, "iu");
       const feature = new RegExp("(?:tính\\s+năng|chế\\s+độ|bản\\s+cập\\s+nhật)\\s+(?:mới\\s+)?(?:chính\\s+thức\\s+)?(?:của\\s+)?" + name + "(?![\\p{L}])", "iu");
       const match = head.match(active) || head.match(passive) || head.match(feature);
@@ -1558,7 +1589,41 @@ if (typeof globalThis !== "undefined") {
       missing.map((link) => "· " + link.label + ": " + link.url).join("\n");
   }
 
+  // === SUGGESTIONS STATED AS FACT ===
+  // "Add Gemini 4 Argon to the paid plans, and they get hard to beat" is the
+  // author's suggestion; it came back as "Antigravity cũng bổ sung Gemini 4
+  // Argon". Find imperative/conditional additions in the source and check the
+  // output hedges every sentence that mentions them.
+  const SUGGESTION_RES = [
+    /(?:^|[.!?]\s+|\n)\s*(?:[Jj]ust\s+)?(?:[Aa]dd|[Ii]magine|[Gg]ive\s+(?:it|them|us))\s+([A-Z][\w.+-]*(?:\s+[A-Z0-9][\w.+-]*){0,4})/g,
+    /\bif\s+(?:they|you|we|\w+)\s+(?:add|adds|added|ship|ships|release|releases|bring|brings)\s+([A-Z][\w.+-]*(?:\s+[A-Z0-9][\w.+-]*){0,4})/gi,
+    /\b(?:would|could|should)\s+(?:add|ship|release|bring)\s+([A-Z][\w.+-]*(?:\s+[A-Z0-9][\w.+-]*){0,4})/gi,
+  ];
+  const HEDGE_RE = /(?<![\p{L}])(?:nếu|giá\s+như|giả\s+sử|có\s+thể|đề\s+xuất|gợi\s+ý|kiến\s+nghị|nên|kỳ\s+vọng|mong\s+muốn|cho\s+rằng|khi\s+được|chưa)(?![\p{L}])/iu;
+
+  function findSuggestedAsFact(output, sourceText) {
+    const source = String(sourceText || "");
+    const names = new Set();
+    for (const re of SUGGESTION_RES) {
+      re.lastIndex = 0;
+      for (const m of source.matchAll(re)) names.add(m[1].trim());
+    }
+    if (!names.size) return "";
+    const sentences = String(output || "").split(/(?<=[.!?…])\s+|\n+/);
+    for (const name of names) {
+      const needle = name.toLowerCase();
+      const stated = sentences.find((s) => s.toLowerCase().includes(needle) && !HEDGE_RE.test(s));
+      if (stated) {
+        return "[!] Biến giả định thành sự thật: nguồn chỉ đề xuất/giả định về " + name +
+          ", nhưng bài viết ghi như việc đã xảy ra (\"" + stated.trim().slice(0, 90) + "\").";
+      }
+    }
+    return "";
+  }
+
   const api = {
+    findSuggestedAsFact,
+    GLOSSARY_EXPANSIONS,
     extractSourceLinks,
     buildLinksInstruction,
     findMissingLinks,
@@ -2187,7 +2252,7 @@ CHẾ ĐỘ BẮT BUỘC — VIẾT LẠI THÀNH BẢN TIN:
 - Chọn cấu trúc tiêu đề theo đúng tác nhân: (1) hãng/sản phẩm + hành động CHỈ khi hãng/sản phẩm thực hiện hành động đó; (2) thao tác hoặc tùy chọn của người dùng + "trong/trên" sản phẩm + tác động khi chính người dùng thực hiện; (3) sự cố/thay đổi + đối tượng chịu tác động. Không đảo vai để khớp khuôn.
 - TUYỆT ĐỐI CẤM từ ngữ giật gân, câu view, thổi phồng: "gây sốc", "chấn động", "không thể tin nổi", "toang", "cháy hàng", "bạn sẽ bất ngờ", "bí mật", "đây là lý do", "chính thức", "phiên bản nâng cấp của phần mềm", câu hỏi tu từ rỗng.
 - Tiêu đề vẫn phải chứa sự kiện/kết quả cụ thể và ưu tiên thực thể công nghệ hoặc thay đổi chính làm chủ ngữ. Mọi con số, so sánh, mức độ bất ngờ, lợi ích hoặc tác động dùng làm hook PHẢI có căn cứ trực tiếp trong nguồn; không phóng đại mức chắc chắn.
-- Tiêu đề phải là MỘT câu/mệnh đề báo chí tự nhiên, đọc liền mạch và hiểu ngay. Chỉ một ý: đúng tác nhân + hành động/thay đổi + kết quả. Không kể cả quá trình ("từ A sang B kể từ tháng…"). Không mở thêm mệnh đề sau dấu phẩy nếu không viết trọn số liệu. Không kết thúc bằng "gần", "khoảng", "hơn", giới từ, hoặc "tháng/năm" thiếu mốc. Fact thứ hai đưa xuống lead. Không áp trần số từ. Câu phải kết thúc trọn cụm. Ví dụ SAI: "Agents on Rails tăng mức nỗ lực tối đa cho các mô hình, chi phí gần". Ví dụ ĐÚNG: "Agents on Rails bật nỗ lực tối đa cho mọi mô hình".
+- Tiêu đề phải là MỘT câu/mệnh đề báo chí tự nhiên, đọc liền mạch và hiểu ngay. Chỉ một ý: đúng tác nhân + hành động/thay đổi + kết quả. Không kể cả quá trình ("từ A sang B kể từ tháng…"). Không mở thêm mệnh đề sau dấu phẩy nếu không viết trọn số liệu. Không kết thúc bằng "gần", "khoảng", "hơn", giới từ, hoặc "tháng/năm" thiếu mốc. Fact thứ hai đưa xuống lead. Tiêu đề gọn, thường dưới 20 từ; không liệt kê nhiều ý sau dấu hai chấm, nhưng không được cắt giữa cụm để vừa số từ. Câu phải kết thúc trọn cụm. Ví dụ SAI: "Agents on Rails tăng mức nỗ lực tối đa cho các mô hình, chi phí gần". Ví dụ ĐÚNG: "Agents on Rails bật nỗ lực tối đa cho mọi mô hình".
 - Phân biệt thao tác của người dùng với thay đổi do hãng/sản phẩm thực hiện. Nếu nguồn nói tắt gợi ý prompt TRONG Claude Code có thể giúp một người dùng tăng khoảng 10% hạn mức sử dụng, tiêu đề đúng là "Tắt gợi ý prompt trong Claude Code có thể giúp tăng khoảng 10% hạn mức sử dụng"; SAI: "Claude Code tắt gợi ý prompt...". Lead phải nói tùy chọn gợi ý prompt bị người dùng tắt, KHÔNG viết Claude Code giảm giới hạn đề xuất prompt hoặc Anthropic thay đổi hạn mức. Giữ "theo một người dùng" và "có thể" khi đây chỉ là trải nghiệm cá nhân.
 - KHÔNG đưa "USER", "Người dùng", "Một người dùng", "Tác giả", "Người đăng", tên tài khoản hoặc tên cơ quan báo chí/trang tin/leaker (như Vox, The Verge, Reuters, Bloomberg...) vào BẤT KỲ vị trí nào của tiêu đề khi chúng chỉ là chủ thể cung cấp nguồn, chia sẻ, phát hiện, đề xuất, khuyến nghị hoặc nêu ý kiến. TUYỆT ĐỐI KHÔNG mở đầu tiêu đề bằng câu dẫn nguồn ("Theo...", "...cho biết", "...tiết lộ", "...đưa tin"). Chỉ dùng "người dùng" khi chính tập người dùng là đối tượng của sự kiện/dữ liệu.
 - Nếu nguồn chỉ là trải nghiệm của một cá nhân, không biến trải nghiệm thành sự thật chung. Tiêu đề có thể dùng "có thể" hoặc "được một người dùng phản ánh", tùy câu nào rõ tác nhân hơn; thông tin "theo trải nghiệm của một người dùng" để trong thân bài khi cần giữ mức chắc chắn.
@@ -2325,6 +2390,7 @@ QUY TẮC CHÍNH TẢ VÀ HÀNH VĂN BẮT BUỘC:
 - Không viết tắt địa danh trong văn xuôi: Việt Nam, Hà Nội. Không thêm emoji hoặc icon; chữ tiếng Việt và ký hiệu đơn vị vẫn được giữ.
 - Không bịa tên, số, thông số, mức độ phổ biến hay phản ứng cộng đồng. Một lời kể chỉ đại diện người kể; không biến thành 'nhiều người dùng' hoặc cam kết của sản phẩm.
 - ĐÚNG CHỦ THỂ TẠO RA SẢN PHẨM: khi nguồn viết ở ngôi thứ nhất ("my new tool", "I've released", "we built") hoặc nói về dự án/repo/công cụ/plugin/skill của cộng đồng, chủ thể là tác giả hoặc chính dự án đó — KHÔNG gán cho thương hiệu lớn được nhắc tới. Gọi đúng loại mà nguồn dùng (công cụ, ứng dụng, repo, plugin, skill, mod…); chỉ gọi là "mod" khi nguồn dùng chữ "mod". Công cụ dùng được với nhiều sản phẩm (ví dụ "visualizer for Codex, Claude Code or Pi traces") thì nêu đủ các sản phẩm, không gắn riêng cho một sản phẩm. Ví dụ ĐÚNG: "Agent Monitor trực quan hóa trace của Codex, Claude Code và Pi"; SAI: "Mod Agent Monitor cho Claude Code", "Claude Code ra mắt…". Người được nhắc tới như nguồn cảm hứng KHÔNG phải tác giả của dự án.
+- Câu mệnh lệnh hay câu điều kiện của tác giả ("Add Gemini 4 Argon to the paid plans, and…", "If they ship X…", "X would/could…") là ĐỀ XUẤT hoặc GIẢ ĐỊNH, không phải việc đã xảy ra. Viết rõ "nếu…", "tác giả cho rằng…"; SAI: "Antigravity cũng bổ sung Gemini 4 Argon".
 - KHÔNG tự thêm mô tả/định danh cho công ty, sản phẩm, người nếu nguồn không nêu (CẤM kiểu "Claude Code, nền tảng lập trình không mã của Anthropic"). Không đoán quan hệ giữa các thực thể.
 - "generic" (UI/nội dung/câu trả lời generic) dịch là "chung chung", "rập khuôn" hoặc "na ná nhau"; KHÔNG dịch thành "chung" vì "chung" nghĩa là dùng chung/chia sẻ. Ví dụ: "generic AI UI" → "UI AI chung chung", SAI: "UI AI chung".
 - Tên file giữ nguyên văn và liền dấu chấm: "DESIGN.md", "AGENTS.md", "package.json"; SAI: "DESIGN. MD", "DESIGN .md".
@@ -5535,6 +5601,32 @@ function fixKnownMistranslations(text, sourceText, issues) {
   return out;
 }
 
+// === INVENTED DESCRIPTORS ===
+// "Claude Code, môi trường phát triển AI, đã…", "Claude Code, nền tảng lập
+// trình không mã của Anthropic, …": a category the model made up for a
+// well-known product, often wrong. Readers know these names; drop the
+// appositive and keep the sentence.
+const WELL_KNOWN_BRANDS = [
+  "Claude Code", "Claude", "ChatGPT", "Codex", "Gemini", "GitHub", "GitHub Copilot", "Copilot",
+  "Cursor", "Anthropic", "OpenAI", "Google", "Microsoft", "Apple", "Meta", "Nvidia", "NVIDIA",
+  "VS Code", "Grok", "xAI", "DeepSeek", "Hugging Face",
+];
+const BRAND_APPOSITIVE_RE = new RegExp(
+  "(?<![\\p{L}\\p{N}])(" + WELL_KNOWN_BRANDS.sort((a, b) => b.length - a.length).map((b) => b.replace(/\s+/g, "\\s+")).join("|") + ")" +
+    ",\\s+((?:một|là)\\s+)?(?:môi\\s+trường|nền\\s+tảng|công\\s+cụ|mô\\s+hình|dịch\\s+vụ|ứng\\s+dụng|hệ\\s+thống|trợ\\s+lý|công\\s+ty|hãng|phần\\s+mềm|trình|tập\\s+đoàn|gã\\s+khổng\\s+lồ)[^,.\\n]{0,80},\\s+",
+  "gu",
+);
+
+function stripBrandAppositives(text, issues) {
+  let removed = false;
+  const out = String(text || "").replace(BRAND_APPOSITIVE_RE, (_, brand) => {
+    removed = true;
+    return brand + " ";
+  });
+  if (removed && Array.isArray(issues)) issues.push("Đã bỏ mô tả tự thêm cho thương hiệu quen thuộc.");
+  return out;
+}
+
 // URLs, domains, @handles, `code` and multi-part slugs are identifiers:
 // recasing or respacing them breaks links ("https://GitHub.com/...",
 // "Claude-opus-5-5-demo"). Apply `fn` only to the prose between them.
@@ -5835,6 +5927,7 @@ function postProcessOutput(output, sourceText, type, provenance = null, sourceLi
   processed = normalizeTcvnTypography(processed);
   processed = restoreFileNames(processed, sourceText);
   processed = fixKnownMistranslations(processed, sourceText, issues);
+  processed = stripBrandAppositives(processed, issues);
 
   // Xử lý tiêu đề dòng đầu tiên
   if (type && type.startsWith("summary")) {
@@ -6199,6 +6292,12 @@ function postProcessOutput(output, sourceText, type, provenance = null, sourceLi
     if (wrongKind) issues.push(wrongKind);
   }
 
+  // 9e3. The author's suggestion ("Add X to the paid plans…") stated as done.
+  if (typeof FeedWriterSummaryPolicy !== "undefined" && FeedWriterSummaryPolicy.findSuggestedAsFact) {
+    const suggested = FeedWriterSummaryPolicy.findSuggestedAsFact(processed, sourceText);
+    if (suggested) issues.push(suggested);
+  }
+
   // 9f. Every link of a list post must survive ("10 GitHub projects…").
   if (Array.isArray(sourceLinks) && sourceLinks.length >= 2 && typeof FeedWriterSummaryPolicy !== "undefined") {
     const missingLinks = FeedWriterSummaryPolicy.findMissingLinks(processed, sourceLinks);
@@ -6390,6 +6489,9 @@ const COMPACT_NEWS_PROMPT = `Bạn là biên tập viên báo chí công nghệ 
 - Sau tiêu đề một dòng trống. Lead 1-2 câu nêu sự việc chính, thay đổi/kết quả và tác động. Mỗi ý một đoạn ngắn.
 - Chỉ viết điều có trong nguồn: không bịa số liệu, không tự thêm bối cảnh, mô tả công ty hay lợi ích mà nguồn không nêu. Nguồn ít ý thì bài ngắn; hết ý thì dừng. Không bỏ ý có giá trị.
 - Tin đã xác nhận thì viết thẳng sự việc. Tuyên bố, cam kết, dự báo, tin rò rỉ hay ý kiến thì GIỮ người phát biểu ("Elon Musk tuyên bố…", "Theo Reuters…") và mức chắc chắn ("có thể", "dự kiến"). Trải nghiệm một người không biến thành sự thật chung.
+- Câu mệnh lệnh hay điều kiện của tác giả ("Add X…", "If they…", "would/could") là đề xuất hoặc giả định, KHÔNG phải việc đã xảy ra: viết "nếu…", "tác giả cho rằng…".
+- Tiêu đề gọn, thường dưới 20 từ, một ý chính; không liệt kê nhiều ý sau dấu hai chấm.
+- Không thêm mô tả cho tên quen thuộc ("Claude Code, môi trường…", "Anthropic, công ty…").
 - Không mở bằng câu dẫn rỗng ("Theo một bài đăng trên X…", "Tác giả chia sẻ…", "Tôi đưa tin về…"), không kể chuyện theo trình tự, không đưa giờ đăng bài vào bản tin.
 - Tiêu đề không chứa USER, người dùng, tác giả, người đăng hay tên báo khi họ chỉ là nguồn tin.
 - Giữ nguyên tên riêng, tên sản phẩm/repo, câu lệnh, URL và số phiên bản ("Opus 5.5"). Giữ thuật ngữ quen (no-code, prompt, model, token, AI agent, PC); cấm dịch thô "không mã", "đại lý AI", "đường ống". "generic" là "chung chung"/"rập khuôn", không phải "chung".
@@ -6648,6 +6750,7 @@ async function handleStream(
       author,
       postTitle,
       postDate,
+      result.provider,
     );
   }
   let jobMaxTokens = maxTokens;
@@ -7110,6 +7213,7 @@ const BLOCKING_ISSUE_MARKERS = [
   "Thiếu link nguồn",
   "Dịch sai nghĩa",
   "Gọi sai loại sản phẩm",
+  "Biến giả định thành sự thật",
 ];
 
 function blockingQualityIssues(result) {
@@ -7193,6 +7297,10 @@ function compactHistoryForStorage(items) {
         : String(raw?.imageUrl || "").slice(0, 4096),
       author: String(raw?.author || "").slice(0, 300),
       postTitle: String(raw?.postTitle || "").slice(0, 500),
+      // Which build and provider wrote it, so exported history can tell a
+      // prompt bug from a weak model or an old version.
+      ...(raw?.version ? { version: String(raw.version).slice(0, 20) } : {}),
+      ...(raw?.provider ? { provider: String(raw.provider).slice(0, 40) } : {}),
     };
     const entryBytes = new TextEncoder().encode(JSON.stringify(entry)).length + 1;
     if (compacted.length >= HISTORY_MAX_ITEMS || bytes + entryBytes > HISTORY_MAX_BYTES) break;
@@ -7316,8 +7424,11 @@ async function saveHistory(
   author,
   postTitle,
   postDate = null,
+  provider = "",
 ) {
   const entry = {
+    version: chrome.runtime?.getManifest?.()?.version || "",
+    provider: String(provider || "").slice(0, 40),
     id: crypto.randomUUID(),
     text: text.substring(0, 2000),
     summary,
