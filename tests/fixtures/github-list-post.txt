@@ -1,0 +1,64 @@
+AI fact-checking is getting f...cking unfair
+
+10 open-source GitHub projects for making agents prove what they write instead of just generating an answer
+
+01 OpenScholar
+▸ https://github.com/AkariAsai/OpenScholar
+→ search + synthesize scientific literature
+
+02 PaperQA2
+▸ https://github.com/Future-House/paper-qa
+→ answers grounded in papers + citations
+
+BUILD THE EVIDENCE
+
+03 Docling
+▸ https://github.com/docling-project/docling
+→ PDFs + tables + documents → structured data
+
+04 Crawl4AI
+▸ https://github.com/unclecode/crawl4ai
+→ web pages → clean AI-ready evidence
+
+05 RAGFlow
+▸ https://github.com/infiniflow/ragflow
+→ retrieve evidence from complex documents
+
+CONNECT THE CLAIMS
+
+06 GraphRAG
+▸ https://github.com/microsoft/graphrag
+→ map entities + relationships across sources
+
+07 LightRAG
+▸ https://github.com/HKUDS/LightRAG
+→ retrieve across connected knowledge
+
+CROSS-CHECK EVERYTHING
+
+08 Open Deep Research
+▸ https://github.com/langchain-ai/open_deep_research
+→ research across multiple sources
+
+09 DeepEval
+▸ https://github.com/confident-ai/deepeval
+→ evaluate whether the output actually holds up
+
+10 Ragas
+▸ https://github.com/explodinggradients/ragas
+→ measure retrieval + answer quality
+
+the evidence loop:
+
+question → split → search → extract → link facts → compare sources → check claims → cite → report
+
+47 sources can become 30 claims
+30 claims can become 26 citations
+
+but only after the agent checks which evidence actually supports what it wants to say
+
+that's the difference
+
+AI can generate an answer in seconds
+
+the interesting stack is the one that can show you why you should believe it
