@@ -2203,7 +2203,7 @@ function hasClaudeCodePromptSettingAction(sourceText) {
 }
 
 // Main post-processing function
-function postProcessOutput(output, sourceText, type) {
+function postProcessOutput(output, sourceText, type, provenance = null) {
   const issues = [];
   let processed = output.trim();
 
@@ -2663,6 +2663,12 @@ function postProcessOutput(output, sourceText, type) {
   } else {
     processed = cleanBodyText(processed);
   }
+  // 9e. Community mod/repo credited to the vendor ("Claude Code ra mắt mod…").
+  if (provenance && typeof FeedWriterSummaryPolicy !== "undefined" && FeedWriterSummaryPolicy.findMisattribution) {
+    const misattribution = FeedWriterSummaryPolicy.findMisattribution(processed, provenance);
+    if (misattribution) issues.push(misattribution);
+  }
+
   // 10. Hallucination detection: check if output contains numbers not in source
   if (typeof sourceText === "string") {
     const sourceNums = numericEvidenceTokens(sourceText);
@@ -3023,6 +3029,12 @@ async function handleStream(
     postDate,
   );
   if (lengthBudget) systemPrompt += "\n\n" + lengthBudget;
+  const provenance =
+    typeof FeedWriterSummaryPolicy !== "undefined" && FeedWriterSummaryPolicy.detectProvenance
+      ? FeedWriterSummaryPolicy.detectProvenance({ text: completeSource, author, sourceUrl })
+      : null;
+  const provenanceRule = provenance ? FeedWriterSummaryPolicy.buildProvenanceInstruction(provenance) : "";
+  if (provenanceRule) systemPrompt += "\n\n" + provenanceRule;
 
   const streamFns = {
     groq: callGroqStream,
@@ -3339,8 +3351,8 @@ async function handleStream(
           );
         }
         const postResult = recordResult
-          ? postProcessOutput(result.summary, text, type)
-          : postProcessOutput(result.summary, text, activeType);
+          ? postProcessOutput(result.summary, text, type, provenance)
+          : postProcessOutput(result.summary, text, activeType, provenance);
         if (postResult.failure) {
           const reason = postResult.failure === "provider_refusal"
             ? "provider-refusal"
@@ -3522,6 +3534,7 @@ const BLOCKING_ISSUE_MARKERS = [
   "đảo tác nhân",
   "Lead có thể đảo",
   "viết như người trải nghiệm",
+  "Gán nhầm cho hãng",
 ];
 
 function blockingQualityIssues(result) {

@@ -1290,7 +1290,141 @@ if (typeof globalThis !== "undefined") {
       "nguồn ít ý thì bài ngắn.";
   }
 
+  // === PROVENANCE: official vendor release vs. community-made work ===
+  // Users build mods, plugins, skills and repos FOR a product (Claude Code
+  // mods, Cursor rules, ChatGPT GPTs...). Summaries kept turning "my new
+  // Claude Code mod" into "Claude Code ra mắt mod mới". Decide who made the
+  // thing from the source, tell the model, and verify the output.
+  const PROVENANCE_BRANDS = [
+    { name: "Claude Code", vendor: "Anthropic", re: /claude\s*code/i },
+    { name: "Claude", vendor: "Anthropic", re: /\bclaude\b/i },
+    { name: "Codex", vendor: "OpenAI", re: /\bcodex\b/i },
+    { name: "ChatGPT", vendor: "OpenAI", re: /\bchatgpt\b/i },
+    { name: "Gemini", vendor: "Google", re: /\bgemini\b/i },
+    { name: "GitHub Copilot", vendor: "GitHub", re: /\bcopilot\b/i },
+    { name: "Cursor", vendor: "Cursor", re: /\bcursor\b/i },
+    { name: "VS Code", vendor: "Microsoft", re: /\bvs\s*code\b|visual studio code/i },
+    { name: "Obsidian", vendor: "Obsidian", re: /\bobsidian\b/i },
+  ];
+
+  // Accounts and GitHub orgs that speak for the vendor itself.
+  const OFFICIAL_HANDLES = new Set([
+    "anthropicai", "claudeai", "anthropic", "openai", "openaidevs", "chatgptapp",
+    "googledeepmind", "geminiapp", "google", "googleai", "github", "cursor_ai",
+    "code", "vscode", "obsdmd", "microsoft",
+  ]);
+  const OFFICIAL_GITHUB_ORGS = new Set([
+    "anthropics", "openai", "google", "google-gemini", "google-deepmind",
+    "github", "microsoft", "getcursor", "cursor", "obsidianmd",
+  ]);
+  const OFFICIAL_DOMAINS = /(?:^|\.)(?:anthropic\.com|claude\.com|claude\.ai|openai\.com|blog\.google|deepmind\.google|github\.blog|cursor\.com|code\.visualstudio\.com|obsidian\.md)$/i;
+
+  const COMMUNITY_ARTIFACT =
+    "(?:mod|mods|plugin|plug-in|skill|extension|tool|app|repo|project|library|cli|hook|agent|mcp(?:\\s+server)?|theme|status\\s?line|script|bot|wrapper|template|prompt\\s+pack)";
+  const COMMUNITY_SIGNALS = [
+    new RegExp("\\b(?:I|I've|I\\s+have|I'm|we|we've|we\\s+have)\\s+(?:just\\s+|finally\\s+|recently\\s+)?(?:built|made|created|wrote|released|shipped|launched|open[- ]?sourced|published|developed|coded|hacked\\s+together|put\\s+together|been\\s+(?:building|working\\s+on))\\b", "i"),
+    new RegExp("\\b(?:my|our)\\s+(?:new\\s+|first\\s+|own\\s+|little\\s+|latest\\s+|open[- ]source\\s+|side\\s+)?(?:[\\w-]+\\s+){0,3}" + COMMUNITY_ARTIFACT + "\\b", "i"),
+    /\b(?:check\s+out|introducing|meet)\s+my\b/i,
+    /\b(?:community[- ]made|community|unofficial|fan[- ]made|third[- ]party|open[- ]source(?:d)?\s+by)\b/i,
+    new RegExp("(?:mình|tôi|em|bọn\\s+mình|chúng\\s+tôi|team\\s+mình)\\s+(?:vừa\\s+|mới\\s+|đã\\s+)?(?:làm|viết|tạo|build|phát\\s+triển|code|ra\\s+mắt|chia\\s+sẻ|open[- ]?source|xây\\s+dựng)\\s+(?:được\\s+)?(?:một\\s+|cái\\s+|con\\s+|bộ\\s+)?(?:" + COMMUNITY_ARTIFACT + "|công\\s+cụ|ứng\\s+dụng|tiện\\s+ích|dự\\s+án|tính\\s+năng)", "iu"),
+    /\b(?:cộng\s+đồng|không\s+chính\s+thức|bên\s+thứ\s+ba)\b/iu,
+  ];
+
+  const STRONG_SIGNAL_INDEXES = new Set([0, 1, 2, 4]);
+
+  function handleFromUrl(sourceUrl) {
+    const m = String(sourceUrl || "").match(/^https?:\/\/(?:www\.|mobile\.)?(?:x|twitter|threads)\.(?:com|net)\/@?([A-Za-z0-9_.]{1,30})\/(?:status|post)\//i);
+    return m ? m[1] : "";
+  }
+
+  function detectProvenance(options = {}) {
+    const text = String(options.text || "");
+    const author = String(options.author || "").trim();
+    const sourceUrl = String(options.sourceUrl || "");
+    const brands = PROVENANCE_BRANDS.filter((b) => b.re.test(text))
+      // "Claude Code" already implies "Claude".
+      .filter((b, _, all) => !(b.name === "Claude" && all.some((o) => o.name === "Claude Code")));
+    const handle = handleFromUrl(sourceUrl);
+    const signals = [];
+
+    let host = "";
+    try { host = new URL(sourceUrl).hostname; } catch (_) {}
+    const officialAccount =
+      (handle && OFFICIAL_HANDLES.has(handle.toLowerCase())) ||
+      (host && OFFICIAL_DOMAINS.test(host));
+    if (officialAccount) {
+      return { kind: "official", brands, creator: handle || host, signals: ["official_account"] };
+    }
+
+    // First-person creation ("my new mod", "mình vừa viết plugin") is strong;
+    // a "community" mention or a third-party repo link is weak.
+    let strong = false;
+    COMMUNITY_SIGNALS.forEach((re, index) => {
+      if (!re.test(text)) return;
+      signals.push(re.source.slice(0, 40));
+      if (STRONG_SIGNAL_INDEXES.has(index)) strong = true;
+    });
+    const repoOwners = [...text.matchAll(/github\.com\/([A-Za-z0-9-]{1,39})\/[A-Za-z0-9_.-]+/gi)]
+      .map((m) => m[1].toLowerCase());
+    const communityRepo = repoOwners.find((owner) => !OFFICIAL_GITHUB_ORGS.has(owner));
+    if (communityRepo) signals.push("github:" + communityRepo);
+
+    // A news post about a vendor release that also mentions community work
+    // ("Anthropic launched plugins; the community built 500") stays unknown.
+    const vendorAnnouncement = brands.some((b) => new RegExp(
+      "(?<![\\p{L}])(?:" + b.vendor + "|" + b.name.replace(/\s+/g, "\\s+") + ")\\s+(?:has\\s+|have\\s+|just\\s+|officially\\s+|vừa\\s+|đã\\s+|chính\\s+thức\\s+)*" +
+        "(?:released|releases|launched|launches|announced|announces|introduced|introduces|ships|shipped|rolled\\s+out|ra\\s+mắt|công\\s+bố|phát\\s+hành|giới\\s+thiệu)",
+      "iu",
+    ).test(text));
+    if (!brands.length || !signals.length || (vendorAnnouncement && !strong)) {
+      return { kind: "unknown", brands, creator: "", signals };
+    }
+    const creator = handle ? "@" + handle : author || (communityRepo ? "tác giả repo " + communityRepo : "");
+    return { kind: "community", brands, creator, signals };
+  }
+
+  function buildProvenanceInstruction(provenance) {
+    if (!provenance || provenance.kind !== "community" || !provenance.brands.length) return "";
+    const names = provenance.brands.map((b) => b.name);
+    const vendors = [...new Set(provenance.brands.map((b) => b.vendor))];
+    const who = provenance.creator
+      ? "do " + provenance.creator + " (người dùng/lập trình viên cộng đồng) tạo ra"
+      : "do một người dùng/lập trình viên cộng đồng tạo ra";
+    return "NGUỒN GỐC SẢN PHẨM — DỮ KIỆN HỆ THỐNG ĐÃ XÁC ĐỊNH:\n" +
+      "- Thứ được nói tới trong nguồn (mod, plugin, skill, repo, công cụ...) " + who + " cho " + names.join(", ") +
+      ". Đây KHÔNG phải sản phẩm hay tính năng chính hãng của " + names.concat(vendors).filter((v, i, a) => a.indexOf(v) === i).join("/") + ".\n" +
+      "- Chủ ngữ của tiêu đề và lead là chính mod/dự án đó hoặc tác giả của nó: viết \"Mod 'X' cho " + names[0] + " giúp…\", \"Lập trình viên tạo mod… cho " + names[0] + "\".\n" +
+      "- CẤM viết " + names[0] + " / " + vendors[0] + " \"ra mắt\", \"giới thiệu\", \"bổ sung\", \"thêm\", \"cập nhật\", \"phát hành\" thứ này; CẤM gọi là \"tính năng mới của " + names[0] + "\" hay \"chính thức\".";
+  }
+
+  const VENDOR_ACTION =
+    "(?:chính\\s+thức\\s+)?(?:vừa\\s+|đã\\s+|mới\\s+|sẽ\\s+)?(?:ra\\s+mắt|giới\\s+thiệu|công\\s+bố|tung\\s+ra|phát\\s+hành|bổ\\s+sung|thêm|trình\\s+làng|cập\\s+nhật|mang\\s+(?:đến|tới|lại)|có\\s+thêm|hỗ\\s+trợ\\s+thêm|cho\\s+ra\\s+mắt|mở\\s+rộng|nâng\\s+cấp|launch(?:es|ed)?|releases?d?|adds?)";
+
+  // Returns an issue string when a community work is credited to the vendor.
+  function findMisattribution(output, provenance) {
+    if (!provenance || provenance.kind !== "community") return "";
+    const paragraphs = String(output || "").split(/\n\s*\n/).filter((p) => p.trim());
+    const head = paragraphs.slice(0, 2).join("\n");
+    const subjects = [...new Set(provenance.brands.flatMap((b) => [b.name, b.vendor]))];
+    for (const subject of subjects) {
+      const name = subject.replace(/\s+/g, "\\s+");
+      const active = new RegExp("(?<![\\p{L}\\p{N}])" + name + "\\s+" + VENDOR_ACTION + "(?![\\p{L}])", "iu");
+      const passive = new RegExp("được\\s+" + name + "\\s+" + VENDOR_ACTION, "iu");
+      const feature = new RegExp("(?:tính\\s+năng|chế\\s+độ|bản\\s+cập\\s+nhật)\\s+(?:mới\\s+)?(?:chính\\s+thức\\s+)?(?:của\\s+)?" + name + "(?![\\p{L}])", "iu");
+      const match = head.match(active) || head.match(passive) || head.match(feature);
+      if (match) {
+        return "[!] Gán nhầm cho hãng: nguồn là mod/dự án cộng đồng" +
+          (provenance.creator ? " của " + provenance.creator : "") +
+          ", nhưng bài viết ghi \"" + match[0].trim() + "\" như thể " + subject + " làm ra.";
+      }
+    }
+    return "";
+  }
+
   const api = {
+    detectProvenance,
+    buildProvenanceInstruction,
+    findMisattribution,
     countWords,
     buildLengthBudgetInstruction,
     decideSummary,
@@ -5343,7 +5477,7 @@ function hasClaudeCodePromptSettingAction(sourceText) {
 }
 
 // Main post-processing function
-function postProcessOutput(output, sourceText, type) {
+function postProcessOutput(output, sourceText, type, provenance = null) {
   const issues = [];
   let processed = output.trim();
 
@@ -5803,6 +5937,12 @@ function postProcessOutput(output, sourceText, type) {
   } else {
     processed = cleanBodyText(processed);
   }
+  // 9e. Community mod/repo credited to the vendor ("Claude Code ra mắt mod…").
+  if (provenance && typeof FeedWriterSummaryPolicy !== "undefined" && FeedWriterSummaryPolicy.findMisattribution) {
+    const misattribution = FeedWriterSummaryPolicy.findMisattribution(processed, provenance);
+    if (misattribution) issues.push(misattribution);
+  }
+
   // 10. Hallucination detection: check if output contains numbers not in source
   if (typeof sourceText === "string") {
     const sourceNums = numericEvidenceTokens(sourceText);
@@ -6163,6 +6303,12 @@ async function handleStream(
     postDate,
   );
   if (lengthBudget) systemPrompt += "\n\n" + lengthBudget;
+  const provenance =
+    typeof FeedWriterSummaryPolicy !== "undefined" && FeedWriterSummaryPolicy.detectProvenance
+      ? FeedWriterSummaryPolicy.detectProvenance({ text: completeSource, author, sourceUrl })
+      : null;
+  const provenanceRule = provenance ? FeedWriterSummaryPolicy.buildProvenanceInstruction(provenance) : "";
+  if (provenanceRule) systemPrompt += "\n\n" + provenanceRule;
 
   const streamFns = {
     groq: callGroqStream,
@@ -6479,8 +6625,8 @@ async function handleStream(
           );
         }
         const postResult = recordResult
-          ? postProcessOutput(result.summary, text, type)
-          : postProcessOutput(result.summary, text, activeType);
+          ? postProcessOutput(result.summary, text, type, provenance)
+          : postProcessOutput(result.summary, text, activeType, provenance);
         if (postResult.failure) {
           const reason = postResult.failure === "provider_refusal"
             ? "provider-refusal"
@@ -6662,6 +6808,7 @@ const BLOCKING_ISSUE_MARKERS = [
   "đảo tác nhân",
   "Lead có thể đảo",
   "viết như người trải nghiệm",
+  "Gán nhầm cho hãng",
 ];
 
 function blockingQualityIssues(result) {
