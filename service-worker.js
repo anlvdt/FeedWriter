@@ -547,6 +547,24 @@ function formatVietnameseNumber(value, options) {
 /**
  * Truncate text with ellipsis
  */
+/**
+ * Uppercase a headline without breaking SI unit symbols after a number:
+ * "pin 5.000 mAh, sạc 65 W" → "PIN 5.000 mAh, SẠC 65 W" (TCVN 7870-1).
+ */
+const UPPERCASE_UNIT_RESTORE = {
+  KM: "km", "KM/H": "km/h", CM: "cm", MM: "mm", NM: "nm", "ΜM": "µm",
+  KG: "kg", MG: "mg", ML: "ml", HZ: "Hz", KHZ: "kHz", MHZ: "MHz", GHZ: "GHz",
+  KW: "kW", KWH: "kWh", WH: "Wh", MAH: "mAh", MS: "ms", DB: "dB", FPS: "fps",
+  GBPS: "Gbps", MBPS: "Mbps", "KM²": "km²", "M²": "m²", "CM²": "cm²", "M³": "m³",
+};
+
+function uppercaseKeepingUnits(text) {
+  return String(text || "").toUpperCase().replace(
+    /(\d) (KM\/H|KM²|CM²|M²|M³|KHZ|MHZ|GHZ|KWH|MAH|GBPS|MBPS|FPS|KM|CM|MM|NM|ΜM|KG|MG|ML|HZ|KW|WH|MS|DB)(?![\p{L}\p{N}])/gu,
+    (_, digit, unit) => digit + " " + UPPERCASE_UNIT_RESTORE[unit],
+  );
+}
+
 function truncate(text, maxLength) {
   if (!text || text.length <= maxLength) return text;
   return text.substring(0, maxLength) + '...';
@@ -613,6 +631,7 @@ if (typeof module !== 'undefined' && module.exports) {
     formatVietnamDateTime,
     formatVietnamIsoString,
     truncate,
+    uppercaseKeepingUnits,
     Logger,
     logger,
     featureFlags
@@ -2014,6 +2033,7 @@ QUY TẮC CHÍNH TẢ VÀ HÀNH VĂN BẮT BUỘC:
   + Không trộn tiếng Anh khi có cách nói Việt rõ nghĩa. Giữ tên riêng và thuật ngữ phổ biến như AI, API, GPU. Chỉ giải thích thuật ngữ theo quyết định INCLUDE/OMIT của hệ thống.
 - Số liệu theo chuẩn Việt Nam: dùng dấu chấm phân nhóm hàng nghìn và dấu phẩy cho phần thập phân (ví dụ 1.234,56). Không đổi dấu trong phiên bản, model, URL, mã định danh hoặc chuỗi kỹ thuật.
 - Dùng chữ số cho tuổi, số lượng, khoảng cách, phần trăm, tỷ lệ, nhiệt độ, giá và model. Giữ nguyên giá trị, điều kiện và phạm vi từ nguồn; viết đơn vị đo theo hệ mét và cách viết thông dụng tại Việt Nam. Chỉ quy đổi đơn vị khi phép quy đổi chính xác và không làm sai độ chính xác của nguồn; nếu không thì giữ nguyên đơn vị gốc.
+- Ký hiệu đơn vị theo TCVN 7870 (SI): luôn có dấu cách giữa số và ký hiệu ("20 km", "16 GB", "65 W", "120 Hz", "5.000 mAh", "60 km/h", "30 °C", "20 m²"); viết đúng chữ hoa/thường của ký hiệu (km, kg, ms, Hz, GHz, kW, kWh, mAh); ký hiệu không thêm "s" số nhiều, không có dấu chấm phía sau. Riêng phần trăm viết liền "50%", độ góc viết liền "30°".
 - Tiền tệ đặt sau số và viết rõ là USD, euro, yên, bảng Anh hoặc đồng (ví dụ 1.200 USD, 299.000 đồng), không dùng ký hiệu $/€/£ trong câu tiếng Việt. Có thể viết nghìn/triệu/tỷ nếu giữ chính xác giá trị; không tự làm tròn hoặc tự quy đổi ngoại tệ sang đồng khi nguồn không cung cấp tỷ giá.
 - Quy đổi thông minh mốc thời gian sang giờ Việt Nam:
   + KHI NÀO QUY ĐỔI: CHỈ quy đổi khi bài viết nói về SỰ KIỆN CÔNG NGHỆ THỰC TẾ, lịch ra mắt, công bố, phát hành, sự cố kỹ thuật hoặc deadline diễn ra ở múi giờ nước ngoài (UTC, GMT, PST, PDT, EST, EDT, PT, ET, JST, KST, CET...). BẮT BUỘC quy đổi sang giờ Việt Nam (ICT / UTC+7) và ghi rõ mốc giờ Việt Nam (ví dụ: '23:00 ngày 10/9 (giờ Việt Nam)' hoặc '0:00 ngày 11/9 (theo giờ Việt Nam)'). Cập nhật mốc thời gian, ngày tháng và buổi trong ngày phù hợp theo giờ Việt Nam. Nêu mốc giờ quy đổi 1 lần tự nhiên, không lặp lại máy móc cụm từ '(giờ Việt Nam)' ở mọi câu.
@@ -5145,6 +5165,87 @@ function numericEvidenceTokens(text) {
 
 // Normalize common English-style numbers and currency symbols in Vietnamese
 // prose. Identifiers, versions and bare dot-separated numbers are left alone.
+// URLs, domains, @handles, `code` and multi-part slugs are identifiers:
+// recasing or respacing them breaks links ("https://GitHub.com/...",
+// "Claude-opus-5-5-demo"). Apply `fn` only to the prose between them.
+const IDENTIFIER_SEGMENT_RE = /https?:\/\/\S+|(?<![\w@])(?:[\w-]+\.)+(?:com|io|dev|ai|org|net|sh|app|co|so|gg|xyz|me|tech|vn)\b\S*|@\w+|`[^`\n]*`|(?<![\w-])[\w.]+(?:[_/][\w.-]+|(?:-[\w.]+){2,})/gi;
+
+function mapOutsideIdentifiers(text, fn) {
+  let out = "";
+  let last = 0;
+  for (const m of String(text).matchAll(IDENTIFIER_SEGMENT_RE)) {
+    out += fn(text.slice(last, m.index)) + m[0];
+    last = m.index + m[0].length;
+  }
+  return out + fn(text.slice(last));
+}
+
+// === TCVN typography ===
+// TCVN 6909:2001 — Vietnamese text in precomposed Unicode (NFC).
+// TCVN 7870-1:2010 (ISO 80000-1) — a space between a number and its unit
+// symbol ("20 km", "5 GB", "30 °C"), SI symbol casing (km, kg, Hz, kWh),
+// no space for the plane-angle degree ("30°"). House style, chosen by the
+// user over strict TCVN: dot thousands / comma decimal ("1.234,5") and "50%"
+// written without a space, as in Vietnamese press.
+const TCVN_UNIT_SYMBOLS = {
+  km: "km", Km: "km", KM: "km", cm: "cm", mm: "mm", nm: "nm", "µm": "µm",
+  kg: "kg", Kg: "kg", KG: "kg", mg: "mg",
+  ml: "ml", mL: "ml", ML: "ml",
+  TB: "TB", tb: "TB", GB: "GB", gb: "GB", MB: "MB", KB: "KB",
+  Gb: "Gb", Mb: "Mb", Gbps: "Gbps", gbps: "Gbps", Mbps: "Mbps", mbps: "Mbps",
+  Hz: "Hz", hz: "Hz", HZ: "Hz", kHz: "kHz", khz: "kHz", KHz: "kHz",
+  MHz: "MHz", mhz: "MHz", Mhz: "MHz", MHZ: "MHz",
+  GHz: "GHz", ghz: "GHz", Ghz: "GHz", GHZ: "GHz",
+  W: "W", kW: "kW", KW: "kW", kw: "kW", Wh: "Wh",
+  kWh: "kWh", KWh: "kWh", kwh: "kWh", KWH: "kWh",
+  mAh: "mAh", mah: "mAh", MAh: "mAh", MAH: "mAh",
+  ms: "ms", dB: "dB", fps: "fps", FPS: "fps",
+};
+const TCVN_UNIT_RE = new RegExp(
+  // Not inside an identifier such as "RTX4090", "DDR5-6000MHz" or "v2.5GB",
+  // but still after a range dash: "10-20GB" → "10-20 GB".
+  "(?<![\\p{L}\\p{N}_./])(?<!\\p{L}[\\p{N}.]*[-‑])(\\d+(?:[.,]\\d+)*)\\s?(" +
+    Object.keys(TCVN_UNIT_SYMBOLS).sort((a, b) => b.length - a.length).join("|") +
+    ")(?![\\p{L}\\p{N}])",
+  "gu",
+);
+const TCVN_SUPERSCRIPT = { 2: "²", 3: "³" };
+// Tone mark on the main vowel for open "oa/oe/uy" syllables, consistent with
+// the rest of the output ("hóa", "khỏe", "thủy"): "hoà" → "hòa".
+const TCVN_TONED = {
+  a: "àáảãạ", e: "èéẻẽẹ", y: "ỳýỷỹỵ", o: "òóỏõọ", u: "ùúủũụ",
+  A: "ÀÁẢÃẠ", E: "ÈÉẺẼẸ", Y: "ỲÝỶỸỴ", O: "ÒÓỎÕỌ", U: "ÙÚỦŨỤ",
+};
+
+function moveOpenSyllableTone(first, toned) {
+  for (const base of ["a", "e", "y", "A", "E", "Y"]) {
+    const tone = TCVN_TONED[base].indexOf(toned);
+    if (tone >= 0) return TCVN_TONED[first][tone] + base;
+  }
+  return first + toned;
+}
+
+function normalizeTcvnTypography(text) {
+  const nfc = String(text || "")
+    .normalize("NFC")
+    // "km/h" looks like a slug to the identifier guard; space it up front.
+    .replace(/(?<![\p{L}\p{N}_.])(\d+(?:[.,]\d+)*)\s?(?:km\/h|Km\/h|KM\/H|kmh)(?![\p{L}\p{N}])/gu, "$1 km/h");
+  return mapOutsideIdentifiers(nfc, (segment) => segment
+    .replace(/(?<![\p{L}\p{N}_./])(\d+(?:[.,]\d+)*)\s?(km|cm|mm|m)([23])(?![\p{L}\p{N}])/gu,
+      (_, n, unit, power) => `${n} ${unit}${TCVN_SUPERSCRIPT[power]}`)
+    .replace(TCVN_UNIT_RE, (_, n, unit) => `${n} ${TCVN_UNIT_SYMBOLS[unit]}`)
+    .replace(/(\d)\s?°\s?([CF])(?![\p{L}\p{N}])/gu, "$1 °$2")
+    .replace(/(\d)\s+%/g, "$1%")
+    .replace(/(?<![qQ])([oO])([àáảãạèéẻẽẹÀÁẢÃẠÈÉẺẼẸ])(?![\p{L}\p{M}])/gu,
+      (_, first, toned) => moveOpenSyllableTone(first, toned))
+    .replace(/(?<![qQ])([uU])([ỳýỷỹỵỲÝỶỸỴ])(?![\p{L}\p{M}])/gu,
+      (_, first, toned) => moveOpenSyllableTone(first, toned))
+    // Punctuation sits on the preceding word and is followed by a space.
+    .replace(/([,;])(?=\p{L})/gu, "$1 ")
+    .replace(/(\S)[ \t]+([,;:!?])(?=\s|$)/gu, "$1$2")
+    .replace(/(\S) {2,}(?=\S)/g, "$1 "));
+}
+
 function normalizeVietnameseNumericNotation(text) {
   const normalizeEnglishNumber = (raw) => {
     const value = String(raw);
@@ -5352,6 +5453,7 @@ function postProcessOutput(output, sourceText, type) {
   // Normalize "*** Giải thích" → "**Giải thích" (old prompt format)
   processed = processed.replace(/^\*{3}\s*/gm, "**");
   processed = normalizeVietnameseNumericNotation(processed);
+  processed = normalizeTcvnTypography(processed);
 
   // Xử lý tiêu đề dòng đầu tiên
   if (type && type.startsWith("summary")) {
@@ -5476,7 +5578,7 @@ function postProcessOutput(output, sourceText, type) {
         }
         lines[i] = cappedTitle || "Cập nhật";
         // Viết hoa toàn bộ tiêu đề
-        lines[i] = lines[i].toUpperCase();
+        lines[i] = typeof uppercaseKeepingUnits === "function" ? uppercaseKeepingUnits(lines[i]) : lines[i].toUpperCase();
         break;
       }
     }
@@ -5571,20 +5673,10 @@ function postProcessOutput(output, sourceText, type) {
       [/\bperplexity\b/gi, "Perplexity"],
       [/\bcursor\b/gi, "Cursor"],
     ];
-    // Never touch URLs, domains, @handles, `code` or multi-part slugs: this
-    // was producing "https://GitHub.com/..." and "Claude-opus-5-5-demo".
-    const protectedRe = /https?:\/\/\S+|(?<![\w@])(?:[\w-]+\.)+(?:com|io|dev|ai|org|net|sh|app|co|so|gg|xyz|me|tech|vn)\b\S*|@\w+|`[^`\n]*`|(?<![\w-])[\w.]+(?:[_/][\w.-]+|(?:-[\w.]+){2,})/gi;
-    let fixedBody = "";
-    let last = 0;
-    const fixSegment = (segment) => {
+    body = mapOutsideIdentifiers(body, (segment) => {
       for (const [re, fix] of brandFixes) segment = segment.replace(re, fix);
       return segment;
-    };
-    for (const m of body.matchAll(protectedRe)) {
-      fixedBody += fixSegment(body.slice(last, m.index)) + m[0];
-      last = m.index + m[0].length;
-    }
-    body = fixedBody + fixSegment(body.slice(last));
+    });
     processed = title + body;
   }
   // Hostnames are case-insensitive; models sometimes write "https://GitHub.com/…".

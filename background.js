@@ -2026,6 +2026,87 @@ function numericEvidenceTokens(text) {
 
 // Normalize common English-style numbers and currency symbols in Vietnamese
 // prose. Identifiers, versions and bare dot-separated numbers are left alone.
+// URLs, domains, @handles, `code` and multi-part slugs are identifiers:
+// recasing or respacing them breaks links ("https://GitHub.com/...",
+// "Claude-opus-5-5-demo"). Apply `fn` only to the prose between them.
+const IDENTIFIER_SEGMENT_RE = /https?:\/\/\S+|(?<![\w@])(?:[\w-]+\.)+(?:com|io|dev|ai|org|net|sh|app|co|so|gg|xyz|me|tech|vn)\b\S*|@\w+|`[^`\n]*`|(?<![\w-])[\w.]+(?:[_/][\w.-]+|(?:-[\w.]+){2,})/gi;
+
+function mapOutsideIdentifiers(text, fn) {
+  let out = "";
+  let last = 0;
+  for (const m of String(text).matchAll(IDENTIFIER_SEGMENT_RE)) {
+    out += fn(text.slice(last, m.index)) + m[0];
+    last = m.index + m[0].length;
+  }
+  return out + fn(text.slice(last));
+}
+
+// === TCVN typography ===
+// TCVN 6909:2001 — Vietnamese text in precomposed Unicode (NFC).
+// TCVN 7870-1:2010 (ISO 80000-1) — a space between a number and its unit
+// symbol ("20 km", "5 GB", "30 °C"), SI symbol casing (km, kg, Hz, kWh),
+// no space for the plane-angle degree ("30°"). House style, chosen by the
+// user over strict TCVN: dot thousands / comma decimal ("1.234,5") and "50%"
+// written without a space, as in Vietnamese press.
+const TCVN_UNIT_SYMBOLS = {
+  km: "km", Km: "km", KM: "km", cm: "cm", mm: "mm", nm: "nm", "µm": "µm",
+  kg: "kg", Kg: "kg", KG: "kg", mg: "mg",
+  ml: "ml", mL: "ml", ML: "ml",
+  TB: "TB", tb: "TB", GB: "GB", gb: "GB", MB: "MB", KB: "KB",
+  Gb: "Gb", Mb: "Mb", Gbps: "Gbps", gbps: "Gbps", Mbps: "Mbps", mbps: "Mbps",
+  Hz: "Hz", hz: "Hz", HZ: "Hz", kHz: "kHz", khz: "kHz", KHz: "kHz",
+  MHz: "MHz", mhz: "MHz", Mhz: "MHz", MHZ: "MHz",
+  GHz: "GHz", ghz: "GHz", Ghz: "GHz", GHZ: "GHz",
+  W: "W", kW: "kW", KW: "kW", kw: "kW", Wh: "Wh",
+  kWh: "kWh", KWh: "kWh", kwh: "kWh", KWH: "kWh",
+  mAh: "mAh", mah: "mAh", MAh: "mAh", MAH: "mAh",
+  ms: "ms", dB: "dB", fps: "fps", FPS: "fps",
+};
+const TCVN_UNIT_RE = new RegExp(
+  // Not inside an identifier such as "RTX4090", "DDR5-6000MHz" or "v2.5GB",
+  // but still after a range dash: "10-20GB" → "10-20 GB".
+  "(?<![\\p{L}\\p{N}_./])(?<!\\p{L}[\\p{N}.]*[-‑])(\\d+(?:[.,]\\d+)*)\\s?(" +
+    Object.keys(TCVN_UNIT_SYMBOLS).sort((a, b) => b.length - a.length).join("|") +
+    ")(?![\\p{L}\\p{N}])",
+  "gu",
+);
+const TCVN_SUPERSCRIPT = { 2: "²", 3: "³" };
+// Tone mark on the main vowel for open "oa/oe/uy" syllables, consistent with
+// the rest of the output ("hóa", "khỏe", "thủy"): "hoà" → "hòa".
+const TCVN_TONED = {
+  a: "àáảãạ", e: "èéẻẽẹ", y: "ỳýỷỹỵ", o: "òóỏõọ", u: "ùúủũụ",
+  A: "ÀÁẢÃẠ", E: "ÈÉẺẼẸ", Y: "ỲÝỶỸỴ", O: "ÒÓỎÕỌ", U: "ÙÚỦŨỤ",
+};
+
+function moveOpenSyllableTone(first, toned) {
+  for (const base of ["a", "e", "y", "A", "E", "Y"]) {
+    const tone = TCVN_TONED[base].indexOf(toned);
+    if (tone >= 0) return TCVN_TONED[first][tone] + base;
+  }
+  return first + toned;
+}
+
+function normalizeTcvnTypography(text) {
+  const nfc = String(text || "")
+    .normalize("NFC")
+    // "km/h" looks like a slug to the identifier guard; space it up front.
+    .replace(/(?<![\p{L}\p{N}_.])(\d+(?:[.,]\d+)*)\s?(?:km\/h|Km\/h|KM\/H|kmh)(?![\p{L}\p{N}])/gu, "$1 km/h");
+  return mapOutsideIdentifiers(nfc, (segment) => segment
+    .replace(/(?<![\p{L}\p{N}_./])(\d+(?:[.,]\d+)*)\s?(km|cm|mm|m)([23])(?![\p{L}\p{N}])/gu,
+      (_, n, unit, power) => `${n} ${unit}${TCVN_SUPERSCRIPT[power]}`)
+    .replace(TCVN_UNIT_RE, (_, n, unit) => `${n} ${TCVN_UNIT_SYMBOLS[unit]}`)
+    .replace(/(\d)\s?°\s?([CF])(?![\p{L}\p{N}])/gu, "$1 °$2")
+    .replace(/(\d)\s+%/g, "$1%")
+    .replace(/(?<![qQ])([oO])([àáảãạèéẻẽẹÀÁẢÃẠÈÉẺẼẸ])(?![\p{L}\p{M}])/gu,
+      (_, first, toned) => moveOpenSyllableTone(first, toned))
+    .replace(/(?<![qQ])([uU])([ỳýỷỹỵỲÝỶỸỴ])(?![\p{L}\p{M}])/gu,
+      (_, first, toned) => moveOpenSyllableTone(first, toned))
+    // Punctuation sits on the preceding word and is followed by a space.
+    .replace(/([,;])(?=\p{L})/gu, "$1 ")
+    .replace(/(\S)[ \t]+([,;:!?])(?=\s|$)/gu, "$1$2")
+    .replace(/(\S) {2,}(?=\S)/g, "$1 "));
+}
+
 function normalizeVietnameseNumericNotation(text) {
   const normalizeEnglishNumber = (raw) => {
     const value = String(raw);
@@ -2233,6 +2314,7 @@ function postProcessOutput(output, sourceText, type) {
   // Normalize "*** Giải thích" → "**Giải thích" (old prompt format)
   processed = processed.replace(/^\*{3}\s*/gm, "**");
   processed = normalizeVietnameseNumericNotation(processed);
+  processed = normalizeTcvnTypography(processed);
 
   // Xử lý tiêu đề dòng đầu tiên
   if (type && type.startsWith("summary")) {
@@ -2357,7 +2439,7 @@ function postProcessOutput(output, sourceText, type) {
         }
         lines[i] = cappedTitle || "Cập nhật";
         // Viết hoa toàn bộ tiêu đề
-        lines[i] = lines[i].toUpperCase();
+        lines[i] = typeof uppercaseKeepingUnits === "function" ? uppercaseKeepingUnits(lines[i]) : lines[i].toUpperCase();
         break;
       }
     }
@@ -2452,20 +2534,10 @@ function postProcessOutput(output, sourceText, type) {
       [/\bperplexity\b/gi, "Perplexity"],
       [/\bcursor\b/gi, "Cursor"],
     ];
-    // Never touch URLs, domains, @handles, `code` or multi-part slugs: this
-    // was producing "https://GitHub.com/..." and "Claude-opus-5-5-demo".
-    const protectedRe = /https?:\/\/\S+|(?<![\w@])(?:[\w-]+\.)+(?:com|io|dev|ai|org|net|sh|app|co|so|gg|xyz|me|tech|vn)\b\S*|@\w+|`[^`\n]*`|(?<![\w-])[\w.]+(?:[_/][\w.-]+|(?:-[\w.]+){2,})/gi;
-    let fixedBody = "";
-    let last = 0;
-    const fixSegment = (segment) => {
+    body = mapOutsideIdentifiers(body, (segment) => {
       for (const [re, fix] of brandFixes) segment = segment.replace(re, fix);
       return segment;
-    };
-    for (const m of body.matchAll(protectedRe)) {
-      fixedBody += fixSegment(body.slice(last, m.index)) + m[0];
-      last = m.index + m[0].length;
-    }
-    body = fixedBody + fixSegment(body.slice(last));
+    });
     processed = title + body;
   }
   // Hostnames are case-insensitive; models sometimes write "https://GitHub.com/…".

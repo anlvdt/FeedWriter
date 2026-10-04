@@ -497,7 +497,7 @@ const StatusFormatter = {
         case "title": {
           let t = this._unwrapMarkdown(block.text);
           if (profile.titleUppercase) {
-            t = t.toUpperCase();
+            t = typeof uppercaseKeepingUnits === "function" ? uppercaseKeepingUnits(t) : t.toUpperCase();
           }
           /* title emojis disabled */
           // Skip unicode bold on titles — uppercase already provides emphasis,
