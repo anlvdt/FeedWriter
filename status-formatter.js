@@ -99,36 +99,43 @@ const StatusFormatter = {
       "",
     );
     
-    // Fix AI sometimes ignoring "write normally, system will uppercase" instruction
-    // Check if the ENTIRE content (not just body) is mostly uppercase
-    const testText = text.replace(/\s/g, ""); // Remove whitespace for testing
-    
+    // Fix AI sometimes ignoring "write normally, system will uppercase"
+    // instruction. Measure the BODY only: the headline is uppercased on
+    // purpose, and on a short post it alone pushed the ratio over the limit,
+    // so the whole body was lowercased ("gpt-oss 120b rời antigravity").
+    const allLines = text.split("\n");
+    const titleIndex = allLines.findIndex((line) => line.trim());
+    const bodyLines = allLines.length > 1 && titleIndex >= 0
+      ? allLines.filter((_, index) => index !== titleIndex)
+      : allLines;
+    const testText = bodyLines.join("").replace(/\s/g, "");
+
     // Count uppercase letters (Vietnamese + English) - comprehensive Unicode ranges
     const upperPattern = /[A-ZÀÁẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬÈÉẺẼẸÊẾỀỂỄỆÌÍỈĨỊÒÓỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÙÚỦŨỤƯỨỪỬỮỰỲÝỶỸỴĐ]/g;
     const actualUppercaseCount = (testText.match(upperPattern) || []).length;
-    
+
     // Count total letters (both cases) - same Unicode ranges
     const allLetterPattern = /[A-Za-zÀÁẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬÈÉẺẼẸÊẾỀỂỄỆÌÍỈĨỊÒÓỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÙÚỦŨỤƯỨỪỬỮỰỲÝỶỸỴĐàáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđ]/g;
     const totalLetters = (testText.match(allLetterPattern) || []).length;
-    
+
     const uppercaseRatio = totalLetters > 0 ? actualUppercaseCount / totalLetters : 0;
-    
+
     if (uppercaseRatio > 0.6) {
-      // AI wrote everything in uppercase - normalize to proper case
-      const lines = text.split("\n");
-      
-      text = lines.map((line) => {
+      // AI wrote the body in uppercase - normalize it to sentence case. The
+      // headline line keeps its case; it is uppercased again when rendered.
+      text = allLines.map((line, index) => {
         const trimmed = line.trim();
         if (!trimmed) return line; // Keep empty lines
-        
+        if (index === titleIndex && allLines.length > 1) return line;
+
         // Convert to lowercase first
         let normalized = line.toLowerCase();
-        
+
         // Capitalize first letter of each sentence
-        normalized = normalized.replace(/(^|[.!?]\s+)([a-zàáảãạăắằẳẵặâấầẩẫậđèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵ])/g, 
+        normalized = normalized.replace(/(^|[.!?]\s+)([a-zàáảãạăắằẳẵặâấầẩẫậđèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵ])/g,
           (match, prefix, char) => prefix + char.toUpperCase()
         );
-        
+
         return normalized;
       }).join("\n");
     }

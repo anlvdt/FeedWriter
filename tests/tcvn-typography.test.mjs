@@ -59,3 +59,13 @@ describe("headline uppercase keeps unit symbols", () => {
     assert.match(out.split("\n")[0], /PIN 5000 mAh SẠC 65 W MÀN 120 Hz/);
   });
 });
+
+describe("dates", () => {
+  it("removes spaces around the slash in dates and fractions", () => {
+    assert.equal(tcvn("Từ ngày 2 /11, hạn 2 / 11 và 2/ 11/2026; tỷ lệ 1 /2."), "Từ ngày 2/11, hạn 2/11 và 2/11/2026; tỷ lệ 1/2.");
+  });
+
+  it("leaves URLs and non-numeric slashes alone", () => {
+    assert.equal(tcvn("xem https://x.com/a/status/2 và và/hoặc"), "xem https://x.com/a/status/2 và và/hoặc");
+  });
+});

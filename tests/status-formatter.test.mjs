@@ -296,3 +296,23 @@ describe("StatusFormatter.format", () => {
     assert.ok(!/Mở bài|Thân bài|Kết bài/i.test(html), html);
   });
 });
+
+describe("uppercase detection ignores the headline", () => {
+  it("keeps proper names in a short body under an uppercase headline", () => {
+    const out = StatusFormatter.format(
+      "ANTIGRAVITY THÊM CLAUDE OPUS 5.5 VÀ SONNET 5.5 VÀO GÓI PRO VÀ ULTRA\n\nTừ ngày 2/11, GPT-OSS 120B rời Antigravity.",
+      "facebook",
+      {},
+    );
+    assert.match(out, /Từ ngày 2\/11, GPT-OSS 120B rời Antigravity\./);
+  });
+
+  it("still normalizes a body the model wrote in all caps", () => {
+    const out = StatusFormatter.format(
+      "Tiêu đề bài viết\n\nANTIGRAVITY THÊM MÔ HÌNH MỚI CHO GÓI TRẢ PHÍ. NGƯỜI DÙNG MIỄN PHÍ KHÔNG CÓ.",
+      "facebook",
+      {},
+    );
+    assert.match(out, /Antigravity thêm mô hình mới cho gói trả phí\. Người dùng miễn phí không có\./);
+  });
+});
