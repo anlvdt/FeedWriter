@@ -2225,14 +2225,16 @@ button.fbs-btn:focus-visible,
 }
 
 /* ===== TONE SELECTOR (Feature 2) ===== */
-.fbs-tone-row {
+.fbs-tone-row,
+.fbs-format-row {
   display: none;
   align-items: center;
   gap: 6px;
   padding: 8px 18px 4px;
   flex-wrap: wrap;
 }
-.fbs-tone-row.fbs-tone-visible {
+.fbs-tone-row.fbs-tone-visible,
+.fbs-format-row.fbs-tone-visible {
   display: flex;
 }
 .fbs-tone-label {
@@ -2279,6 +2281,25 @@ button.fbs-btn:focus-visible,
   background: #1C2B23;
   color: #fff;
   box-shadow: 0 0 8px rgba(39,39,42,0.35);
+}
+
+/* ===== FORMAT (Đổi khuôn) row + detected-kind badge ===== */
+/* .fbs-format-btn reuses .fbs-tone-btn styles via its class list. */
+.fbs-kind-badge {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  border: 1px solid rgba(168,192,180,0.4);
+  background: rgba(42,61,51,0.25);
+  color: #A8C0B4;
+  white-space: nowrap;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-weight: 600;
+}
+.fbs-panel[data-fbs-theme="light"] .fbs-kind-badge {
+  border-color: rgba(28,43,35,0.35);
+  background: rgba(28,43,35,0.1);
+  color: #1C2B23;
 }
 
 /* ===== MODEL SELECTOR (Feature 8) ===== */
@@ -2465,7 +2486,8 @@ button.fbs-allpost-btn:hover,
     font-size: 12px;
   }
 
-  .fbs-tone-row {
+  .fbs-tone-row,
+  .fbs-format-row {
     padding: 6px 14px 4px;
   }
 
@@ -2545,7 +2567,8 @@ button.fbs-allpost-btn:hover,
 .fbs-edit-btn:focus-visible,
 .fbs-post-status-btn:focus-visible,
 .fbs-floating-btn:focus-visible,
-.fbs-tone-btn:focus-visible {
+.fbs-tone-btn:focus-visible,
+.fbs-format-btn:focus-visible {
   outline: 2px solid #2A3D33;
   outline-offset: 2px;
 }
@@ -2736,6 +2759,7 @@ button.fbs-allpost-btn:hover,
 /* Minimized state */
 .fbs-panel.fbs-minimized .fbs-panel-body,
 .fbs-panel.fbs-minimized .fbs-tone-row,
+.fbs-panel.fbs-minimized .fbs-format-row,
 .fbs-panel.fbs-minimized .fbs-panel-footer {
   display: none !important;
 }
@@ -3633,7 +3657,8 @@ button.fbs-allpost-btn:hover,
 }
 
 /* Tone chips */
-.fbs-panel.fbs-ui-v2 .fbs-tone-row {
+.fbs-panel.fbs-ui-v2 .fbs-tone-row,
+.fbs-panel.fbs-ui-v2 .fbs-format-row {
   display: none;
   flex-direction: column;
   gap: 8px;
@@ -3643,8 +3668,21 @@ button.fbs-allpost-btn:hover,
 }
 
 .fbs-panel.fbs-ui-v2 .fbs-tone-row.fbs-tone-visible,
-.fbs-panel.fbs-ui-v2 .fbs-tone-row:not([hidden]) {
+.fbs-panel.fbs-ui-v2 .fbs-tone-row:not([hidden]),
+.fbs-panel.fbs-ui-v2 .fbs-format-row.fbs-tone-visible,
+.fbs-panel.fbs-ui-v2 .fbs-format-row:not([hidden]) {
   display: flex !important;
+}
+
+.fbs-panel.fbs-ui-v2 .fbs-kind-badge {
+  font-size: 10px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--fbs-border);
+  background: var(--fbs-accent-soft);
+  color: #D5E5DB;
+  white-space: nowrap;
+  font-weight: 600;
 }
 
 .fbs-panel.fbs-ui-v2 .fbs-tone-label {

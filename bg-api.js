@@ -394,6 +394,7 @@ async function getSystemPrompt(
   glossaryDecision = null,
   postTime = null,
   postDate = null,
+  contentKind = null,
 ) {
   const data = await chrome.storage.sync.get([
     "customSummaryPrompt",
@@ -409,10 +410,25 @@ async function getSystemPrompt(
 
   let prompt;
 
+  // A classified non-news content kind routes to its dedicated template.
+  // This intentionally wins over customSummaryPrompt/promptStyle/summaryLength:
+  // those global presets shape the NEWS rewrite; a tutorial/review/opinion
+  // source needs its own structure, and an explicit "Đổi khuôn" chip is a
+  // per-request user choice.
+  const kindTemplateKey =
+    type === "summary" && contentKind && contentKind !== "news"
+      ? "summary_" + contentKind
+      : null;
+
   // 1. Non-summary task types must keep their dedicated behavior. A global
   // custom summary prompt must never turn comment analysis into article copy.
   if (type !== "summary" && PROMPT_TEMPLATES[type]) {
     prompt = PROMPT_TEMPLATES[type];
+  }
+  // 1b. Content-kind template (tutorial/review/opinion) — per-request or
+  // auto-detected. Skipped for news so existing presets keep working.
+  else if (kindTemplateKey && PROMPT_TEMPLATES[kindTemplateKey]) {
+    prompt = PROMPT_TEMPLATES[kindTemplateKey];
   }
   // 2. Custom user prompt controls summary style, while hard product policies
   // are appended below and cannot be replaced.
@@ -455,10 +471,14 @@ async function getSystemPrompt(
     prompt += siteHints[site];
   }
 
-  // Detect source material only to separate facts from claims. Output mode is
-  // always a news rewrite and must never change with the source's voice.
+  // Detect source material only to separate facts from claims. For news the
+  // output mode never changes with the source's voice; non-news kinds keep
+  // their own template contract instead.
   prompt +=
-    "\n\nTRƯỚC KHI VIẾT, hãy xác định phần nào là sự kiện, dữ kiện, ý kiến, trải nghiệm hoặc hướng dẫn. Dù nguồn thuộc loại nào, đầu ra vẫn phải là BẢN TIN KHÁCH QUAN.";
+    "\n\nTRƯỚC KHI VIẾT, hãy xác định phần nào là sự kiện, dữ kiện, ý kiến, trải nghiệm hoặc hướng dẫn." +
+    (kindTemplateKey
+      ? " Đầu ra PHẢI theo đúng khuôn thể loại được giao ở trên."
+      : " Dù nguồn thuộc loại nào, đầu ra vẫn phải là BẢN TIN KHÁCH QUAN.");
 
   prompt +=
     "\n- Tiêu đề (dòng đầu tiên) viết bình thường, hệ thống sẽ tự động viết hoa." +
@@ -492,11 +512,12 @@ async function getSystemPrompt(
   // Style rules are active for every template, including a custom summary prompt.
   prompt += "\n\n" + VNREVIEW_RULES;
 
-  // Hard product invariant: FeedWriter always treats input as a source and
-  // rewrites it as news. Appending near-last ensures custom prompts cannot
-  // switch the output back to narration or first-person storytelling. The
-  // user-chosen tone block appended after it may only restyle presentation.
-  prompt += "\n\n" + NEWS_REWRITE_POLICY;
+  // Hard product invariant: FeedWriter always treats input as a source.
+  // News keeps the full news-rewrite policy (inverted pyramid, hook recipe,
+  // first-person ban); non-news kinds get the fidelity subset so step-by-step
+  // guides, first-person reviews and opinion attribution stay legal.
+  prompt +=
+    "\n\n" + (kindTemplateKey ? SOURCE_FIDELITY_POLICY : NEWS_REWRITE_POLICY);
 
   const policy =
     typeof FeedWriterSummaryPolicy !== "undefined"
