@@ -354,8 +354,15 @@ const UPPERCASE_UNIT_RESTORE = {
   GBPS: "Gbps", MBPS: "Mbps", "KM²": "km²", "M²": "m²", "CM²": "cm²", "M³": "m³",
 };
 
+// URLs, `code` and file names (DESIGN.md, package.json) keep their case.
+const UPPERCASE_KEEP_RE = /(https?:\/\/\S+|`[^`\n]*`|(?<![\p{L}\p{N}_./-])[\p{L}\p{N}_-]+\.(?:md|mdx|json|jsonc|ya?ml|toml|js|mjs|cjs|ts|tsx|jsx|py|sh|txt|css|html|env|lock|xml|ini|cfg|rs|go|rb|java|kt|swift|sql|csv|ipynb)(?![\p{L}\p{N}]))/iu;
+
 function uppercaseKeepingUnits(text) {
-  return String(text || "").toUpperCase().replace(
+  return String(text || "")
+    .split(UPPERCASE_KEEP_RE)
+    .map((part, index) => (index % 2 ? part : part.toUpperCase()))
+    .join("")
+    .replace(
     /(\d) (KM\/H|KM²|CM²|M²|M³|KHZ|MHZ|GHZ|KWH|MAH|GBPS|MBPS|FPS|KM|CM|MM|NM|ΜM|KG|MG|ML|HZ|KW|WH|MS|DB)(?![\p{L}\p{N}])/gu,
     (_, digit, unit) => digit + " " + UPPERCASE_UNIT_RESTORE[unit],
   );
