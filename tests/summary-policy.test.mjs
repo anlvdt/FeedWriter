@@ -140,3 +140,22 @@ describe("glossary policy", () => {
     assert.equal(result.mode, "omit");
   });
 });
+
+describe("length budget for short sources", () => {
+  it("caps output near the source length for a short post", () => {
+    const text = Array.from({ length: 60 }, (_, i) => `từ${i}`).join(" ") + " https://example.com/a";
+    const out = policy.buildLengthBudgetInstruction(text);
+    assert.match(out, /khoảng 60 từ/);
+    assert.match(out, /khoảng 66 từ/);
+  });
+
+  it("keeps a floor for very short posts", () => {
+    assert.match(policy.buildLengthBudgetInstruction("Apple phát hành iOS 26.1."), /khoảng 40 từ/);
+  });
+
+  it("does not constrain long sources or comment threads", () => {
+    const long = Array.from({ length: 500 }, () => "chữ").join(" ");
+    assert.equal(policy.buildLengthBudgetInstruction(long), "");
+    assert.equal(policy.buildLengthBudgetInstruction("ngắn thôi", "comment_summary"), "");
+  });
+});

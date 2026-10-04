@@ -2912,6 +2912,12 @@ async function handleStream(
     postTime,
     postDate,
   );
+  const lengthBudget =
+    typeof FeedWriterSummaryPolicy !== "undefined" &&
+    FeedWriterSummaryPolicy.buildLengthBudgetInstruction
+      ? FeedWriterSummaryPolicy.buildLengthBudgetInstruction(completeSource, type)
+      : "";
+  if (lengthBudget) systemPrompt += "\n\n" + lengthBudget;
 
   const streamFns = {
     groq: callGroqStream,
