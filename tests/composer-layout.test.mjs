@@ -384,7 +384,7 @@ describe("Feed summary control density", () => {
       scanXSource,
       /getSummaryPolicyDecision\(text, "summary"\)\.shouldSummarize/,
     );
-    assert.match(content, /if \(type === "summary" && SITE !== "x"\)/);
+    assert.match(content, /if \(type === "summary" && SITE !== "x" && !tone\)/);
     assert.match(
       content,
       /SITE !== "x" &&\s*!getSummaryPolicyDecision\(initialText, "summary"\)\.shouldSummarize/,

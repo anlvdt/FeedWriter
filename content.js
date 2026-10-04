@@ -1437,6 +1437,8 @@ function ensureOverlay() {
         '<button type="button" class="fbs-tone-btn" data-tone="reporter">Phóng viên</button>' +
         '<button type="button" class="fbs-tone-btn" data-tone="academic">Học thuật</button>' +
         '<button type="button" class="fbs-tone-btn" data-tone="bullet">Bullet</button>' +
+        '<button type="button" class="fbs-tone-btn" data-tone="translate" title="Dịch nguyên văn, giữ tiêu đề, danh sách và link">Dịch</button>' +
+        '<button type="button" class="fbs-tone-btn" data-tone="list" title="Viết lại dạng danh sách, mỗi mục kèm link repo">List + link</button>' +
       '</div>' +
     '</div>' +
     '<div class="fbs-format-row" hidden>' +
@@ -1801,7 +1803,8 @@ function openOverlay(html, streaming, type = "summary") {
   const showTone =
     !isSummarizing &&
     !streaming &&
-    html.includes("fbs-result") &&
+    (html.includes("fbs-result") || html.includes("fbs-error-info")) &&
+    !!lastSummarizeParams &&
     type === "summary";
   if (toneRow) {
     toneRow.hidden = !showTone;
@@ -3386,9 +3389,11 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
   // deciding which Facebook posts should be offered automatically, but do not
   // reject a tweet after the user has deliberately asked FeedWriter to rewrite
   // it as a concise news item.
-  if (type === "summary" && SITE !== "x") {
+  if (type === "summary" && SITE !== "x" && !tone) {
     const decision = getSummaryPolicyDecision(text, type);
     if (!decision.shouldSummarize) {
+      // Keep the source so the tone chips (Dịch / List + link) can rewrite it.
+      lastSummarizeParams = { text, type, _element: contextElement, tone: null, xPostIdentity: null };
       const message = SITE === "x"
         ? "Tweet này đã đủ ngắn, chưa cần tóm tắt. FeedWriter chỉ tóm tắt bài X dài hoặc có nhiều ý."
         : "Nội dung này đã đủ ngắn hoặc chưa có đủ ý để tóm tắt.";

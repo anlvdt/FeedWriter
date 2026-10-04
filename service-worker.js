@@ -1175,6 +1175,12 @@ if (typeof globalThis !== "undefined") {
     return { translate: false, reason: "summarizable" };
   }
 
+  // Explicit "rewrite as translation" request: any language, but one request.
+  function canForceTranslation(text) {
+    const t = String(text || "").trim();
+    return !!t && t.length <= MAX_TRANSLATE_CHARS;
+  }
+
   // Foreign-language sources short enough to translate in one request may fall
   // back from summarizing to translating when there is nothing to summarize.
   function canFallbackToTranslation(text) {
@@ -1509,6 +1515,7 @@ if (typeof globalThis !== "undefined") {
     decideSummaryAndGlossary,
     decideTranslation,
     canFallbackToTranslation,
+    canForceTranslation,
     looksVietnamese,
     isListOnly,
     isTitledListPost,
@@ -3041,6 +3048,10 @@ async function getSystemPrompt(
         "- Câu mở đầu nêu ngay điểm khiến người đọc phải dừng lại (kết quả/tác động trước, bối cảnh sau). Câu ngắn, nhịp nhanh, năng lượng cao.\n" +
         "- Nội dung vẫn là bản tin fact-first, mỗi ý một đoạn. CẤM kể chuyện, khung mở/thân/kết và câu hỏi mở.\n" +
         "- CẤM từ ngữ giật gân, phóng đại (gây sốc, chấn động, toang, không thể tin nổi); không thổi phồng mức chắc chắn của nguồn.",
+      list: "\n\nGHI ĐÈ TONE — DANH SÁCH KÈM LINK (chỉ dẫn trình bày cuối — ĐỔI FORMAT):\n" +
+        "- Viết lại thành bài DANH SÁCH: dòng đầu là tiêu đề (đúng số mục thực tế), một dòng trống, 1-2 câu dẫn ngắn, một dòng trống, rồi các mục.\n" +
+        "- Mỗi mục là MỘT khối: dòng 1 \"số. Tên mục\"; dòng 2 mô tả ngắn 1-2 câu; dòng 3 là URL đầy đủ, nguyên văn của mục đó (GitHub/website). Giữ đủ tất cả các mục theo đúng thứ tự nguồn, không gộp, không bỏ.\n" +
+        "- Chỉ dùng URL có trong nguồn, không cắt bằng \"…\", không tự bịa. Mục không có URL trong nguồn thì bỏ dòng URL. KHÔNG khung mở/thân/kết, không câu hỏi mở.",
       bullet: "\n\nGHI ĐÈ TONE — BULLET POINTS THUẦN (chỉ dẫn trình bày cuối — ĐỔI FORMAT):\n" +
         "- Sau tiêu đề (1 dòng + 1 dòng trống), TOÀN BỘ thân bài trình bày bằng bullets bắt đầu bằng \"·\". Mỗi bullet: · Keyword/Dữ kiện: giải thích kèm số liệu cụ thể.\n" +
         "- Xếp bullet từ quan trọng đến bổ sung, một bullet một dữ kiện riêng biệt trong nguồn. KHÔNG đoạn văn, không kể lại, không khung mở/thân/kết, không câu hỏi mở.",
@@ -6396,11 +6407,23 @@ async function handleStream(
     typeof FeedWriterSummaryPolicy !== "undefined" &&
     FeedWriterSummaryPolicy.canFallbackToTranslation(completeSource);
   let translateMode = false;
+  // Tone chips "Dịch" / "List + link" are explicit user requests: never let the
+  // automatic summary policy veto them.
+  const explicitRewrite = type === "summary" && (tone === "translate" || tone === "list");
+  const forceTranslate =
+    type === "summary" &&
+    tone === "translate" &&
+    typeof FeedWriterSummaryPolicy !== "undefined" &&
+    FeedWriterSummaryPolicy.canForceTranslation(completeSource);
+  if (type === "summary" && tone === "translate" && !forceTranslate) {
+    return { error: "Bài quá dài để dịch nguyên văn trong một lần (tối đa khoảng 6.000 ký tự)." };
+  }
 
   // X summaries are always explicitly requested from the per-tweet action.
   // Do not let the automatic-offer policy veto that user request.
   if (
     !translateEligible &&
+    !explicitRewrite &&
     type === "summary" &&
     site !== "x" &&
     !summaryPolicy.summary.shouldSummarize
@@ -6457,7 +6480,7 @@ async function handleStream(
     postDate,
     contentKind,
   );
-  if (translateEligible && FeedWriterSummaryPolicy.isTitledListPost(completeSource)) {
+  if (forceTranslate || (translateEligible && FeedWriterSummaryPolicy.isTitledListPost(completeSource))) {
     // The post already has its own title + intro: translate it as is.
     translateMode = true;
     completeSource = stripSocialMetadataLines(completeSource);
@@ -6465,8 +6488,8 @@ async function handleStream(
     systemPrompt = TRANSLATE_SOURCE_PROMPT;
     summaryPolicy.glossary = { mode: "omit", candidates: [], limit: 0 };
   } else {
-    if (translateEligible) systemPrompt += "\n\n" + NO_SUMMARY_INSTRUCTION;
-    if (type === "summary" && countDistinctUrls(completeSource) >= 2) {
+    if (translateEligible && tone !== "list") systemPrompt += "\n\n" + NO_SUMMARY_INSTRUCTION;
+    if (type === "summary" && (tone === "list" || countDistinctUrls(completeSource) >= 2)) {
       systemPrompt += "\n\n" + SOURCE_LINKS_INSTRUCTION;
     }
   }
@@ -6495,7 +6518,7 @@ async function handleStream(
 
   // Reasoning models spend part of max_tokens before the first visible token;
   // a tight cap cut translations mid-sentence.
-  if (translateEligible) maxTokens = Math.max(maxTokens, 2048);
+  if (translateEligible || forceTranslate) maxTokens = Math.max(maxTokens, 2048);
 
   let activePort = port;
   let activePrompt = systemPrompt;
