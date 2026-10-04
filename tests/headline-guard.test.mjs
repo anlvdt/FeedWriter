@@ -252,13 +252,22 @@ describe("summary headline deterministic guard", () => {
     assert.match(result.text, /GPT-6 Astra cho phép thay đổi/);
   });
 
-  it("strips only a dangling last word and keeps the rest of a long title", () => {
+  it("never deletes words from a headline; an unfinished one is flagged for rewrite", () => {
     const title = Array.from({ length: 24 }, (_, i) => "ý" + (i + 1)).join(" ");
     const result = process(title + " từ\n\nThân bài giữ nguyên.");
     const headline = result.text.split("\n")[0];
-    assert.match(headline, /Ý24$/);
-    assert.doesNotMatch(headline, /\bTỪ$/);
+    assert.match(headline, /Ý24 TỪ$/);
+    assert.ok(result.issues.some((i) => i.includes("Tiêu đề cần viết lại: câu chưa trọn ý")));
+    assert.ok(result.issues.some((i) => i.includes("Tiêu đề quá dài")));
     assert.match(result.text, /Thân bài giữ nguyên/);
+  });
+
+  it("keeps finished headlines that end in words like 'hay', 'ra', 'năm'", () => {
+    for (const title of ["Danh sách công cụ lập trình hay", "Apple chính thức tung mẫu iPhone mới ra", "Doanh thu của OpenAI tăng gấp đôi trong năm"]) {
+      const result = process(title + "\n\nThân bài.");
+      assert.equal(result.text.split("\n")[0], title.replace("chính thức ", "").toUpperCase());
+      assert.ok(!result.issues.some((i) => i.includes("chưa trọn ý")), title);
+    }
   });
 
   it("flags clickbait words in headline as a quality issue", () => {

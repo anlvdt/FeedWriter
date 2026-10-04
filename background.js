@@ -2307,11 +2307,20 @@ function normalizeVietnameseNumericNotation(text) {
   return normalized;
 }
 
-const HEADLINE_DANGLING = /^(?:từ|sang|của|kể|cho|với|và|đến|tới|trong|trên|về|vào|ra|thành|theo|bởi|khi|nếu|hoặc|hay|một|các|những|là|đã|sẽ|đang|được|bị|ở|tại|có|mang|giữa|sau|trước|tháng|năm)$/iu;
+// Words a Vietnamese sentence cannot end on: prepositions, conjunctions and
+// quantifiers that need what follows. Words that often end a sentence
+// ("hay", "có", "ra", "được", "năm", "sau", "trước"…) are not here: stripping
+// them cut finished headlines ("Danh sách công cụ hay" → "…công cụ").
+const HEADLINE_DANGLING = /^(?:từ|sang|của|cho|với|và|đến|tới|trong|trên|về|vào|theo|bởi|khi|nếu|hoặc|giữa|các|những|một|như|nhằm|để|so|tại)$/iu;
 
 function isHeadlineDateToken(word) {
   return /^(?:\d{1,2}[/.-]\d{2,4}|\d{4}|tháng|năm|q[1-4])$/iu.test(String(word || ""));
 }
+
+// Vietnamese headlines in the press run ~10–18 syllables. Past 22 the line is
+// a lead paragraph, not a headline, and the revision pass is asked to shorten.
+const HEADLINE_TARGET_WORDS = 20;
+const HEADLINE_MAX_WORDS = 22;
 
 function headlineTokens(title) {
   return String(title || "").trim().split(/\s+/).filter(Boolean);
@@ -2342,11 +2351,17 @@ function removeDanglingHeadlineTail(title) {
     const tailUnfinished = !tailWords.length || headlineUnfinished(tailWords[tailWords.length - 1]);
     if (headOk && tailUnfinished && !/\d/.test(tail)) return head;
   }
-  let end = words.length;
-  while (end > 4 && headlineUnfinished(words[end - 1]) && !isHeadlineDateToken(tokenCore(words[end - 1]))) {
-    end -= 1;
-  }
-  return words.slice(0, end).join(" ").replace(/[,:;.]+$/u, "").trim();
+  // Never drop words one by one: removing "với" leaves "so", and a word that
+  // looks dangling may finish the sentence. An unfinished headline is flagged
+  // (headlineLooksUnfinished) and rewritten whole instead.
+  return raw.replace(/[,:;.]+$/u, "").trim();
+}
+
+function headlineLooksUnfinished(title) {
+  const words = headlineTokens(title);
+  if (!words.length) return false;
+  const last = words[words.length - 1];
+  return headlineUnfinished(last) && !isHeadlineDateToken(tokenCore(last));
 }
 
 function hasClaudeCodePromptSettingAction(sourceText) {
@@ -2490,6 +2505,16 @@ function postProcessOutput(output, sourceText, type, provenance = null, sourceLi
         lines[i] = lines[i].replace(/^\*\*(.+?)\*\*$/, "$1");
         lines[i] = lines[i].replace(/^\*\*(.+)$/, "$1");
         lines[i] = lines[i].replace(/^(.+)\*\*$/, "$1");
+        // The model sometimes opens with the lead paragraph and no headline, or
+        // puts headline and lead on one line: the whole paragraph became an
+        // uppercase "headline". Keep the first sentence as the headline and
+        // move the rest down as the lead. The sentence must end in lowercase
+        // or a digit so "TP. HCM" is not split.
+        const headlineSplit = lines[i].match(/^(.{20,}?[\p{Ll}\d)”"'])[.!?…]\s+(?=[\p{Lu}\d"“])(.+)$/u);
+        if (headlineSplit) {
+          lines.splice(i, 1, headlineSplit[1], "", headlineSplit[2]);
+          issues.push("Đã tách tiêu đề khỏi đoạn mở đầu.");
+        }
         // Deterministic guard: generic source actors must not leak into the
         // headline as attribution. First normalize a common recommendation
         // clause into passive news style, even when it appears mid-headline.
@@ -2577,6 +2602,15 @@ function postProcessOutput(output, sourceText, type, provenance = null, sourceLi
           issues.push("Tiêu đề còn từ giật gân — nên viết lại thủ công.");
         }
         const cappedTitle = removeDanglingHeadlineTail(guardedTitle);
+        if (headlineLooksUnfinished(cappedTitle)) {
+          issues.push("[!] Tiêu đề cần viết lại: câu chưa trọn ý (kết thúc bằng \"" + headlineTokens(cappedTitle).pop() + "\").");
+        }
+        const headlineWords = headlineTokens(cappedTitle).length;
+        if (headlineWords > HEADLINE_MAX_WORDS) {
+          // Not blocking: a short headline-only call fixes this after the
+          // article is done (shortenLongHeadline), instead of rewriting it all.
+          issues.push("[!] Tiêu đề quá dài (" + headlineWords + " từ).");
+        }
         const titleWords = guardedTitle.trim().split(/\s+/).filter(Boolean);
         const keptWords = cappedTitle.split(/\s+/).filter(Boolean);
         if (cappedTitle && keptWords.length < titleWords.length) {
@@ -3716,6 +3750,9 @@ async function handleStream(
   }
   finalResult = appendMissingSourceLinks(finalResult, sourceLinks);
   finalResult = replaceLeftoverArtifactKind(finalResult, text);
+  if (type === "summary" && !signal?.aborted) {
+    finalResult = await shortenLongHeadline(finalResult, completeSource);
+  }
   if (recordResult && finalResult && finalResult.summary) await recordSummary(finalResult);
   if (finalResult && finalResult.summary && coverageNote) {
     finalResult.quality = finalResult.quality === "good" ? "info" : finalResult.quality;
@@ -3788,6 +3825,76 @@ function replaceLeftoverArtifactKind(result, sourceText) {
     issues,
     quality: result.quality === "fail" ? "fail" : issues.some((issue) => String(issue).includes("[!]")) ? "warn" : "info",
   };
+}
+
+// === HEADLINE LENGTH ===
+// 38/200 exported headlines ran past 25 words; some were the whole lead. A
+// small call rewrites only the headline from headline + lead. The result is
+// kept only if it is one line of 4–22 words with no number the source lacks.
+const HEADLINE_SHORTEN_PROMPT = `Bạn là biên tập viên báo chí công nghệ tiếng Việt. Viết lại tiêu đề cho NGẮN:
+- Một câu trọn ý, khoảng 10–18 từ, chỉ nêu tin chính (cái mới được ra mắt, cập nhật, công bố, thay đổi).
+- Giữ đúng tác nhân, tên riêng, tên sản phẩm và số liệu như trong tiêu đề và đoạn mở đầu; không thêm dữ kiện mới.
+- Bỏ phần liệt kê, chi tiết phụ và mệnh đề thứ hai; chúng đã có trong bài.
+- Câu phải TRỌN NGHĨA: rút gọn bằng cách viết lại, không cắt cụt; không kết thúc bằng giới từ hay liên từ (của, với, cho, từ, và…).
+- Viết bình thường (hệ thống tự viết hoa), không ngoặc kép, không tiền tố "Tiêu đề:", không giải thích.
+- Chỉ trả về đúng một dòng tiêu đề.`;
+
+async function shortenLongHeadline(result, sourceText) {
+  if (!result || !result.summary || !(result.issues || []).some((issue) => String(issue).includes("Tiêu đề quá dài"))) {
+    return result;
+  }
+  const parts = String(result.summary).split("\n\n");
+  const lead = parts.slice(1).join("\n\n").slice(0, 1200);
+  const nonStreamFns = {
+    groq: callGroqNonStream,
+    gemini: callGeminiNonStream,
+    cerebras: callCerebrasNonStream,
+    nvidia: callNvidiaNonStream,
+    sambanova: callSambanovaNonStream,
+    openrouter: callOpenrouterNonStream,
+  };
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const keyInfo = await getAvailableKey();
+    const callFn = keyInfo.key && nonStreamFns[keyInfo.provider];
+    if (!callFn) return result;
+    try {
+      const raw = await callFn(
+        keyInfo.key,
+        "TIÊU ĐỀ HIỆN TẠI:\n" + parts[0] + "\n\nĐOẠN MỞ ĐẦU:\n" + lead,
+        HEADLINE_SHORTEN_PROMPT,
+        "headline",
+      );
+      const headline = acceptShortHeadline(raw, sourceText + "\n" + result.summary);
+      if (!headline) return result;
+      const issues = (result.issues || []).filter((issue) => !String(issue).includes("Tiêu đề quá dài"));
+      issues.push("Đã rút gọn tiêu đề.");
+      return {
+        ...result,
+        summary: [uppercaseKeepingUnits(headline), ...parts.slice(1)].join("\n\n"),
+        issues,
+        quality: result.quality === "fail" ? "fail" : issues.some((issue) => String(issue).includes("[!]")) ? "warn" : "info",
+      };
+    } catch (_) {
+      // Rate limit or provider error: try the next key once, else keep it.
+    }
+  }
+  return result;
+}
+
+function acceptShortHeadline(raw, evidenceText) {
+  const line = String(raw || "")
+    .split("\n").map((l) => l.trim()).find(Boolean) || "";
+  const headline = line
+    .replace(/^(?:tiêu\s*đề|headline)\s*[:：]\s*/iu, "")
+    .replace(/^["“'*]+|["”'*.]+$/gu, "")
+    .trim();
+  const words = headlineTokens(headline).length;
+  if (words < 4 || words > HEADLINE_MAX_WORDS) return "";
+  // A shorter headline must still be a finished sentence.
+  if (headlineLooksUnfinished(headline) || removeDanglingHeadlineTail(headline) !== headline) return "";
+  const evidence = sourceNumericEvidence(evidenceText);
+  if ([...numericEvidenceTokens(headline)].some((n) => !evidence.has(n))) return "";
+  return headline;
 }
 
 // Keep the revision unless it failed or came back with more blocking issues.

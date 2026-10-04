@@ -19,12 +19,21 @@ const chrome = new Proxy({
   runtime: { onMessage: listeners(), onConnect: listeners(), onInstalled: listeners(), onStartup: listeners(), getManifest: () => ({ version: "2.8.1" }), id: "x", lastError: null, getURL: (p) => p },
 }, { get(t, k) { if (k in t) return t[k]; return new Proxy(function () {}, { get: (_, kk) => kk === "then" ? undefined : (["addListener","removeListener"].includes(kk) ? () => {} : chrome[kk] || (async () => ({}))), apply: async () => ({}) }); } });
 const calls = [];
+let headlineReply = "";
 let article = "OPENAI MỞ API GIỌNG NÓI CHO MỌI NHÀ PHÁT TRIỂN\n\nOpenAI mở API giọng nói cho mọi nhà phát triển với giá 0.06 USD mỗi phút.\n\nAPI hỗ trợ 12 ngôn ngữ.";
 async function fakeFetch(url, opts = {}) {
   const body = JSON.parse(opts.body || "{}");
   const provider = /groq/.test(url) ? "groq" : /googleapis/.test(url) ? "gemini" : url;
   const system = body.messages?.[0]?.content || body.system_instruction?.parts?.[0]?.text || "";
   calls.push({ provider, system, systemChars: system.length, compact: system.startsWith("Bạn là biên tập viên báo chí công nghệ tiếng Việt. Viết lại nguồn thành MỘT"), extract: /trích|TRÍCH/.test(system.slice(0, 300)) });
+  // Non-stream calls (headline shortening) get JSON with headlineReply.
+  if (!body.stream && !/streamGenerateContent/.test(url)) {
+    const content = /^Bạn là biên tập viên báo chí công nghệ tiếng Việt\. Viết lại tiêu đề cho NGẮN/.test(system) ? headlineReply : article;
+    const json = provider === "gemini"
+      ? { candidates: [{ content: { parts: [{ text: content }] } }] }
+      : { choices: [{ message: { content } }] };
+    return new Response(JSON.stringify(json), { status: 200, headers: { "content-type": "application/json" } });
+  }
   const sse = provider === "gemini"
     ? `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: article }] } }] })}\n\n`
     : `data: ${JSON.stringify({ choices: [{ delta: { content: article } }] })}\n\ndata: [DONE]\n\n`;
@@ -112,6 +121,48 @@ describe("a community tool is not called a mod", () => {
       assert.doesNotMatch(result.summary, /\bmod\b/i);
     } finally {
       article = saved;
+    }
+  });
+});
+
+describe("long headlines", () => {
+  const source = "Doubao, WorkBuddy, Claude Code and DeepSeek Harness can now call Codex's built-in image generation. Make Xiaohongshu and YouTube covers or turn posts into infographics right from those agents.";
+  const lead = "Việc tích hợp này cho phép người dùng tạo ảnh bìa cho Xiaohongshu, YouTube hoặc chuyển nội dung thành infographic ngay trong các công cụ này.";
+  const reported = "Các công cụ AI agent như Doubao, WorkBuddy, Claude Code và DeepSeek Harness hiện đã có thể gọi tính năng tạo ảnh tích hợp của Codex. " + lead;
+
+  it("splits a lead glued to the headline and shortens the headline in one small call", async () => {
+    const saved = [article, headlineReply];
+    article = reported;
+    headlineReply = "Doubao, Claude Code và DeepSeek Harness gọi được tính năng tạo ảnh của Codex";
+    try {
+      const { result, calls: made } = await summarize(source, "gemini");
+      assert.ok(result.summary, result.error);
+      const [headline, , body] = result.summary.split("\n");
+      assert.equal(headline, "DOUBAO, CLAUDE CODE VÀ DEEPSEEK HARNESS GỌI ĐƯỢC TÍNH NĂNG TẠO ẢNH CỦA CODEX");
+      assert.equal(body, lead);
+      assert.ok(made.some((c) => /Viết lại tiêu đề cho NGẮN/.test(c.system)), "headline-only call");
+      assert.ok(result.issues.some((i) => i.includes("Đã rút gọn tiêu đề")));
+    } finally {
+      [article, headlineReply] = saved;
+    }
+  });
+
+  it("keeps the original headline when the shorter one is cut off or adds a number", async () => {
+    for (const reply of [
+      "Doubao, Claude Code và DeepSeek Harness gọi được tính năng tạo ảnh của",
+      "Bốn công cụ AI agent gọi được 3 tính năng tạo ảnh của Codex",
+      "",
+    ]) {
+      const saved = [article, headlineReply];
+      article = reported;
+      headlineReply = reply;
+      try {
+        const { result } = await summarize(source, "gemini");
+        assert.match(result.summary.split("\n")[0], /^CÁC CÔNG CỤ AI AGENT NHƯ DOUBAO/, reply);
+        assert.ok(result.issues.some((i) => i.includes("Tiêu đề quá dài")), reply);
+      } finally {
+        [article, headlineReply] = saved;
+      }
     }
   });
 });
