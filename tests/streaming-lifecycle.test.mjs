@@ -174,9 +174,10 @@ describe("streaming lifecycle", () => {
     assert.match(content, /streamBuffer = "";[\s\S]*?first = true;/);
 
     const refusalBranch = background.indexOf("if (postResult.failure)");
-    const telemetry = background.indexOf("await incrementTelemetry('summaries')", refusalBranch);
-    const history = background.indexOf("await saveHistory(", refusalBranch);
-    assert.ok(refusalBranch >= 0 && telemetry > refusalBranch && history > telemetry);
+    const record = background.indexOf("await recordSummary(result)", refusalBranch);
+    assert.ok(refusalBranch >= 0 && record > refusalBranch);
+    const recorder = background.slice(background.indexOf("async function recordSummary("));
+    assert.ok(recorder.indexOf("await incrementTelemetry('summaries')") < recorder.indexOf("await saveHistory("));
   });
 
   it("restores result actions when the UI watchdog has partial text", () => {

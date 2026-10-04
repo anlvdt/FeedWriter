@@ -6192,6 +6192,25 @@ async function handleStream(
   let activeType = type;
   let shrinkBase = completeSource;
   let recordResult = true;
+  // The final article is recorded once, after the optional revision pass.
+  let deferRecording = false;
+
+  async function recordSummary(result) {
+    await incrementTelemetry('summaries');
+    trackEvent("summary_completed", { provider: result.provider, type });
+    incrementBadge();
+    await saveHistory(
+      text,
+      result.summary,
+      site,
+      type,
+      sourceUrl,
+      imageUrl,
+      author,
+      postTitle,
+      postDate,
+    );
+  }
   let jobMaxTokens = maxTokens;
   let coverageNote = "";
   let cooldownCleared = false;
@@ -6496,22 +6515,8 @@ async function handleStream(
           ];
         }
         await markProviderSuccess(keyInfo.provider, Date.now() - t0);
-        if (recordResult) {
-          await incrementTelemetry('summaries');
-          trackEvent("summary_completed", { provider: keyInfo.provider, type });
-          incrementBadge();
-          await saveHistory(
-            text,
-            result.summary,
-            site,
-            type,
-            sourceUrl,
-            imageUrl,
-            author,
-            postTitle,
-            postDate,
-          );
-        }
+        result.provider = keyInfo.provider;
+        if (recordResult && !deferRecording) await recordSummary(result);
       }
       return result;
     }
@@ -6625,13 +6630,66 @@ async function handleStream(
     jobMaxTokens = savedMax;
   }
 
-  const finalResult = await generateWithRotation();
+  deferRecording = true;
+  let finalResult = await generateWithRotation();
+  const firstBlocking = blockingQualityIssues(finalResult);
+  if (firstBlocking.length && !signal?.aborted) {
+    // One self-correction pass: the checks above already know what is wrong
+    // (a number not in the source, a swapped actor, an empty headline), so
+    // hand that back to the model instead of only showing a warning chip.
+    const basePrompt = activePrompt;
+    activePrompt += "\n\n" + buildRevisionInstruction(finalResult.summary, firstBlocking);
+    try {
+      port.postMessage({ action: "retry", message: "Bản đầu có lỗi dữ kiện — đang tự sửa..." });
+    } catch (_) {}
+    const revised = await generateWithRotation();
+    activePrompt = basePrompt;
+    finalResult = pickRevisedResult(finalResult, revised);
+  }
+  if (recordResult && finalResult && finalResult.summary) await recordSummary(finalResult);
   if (finalResult && finalResult.summary && coverageNote) {
     finalResult.quality = finalResult.quality === "good" ? "info" : finalResult.quality;
     finalResult.issues = [coverageNote, ...(finalResult.issues || [])];
   }
   return finalResult;
 }
+// === SELF-CORRECTION ===
+// Warnings that mean the article is factually wrong, not just stylistically
+// weak. Only these trigger the revision pass.
+const BLOCKING_ISSUE_MARKERS = [
+  "Tiêu đề cần viết lại",
+  "số liệu bịa",
+  "đảo tác nhân",
+  "Lead có thể đảo",
+  "viết như người trải nghiệm",
+];
+
+function blockingQualityIssues(result) {
+  if (!result || !result.summary || !Array.isArray(result.issues)) return [];
+  return result.issues.filter((issue) =>
+    BLOCKING_ISSUE_MARKERS.some((marker) => String(issue).includes(marker)),
+  );
+}
+
+function buildRevisionInstruction(draft, issues) {
+  return "SỬA BẢN NHÁP — BẮT BUỘC:\n" +
+    "Bản nháp trước của bạn có các lỗi sau:\n" +
+    issues.map((issue) => "- " + String(issue).replace(/^\[!\]\s*/, "")).join("\n") +
+    "\nViết lại TOÀN BỘ bài từ nội dung nguồn, sửa đúng các lỗi trên và giữ những phần đã đúng. " +
+    "Chỉ dùng tên, số liệu và tác nhân có trong nguồn. Không nhắc tới bản nháp hay việc sửa lỗi.\n" +
+    "BẢN NHÁP TRƯỚC (chỉ để tham khảo lỗi, không phải nguồn):\n\"\"\"\n" +
+    String(draft || "").slice(0, 6000) +
+    "\n\"\"\"";
+}
+
+// Keep the revision unless it failed or came back with more blocking issues.
+function pickRevisedResult(first, revised) {
+  if (!revised || !revised.summary) return first;
+  return blockingQualityIssues(revised).length <= blockingQualityIssues(first).length
+    ? revised
+    : first;
+}
+
 // === HISTORY ===
 const HISTORY_MAX_ITEMS = 200;
 const HISTORY_MAX_BYTES = 2 * 1024 * 1024;
