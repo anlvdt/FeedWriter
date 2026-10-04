@@ -2755,6 +2755,7 @@ function postProcessOutput(output, sourceText, type, contentKind = "news") {
     quality = "warn";
   else if (issues.length > 0) quality = "info";
 
+  if (typeof lowercaseRepoLinks === "function") processed = lowercaseRepoLinks(processed);
   return { text: processed, quality, issues };
 }
 
@@ -3007,11 +3008,23 @@ async function handleStream(
     typeof FeedWriterSummaryPolicy !== "undefined" &&
     FeedWriterSummaryPolicy.canFallbackToTranslation(completeSource);
   let translateMode = false;
+  // Tone chips "Dịch" / "List + link" are explicit user requests: never let the
+  // automatic summary policy veto them.
+  const explicitRewrite = type === "summary" && (tone === "translate" || tone === "list");
+  const forceTranslate =
+    type === "summary" &&
+    tone === "translate" &&
+    typeof FeedWriterSummaryPolicy !== "undefined" &&
+    FeedWriterSummaryPolicy.canForceTranslation(completeSource);
+  if (type === "summary" && tone === "translate" && !forceTranslate) {
+    return { error: "Bài quá dài để dịch nguyên văn trong một lần (tối đa khoảng 6.000 ký tự)." };
+  }
 
   // X summaries are always explicitly requested from the per-tweet action.
   // Do not let the automatic-offer policy veto that user request.
   if (
     !translateEligible &&
+    !explicitRewrite &&
     type === "summary" &&
     site !== "x" &&
     !summaryPolicy.summary.shouldSummarize
@@ -3068,7 +3081,7 @@ async function handleStream(
     postDate,
     contentKind,
   );
-  if (translateEligible && FeedWriterSummaryPolicy.isTitledListPost(completeSource)) {
+  if (forceTranslate || (translateEligible && FeedWriterSummaryPolicy.isTitledListPost(completeSource))) {
     // The post already has its own title + intro: translate it as is.
     translateMode = true;
     completeSource = stripSocialMetadataLines(completeSource);
@@ -3076,8 +3089,8 @@ async function handleStream(
     systemPrompt = TRANSLATE_SOURCE_PROMPT;
     summaryPolicy.glossary = { mode: "omit", candidates: [], limit: 0 };
   } else {
-    if (translateEligible) systemPrompt += "\n\n" + NO_SUMMARY_INSTRUCTION;
-    if (type === "summary" && countDistinctUrls(completeSource) >= 2) {
+    if (translateEligible && tone !== "list") systemPrompt += "\n\n" + NO_SUMMARY_INSTRUCTION;
+    if (type === "summary" && (tone === "list" || countDistinctUrls(completeSource) >= 2)) {
       systemPrompt += "\n\n" + SOURCE_LINKS_INSTRUCTION;
     }
   }
@@ -3106,7 +3119,7 @@ async function handleStream(
 
   // Reasoning models spend part of max_tokens before the first visible token;
   // a tight cap cut translations mid-sentence.
-  if (translateEligible) maxTokens = Math.max(maxTokens, 2048);
+  if (translateEligible || forceTranslate) maxTokens = Math.max(maxTokens, 2048);
 
   let activePort = port;
   let activePrompt = systemPrompt;

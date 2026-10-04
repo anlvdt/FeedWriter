@@ -3680,7 +3680,8 @@ function _cleanRelatedUrl(rawUrl) {
       ) url.searchParams.delete(key);
     }
     url.hash = "";
-    return url.toString().replace(/\?$/, "");
+    const clean = url.toString().replace(/\?$/, "");
+    return typeof lowercaseRepoLinks === "function" ? lowercaseRepoLinks(clean) : clean;
   } catch (_) {
     return "";
   }

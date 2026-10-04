@@ -159,3 +159,24 @@ describe("untranslated headline detection", () => {
     assert.equal(good.ok, true, JSON.stringify(good));
   });
 });
+
+describe("repo links are lowercase across the pipeline", () => {
+  const utilsSrc = readFileSync(new URL("../utils.js", import.meta.url), "utf8");
+  const u = vm.createContext({ module: { exports: {} } });
+  vm.runInContext(utilsSrc.slice(utilsSrc.indexOf("function lowercaseRepoLinks"), utilsSrc.indexOf("function truncate")), u);
+  it("lowercases github/gitlab links only", () => {
+    assert.equal(
+      u.lowercaseRepoLinks("Xem http://github.com/AppFlowy-IO/AppFlowy và https://GitLab.com/Foo/Bar, còn https://Example.com/Path"),
+      "Xem http://github.com/appflowy-io/appflowy và https://gitlab.com/foo/bar, còn https://Example.com/Path",
+    );
+  });
+  it("is wired into summary output, formatter, comment, composer and related URLs", () => {
+    const read = (f) => readFileSync(new URL("../" + f, import.meta.url), "utf8");
+    assert.match(read("background.js"), /processed = lowercaseRepoLinks\(processed\)/);
+    assert.match(read("status-formatter.js"), /_lowercaseRepoLinks\(rawText\)/);
+    assert.match(read("content.js"), /lowercaseRepoLinks\(out\)/);
+    assert.match(read("content-composer.js"), /text = lowercaseRepoLinks\(text\)/);
+    assert.match(read("content-composer.js"), /normalizeGithubField/);
+    assert.match(read("content-dom.js"), /lowercaseRepoLinks\(clean\)/);
+  });
+});

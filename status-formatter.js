@@ -77,6 +77,7 @@ const StatusFormatter = {
 
   // GitHub/GitLab paths are case-insensitive; show repo links in lowercase.
   _lowercaseRepoLinks(text) {
+    if (typeof lowercaseRepoLinks === "function") return lowercaseRepoLinks(text);
     return String(text || "").replace(
       /(?:https?:\/\/)?(?:www\.)?(?:github|gitlab)\.com\/[^\s<>)\]]+/gi,
       (url) => url.toLowerCase(),
@@ -98,7 +99,7 @@ const StatusFormatter = {
   TRANSLATION_MARK: "\u2063",
 
   _parse(rawText) {
-    let text = rawText.trim();
+    let text = this._lowercaseRepoLinks(rawText).trim();
     // Translation-mode output has no headline: never promote line 1 to a
     // title (uppercase) or short lines to section headers.
     const translated = text.startsWith(this.TRANSLATION_MARK);
