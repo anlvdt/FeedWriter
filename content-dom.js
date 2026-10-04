@@ -2805,6 +2805,13 @@ function _extractXTweetText(article) {
           if (/[…]|\.\.\.$/.test(raw) && typeof _expandedXAnchorUrls === "function") {
             full = _expandedXAnchorUrls(a, "")[0] || "";
           }
+          // Links to other X posts are deliberately not expanded above, so a
+          // cut-off display ("x.com/user/stat…") reached the model and the
+          // summary verbatim. The anchor's href (t.co or x.com) still resolves.
+          if (!full && /[…]|\.\.\.$/.test(raw)) {
+            const href = String(a.href || a.getAttribute?.("href") || "");
+            if (/^https?:\/\/\S+$/i.test(href)) full = href;
+          }
         }
         if (full) a.replaceWith(full);
       });
@@ -3680,8 +3687,7 @@ function _cleanRelatedUrl(rawUrl) {
       ) url.searchParams.delete(key);
     }
     url.hash = "";
-    const clean = url.toString().replace(/\?$/, "");
-    return typeof lowercaseRepoLinks === "function" ? lowercaseRepoLinks(clean) : clean;
+    return url.toString().replace(/\?$/, "");
   } catch (_) {
     return "";
   }

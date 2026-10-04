@@ -1437,19 +1437,6 @@ function ensureOverlay() {
         '<button type="button" class="fbs-tone-btn" data-tone="reporter">Phóng viên</button>' +
         '<button type="button" class="fbs-tone-btn" data-tone="academic">Học thuật</button>' +
         '<button type="button" class="fbs-tone-btn" data-tone="bullet">Bullet</button>' +
-        '<button type="button" class="fbs-tone-btn" data-tone="translate" title="Dịch nguyên văn, giữ tiêu đề, danh sách và link">Dịch</button>' +
-        '<button type="button" class="fbs-tone-btn" data-tone="list" title="Viết lại dạng danh sách, mỗi mục kèm link repo">List + link</button>' +
-      '</div>' +
-    '</div>' +
-    '<div class="fbs-format-row" hidden>' +
-      '<span class="fbs-tone-label">Đổi khuôn</span>' +
-      '<span class="fbs-kind-badge" hidden></span>' +
-      '<div class="fbs-tone-chips" role="group" aria-label="Khuôn thể loại">' +
-        '<button type="button" class="fbs-tone-btn fbs-format-btn fbs-format-default" data-format="auto" title="Tự nhận dạng thể loại nguồn">Tự động</button>' +
-        '<button type="button" class="fbs-tone-btn fbs-format-btn" data-format="news" title="Bản tin fact-first">Tin tức</button>' +
-        '<button type="button" class="fbs-tone-btn fbs-format-btn" data-format="tutorial" title="Giữ bước, lệnh, đường dẫn">Hướng dẫn</button>' +
-        '<button type="button" class="fbs-tone-btn fbs-format-btn" data-format="review" title="Ưu/nhược điểm + verdict">Review</button>' +
-        '<button type="button" class="fbs-tone-btn fbs-format-btn" data-format="opinion" title="Luận điểm vs dẫn chứng">Góc nhìn</button>' +
       '</div>' +
     '</div>' +
     '<div class="fbs-panel-footer">' +
@@ -1528,32 +1515,19 @@ function ensureOverlay() {
       first.focus();
     }
   });
-  panel.querySelectorAll(".fbs-tone-btn:not(.fbs-format-btn)").forEach((btn) => {
+  panel.querySelectorAll(".fbs-tone-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (!lastSummarizeParams) return;
       const tone = btn.dataset.tone === "default" ? null : (btn.dataset.tone || null);
-      panel.querySelectorAll(".fbs-tone-btn:not(.fbs-format-btn)").forEach((b) => b.classList.remove("active"));
+      panel.querySelectorAll(".fbs-tone-btn").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       const { text, type, _element } = lastSummarizeParams;
       summarizeText(text, type, _element, tone);
     });
   });
-  panel.querySelectorAll(".fbs-format-btn").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      if (!lastSummarizeParams) return;
-      const format = btn.dataset.format === "auto" ? null : (btn.dataset.format || null);
-      panel.querySelectorAll(".fbs-format-btn").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
-      const { text, type, _element, tone } = lastSummarizeParams;
-      summarizeText(text, type, _element, tone, format);
-    });
-  });
 }
 
 let lastSummarizeParams = null;
-// Last kind the classifier picked for the most recent summary (from the
-// background's done message); null while streaming or for non-summary types.
-let lastDetectedKind = null;
 
 // Undo/Redo system for textarea
 const undoRedoHistory = {
@@ -1676,12 +1650,12 @@ function toggleEdit() {
 
 function regenerate() {
   if (!lastSummarizeParams) return;
-  const { text, type, _element, tone, formatOverride } = lastSummarizeParams;
+  const { text, type, _element, tone } = lastSummarizeParams;
   const prefix = hashText(text) + "_" + type;
   for (const k of summaryCache.keys()) {
     if (k.startsWith(prefix)) summaryCache.delete(k);
   }
-  summarizeText(text, type, _element, tone, formatOverride);
+  summarizeText(text, type, _element, tone);
 }
 
 function openOverlay(html, streaming, type = "summary") {
@@ -1803,8 +1777,7 @@ function openOverlay(html, streaming, type = "summary") {
   const showTone =
     !isSummarizing &&
     !streaming &&
-    (html.includes("fbs-result") || html.includes("fbs-error-info")) &&
-    !!lastSummarizeParams &&
+    html.includes("fbs-result") &&
     type === "summary";
   if (toneRow) {
     toneRow.hidden = !showTone;
@@ -1812,42 +1785,13 @@ function openOverlay(html, streaming, type = "summary") {
   }
   if (showTone && lastSummarizeParams) {
     const selectedTone = lastSummarizeParams.tone || "default";
-    panel.querySelectorAll(".fbs-tone-btn:not(.fbs-format-btn)").forEach((b) => {
+    panel.querySelectorAll(".fbs-tone-btn").forEach((b) => {
       b.classList.toggle("active", b.dataset.tone === selectedTone);
     });
   } else if (!showTone) {
     panel
-      .querySelectorAll(".fbs-tone-btn:not(.fbs-format-btn)")
+      .querySelectorAll(".fbs-tone-btn")
       .forEach((b) => b.classList.remove("active"));
-  }
-
-  // Format ("Đổi khuôn") row mirrors the tone row's visibility gate: only on a
-  // finished summary result. Active chip = forced format or "auto"; the kind
-  // badge shows the classifier's pick only while the user hasn't forced one.
-  const formatRow = panel.querySelector(".fbs-format-row");
-  const showFormat = showTone;
-  if (formatRow) {
-    formatRow.hidden = !showFormat;
-    formatRow.classList.toggle("fbs-tone-visible", showFormat);
-  }
-  const kindBadge = panel.querySelector(".fbs-kind-badge");
-  const KIND_LABELS = { news: "Tin tức", tutorial: "Hướng dẫn", review: "Review", opinion: "Góc nhìn" };
-  if (showFormat && lastSummarizeParams) {
-    const selectedFormat = lastSummarizeParams.formatOverride || "auto";
-    panel.querySelectorAll(".fbs-format-btn").forEach((b) => {
-      b.classList.toggle("active", b.dataset.format === selectedFormat);
-    });
-    if (kindBadge) {
-      const detected = lastDetectedKind;
-      const showBadge = !lastSummarizeParams.formatOverride && detected && detected !== "news";
-      kindBadge.hidden = !showBadge;
-      if (showBadge) kindBadge.textContent = "Khuôn: " + (KIND_LABELS[detected] || detected);
-    }
-  } else {
-    panel
-      .querySelectorAll(".fbs-format-btn")
-      .forEach((b) => b.classList.remove("active"));
-    if (kindBadge) kindBadge.hidden = true;
   }
   if (streaming && panelBody.scrollHeight - panelBody.scrollTop < 500)
     panelBody.scrollTop = panelBody.scrollHeight;
@@ -2652,7 +2596,7 @@ function buildCommentText(cleanUrl, author, source, options = {}) {
   // Strip any markdown bold/italic asterisks to ensure clean copy in comments
   out = out.replace(/\*\*/g, "").replace(/\*/g, "");
 
-  return typeof lowercaseRepoLinks === "function" ? lowercaseRepoLinks(out) : out;
+  return out;
 }
 
 
@@ -3158,9 +3102,13 @@ function extractPostTitle(element) {
   );
   if (liTitle) return (liTitle.textContent || "").trim();
 
-  // og:title for single post pages
+  // og:title for single post pages. On X it is the shell title of whatever
+  // page is open ("Home / X" on the timeline), never the post's own headline,
+  // and it was reaching the model as source_title.
+  if (SITE === "x") return "";
   const ogTitle = document.querySelector('meta[property="og:title"]');
-  if (ogTitle && ogTitle.content) return ogTitle.content;
+  const ogValue = String(ogTitle?.content || "").trim();
+  if (ogValue && !/^(?:Home|Trang chủ)?\s*[\/|·-]?\s*(?:X|Twitter|Facebook)$/i.test(ogValue)) return ogValue;
 
   // Fallback: empty — AI will generate title from summary
   return "";
@@ -3369,7 +3317,7 @@ function showBatchResults() {
   }
 }
 
-async function summarizeText(text, type = "summary", contextElement = null, tone = null, formatOverride = null) {
+async function summarizeText(text, type = "summary", contextElement = null, tone = null) {
   const invocationId = ++summaryInvocationId;
   if (activeSummaryRequest) stopSummarize();
   if (isFacebookPersonalProfileHome()) {
@@ -3389,11 +3337,9 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
   // deciding which Facebook posts should be offered automatically, but do not
   // reject a tweet after the user has deliberately asked FeedWriter to rewrite
   // it as a concise news item.
-  if (type === "summary" && SITE !== "x" && !tone) {
+  if (type === "summary" && SITE !== "x") {
     const decision = getSummaryPolicyDecision(text, type);
     if (!decision.shouldSummarize) {
-      // Keep the source so the tone chips (Dịch / List + link) can rewrite it.
-      lastSummarizeParams = { text, type, _element: contextElement, tone: null, xPostIdentity: null };
       const message = SITE === "x"
         ? "Tweet này đã đủ ngắn, chưa cần tóm tắt. FeedWriter chỉ tóm tắt bài X dài hoặc có nhiều ý."
         : "Nội dung này đã đủ ngắn hoặc chưa có đủ ý để tóm tắt.";
@@ -3438,16 +3384,14 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
     hashText(settings.customInstructions || "") +
     "_" +
     hashText(settings.customSummaryPrompt || "") +
-    (tone ? "_" + tone : "") +
-    (formatOverride ? "_fmt" + formatOverride : "");
+    (tone ? "_" + tone : "");
 
   // Refresh the source even on a cache hit. X can replace timeline articles
   // while the summary panel is open; keep the original tweet identity.
   lastSummarizeParams = {
-    text, type, _element: contextElement, tone, formatOverride,
+    text, type, _element: contextElement, tone,
     xPostIdentity: SITE === "x" ? getXPostIdentity(contextElement) : null,
   };
-  lastDetectedKind = null;
   if (summaryCache.has(cacheKey)) {
     lastPanelRawText = summaryCache.get(cacheKey);
     openOverlay(
@@ -3598,7 +3542,6 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
     site: SITE,
     type,
     tone: tone || null,
-    formatOverride: formatOverride || null,
     preferredProvider: _preferredProvider || null,
     sourceUrl: _sourceUrl,
     imageUrl: _imageUrl,
@@ -3759,7 +3702,6 @@ async function summarizeText(text, type = "summary", contextElement = null, tone
       }
       isSummarizing = false;
       summaryCache.set(cacheKey, msg.full);
-      lastDetectedKind = msg.contentKind || null;
       const discoveryElement = lastSummarizeParams?._element;
       if (discoveryElement && typeof window.fbsDiscoverRelatedSourceLinks === "function") {
         pendingSourceDiscovery = {

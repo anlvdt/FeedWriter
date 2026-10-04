@@ -437,7 +437,6 @@ async function getSystemPrompt(
   glossaryDecision = null,
   postTime = null,
   postDate = null,
-  contentKind = null,
 ) {
   const data = await chrome.storage.sync.get([
     "customSummaryPrompt",
@@ -453,25 +452,10 @@ async function getSystemPrompt(
 
   let prompt;
 
-  // A classified non-news content kind routes to its dedicated template.
-  // This intentionally wins over customSummaryPrompt/promptStyle/summaryLength:
-  // those global presets shape the NEWS rewrite; a tutorial/review/opinion
-  // source needs its own structure, and an explicit "Đổi khuôn" chip is a
-  // per-request user choice.
-  const kindTemplateKey =
-    type === "summary" && contentKind && contentKind !== "news"
-      ? "summary_" + contentKind
-      : null;
-
   // 1. Non-summary task types must keep their dedicated behavior. A global
   // custom summary prompt must never turn comment analysis into article copy.
   if (type !== "summary" && PROMPT_TEMPLATES[type]) {
     prompt = PROMPT_TEMPLATES[type];
-  }
-  // 1b. Content-kind template (tutorial/review/opinion) — per-request or
-  // auto-detected. Skipped for news so existing presets keep working.
-  else if (kindTemplateKey && PROMPT_TEMPLATES[kindTemplateKey]) {
-    prompt = PROMPT_TEMPLATES[kindTemplateKey];
   }
   // 2. Custom user prompt controls summary style, while hard product policies
   // are appended below and cannot be replaced.
@@ -514,14 +498,10 @@ async function getSystemPrompt(
     prompt += siteHints[site];
   }
 
-  // Detect source material only to separate facts from claims. For news the
-  // output mode never changes with the source's voice; non-news kinds keep
-  // their own template contract instead.
+  // Detect source material only to separate facts from claims. Output mode is
+  // always a news rewrite and must never change with the source's voice.
   prompt +=
-    "\n\nTRƯỚC KHI VIẾT, hãy xác định phần nào là sự kiện, dữ kiện, ý kiến, trải nghiệm hoặc hướng dẫn." +
-    (kindTemplateKey
-      ? " Đầu ra PHẢI theo đúng khuôn thể loại được giao ở trên."
-      : " Dù nguồn thuộc loại nào, đầu ra vẫn phải là BẢN TIN KHÁCH QUAN.");
+    "\n\nTRƯỚC KHI VIẾT, hãy xác định phần nào là sự kiện, dữ kiện, ý kiến, trải nghiệm hoặc hướng dẫn. Dù nguồn thuộc loại nào, đầu ra vẫn phải là BẢN TIN KHÁCH QUAN.";
 
   prompt +=
     "\n- Tiêu đề (dòng đầu tiên) viết bình thường, hệ thống sẽ tự động viết hoa." +
@@ -555,12 +535,11 @@ async function getSystemPrompt(
   // Style rules are active for every template, including a custom summary prompt.
   prompt += "\n\n" + VNREVIEW_RULES;
 
-  // Hard product invariant: FeedWriter always treats input as a source.
-  // News keeps the full news-rewrite policy (inverted pyramid, hook recipe,
-  // first-person ban); non-news kinds get the fidelity subset so step-by-step
-  // guides, first-person reviews and opinion attribution stay legal.
-  prompt +=
-    "\n\n" + (kindTemplateKey ? SOURCE_FIDELITY_POLICY : NEWS_REWRITE_POLICY);
+  // Hard product invariant: FeedWriter always treats input as a source and
+  // rewrites it as news. Appending near-last ensures custom prompts cannot
+  // switch the output back to narration or first-person storytelling. The
+  // user-chosen tone block appended after it may only restyle presentation.
+  prompt += "\n\n" + NEWS_REWRITE_POLICY;
 
   const policy =
     typeof FeedWriterSummaryPolicy !== "undefined"
@@ -583,7 +562,7 @@ async function getSystemPrompt(
         "- Giữ tiêu đề 1 dòng + 1 dòng trống, thân bài ưu tiên 1-2 đoạn rất gọn. KHÔNG khung mở/thân/kết. CẤM câu hỏi mở.",
       reporter: "\n\nGHI ĐÈ TONE — GÓC NHÌN PHÓNG VIÊN (chỉ dẫn trình bày cuối, áp dụng lên mọi quy tắc phía trên):\n" +
         "- Viết như BÀI BÁO TIN TỨC của phóng viên: Mở bài đưa sự kiện/kết quả lên trước; chỉ bổ sung bối cảnh ngành khi nguồn có.\n" +
-        "- Đưa tin trực tiếp về sự kiện và kết quả, không viết kiểu thuật lại (\"OpenAI cho biết...\", \"Theo một bài đăng trên X...\").\n" +
+        "- Đưa tin trực tiếp về sự kiện và kết quả, không mở bằng câu dẫn rỗng (\"Theo một bài đăng trên X...\"); giữ người phát biểu khi đó là tuyên bố, cam kết hoặc tin rò rỉ.\n" +
         "- Thêm đoạn phân tích / ảnh hưởng thị trường khi nguồn cung cấp đủ dữ kiện. Giữ đúng người phát biểu và mức chắc chắn; không suy rộng một trải nghiệm thành phản ứng cộng đồng.\n" +
         "- Chỉ nêu triển vọng hoặc xu hướng tiếp theo nếu nguồn có; hết ý thì dừng.\n" +
         "- CẤM tường thuật lại diễn biến từng bước. CHỈ viết bước khi nguồn là hướng dẫn/thủ thuật.",
@@ -595,10 +574,6 @@ async function getSystemPrompt(
         "- Câu mở đầu nêu ngay điểm khiến người đọc phải dừng lại (kết quả/tác động trước, bối cảnh sau). Câu ngắn, nhịp nhanh, năng lượng cao.\n" +
         "- Nội dung vẫn là bản tin fact-first, mỗi ý một đoạn. CẤM kể chuyện, khung mở/thân/kết và câu hỏi mở.\n" +
         "- CẤM từ ngữ giật gân, phóng đại (gây sốc, chấn động, toang, không thể tin nổi); không thổi phồng mức chắc chắn của nguồn.",
-      list: "\n\nGHI ĐÈ TONE — DANH SÁCH KÈM LINK (chỉ dẫn trình bày cuối — ĐỔI FORMAT):\n" +
-        "- Viết lại thành bài DANH SÁCH: dòng đầu là tiêu đề (đúng số mục thực tế), một dòng trống, 1-2 câu dẫn ngắn, một dòng trống, rồi các mục.\n" +
-        "- Mỗi mục là MỘT khối: dòng 1 \"số. Tên mục\"; dòng 2 mô tả ngắn 1-2 câu; dòng 3 là URL đầy đủ, nguyên văn của mục đó (GitHub/website). Giữ đủ tất cả các mục theo đúng thứ tự nguồn, không gộp, không bỏ.\n" +
-        "- Chỉ dùng URL có trong nguồn, không cắt bằng \"…\", không tự bịa. Mục không có URL trong nguồn thì bỏ dòng URL. KHÔNG khung mở/thân/kết, không câu hỏi mở.",
       bullet: "\n\nGHI ĐÈ TONE — BULLET POINTS THUẦN (chỉ dẫn trình bày cuối — ĐỔI FORMAT):\n" +
         "- Sau tiêu đề (1 dòng + 1 dòng trống), TOÀN BỘ thân bài trình bày bằng bullets bắt đầu bằng \"·\". Mỗi bullet: · Keyword/Dữ kiện: giải thích kèm số liệu cụ thể.\n" +
         "- Xếp bullet từ quan trọng đến bổ sung, một bullet một dữ kiện riêng biệt trong nguồn. KHÔNG đoạn văn, không kể lại, không khung mở/thân/kết, không câu hỏi mở.",

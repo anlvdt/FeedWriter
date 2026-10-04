@@ -107,37 +107,6 @@ describe("validate / ACTION_SCHEMAS", () => {
     assert.equal(r.request.action, "summarize");
   });
 
-  it("accepts summarize with an optional formatOverride string", () => {
-    const r = validate(
-      {
-        action: "summarize",
-        text: "Hello world article body",
-        type: "summary",
-        formatOverride: "tutorial",
-      },
-      contentTabSender,
-    );
-    assert.equal(r.ok, true);
-  });
-
-  it("accepts summarize without formatOverride and rejects a non-string one", () => {
-    const ok = validate(
-      { action: "summarize", text: "Hello world article body", type: "summary" },
-      contentTabSender,
-    );
-    assert.equal(ok.ok, true);
-    const bad = validate(
-      {
-        action: "summarize",
-        text: "Hello world article body",
-        type: "summary",
-        formatOverride: 7,
-      },
-      contentTabSender,
-    );
-    assert.equal(bad.ok, false);
-  });
-
   it("rejects fetch-image missing url", () => {
     const r = validate({ action: "fetch-image" }, contentTabSender);
     assert.equal(r.ok, false);

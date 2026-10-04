@@ -344,13 +344,20 @@ function formatVietnameseNumber(value, options) {
  * Truncate text with ellipsis
  */
 /**
- * GitHub/GitLab paths are case-insensitive; keep every repo link lowercase from
- * summary through draft to the Facebook post. Other domains keep their case.
+ * Uppercase a headline without breaking SI unit symbols after a number:
+ * "pin 5.000 mAh, sạc 65 W" → "PIN 5.000 mAh, SẠC 65 W" (TCVN 7870-1).
  */
-function lowercaseRepoLinks(text) {
-  return String(text || "").replace(
-    /(?:https?:\/\/)?(?:www\.)?(?:github|gitlab)\.com\/[^\s<>)\]]+/gi,
-    (url) => url.toLowerCase(),
+const UPPERCASE_UNIT_RESTORE = {
+  KM: "km", "KM/H": "km/h", CM: "cm", MM: "mm", NM: "nm", "ΜM": "µm",
+  KG: "kg", MG: "mg", ML: "ml", HZ: "Hz", KHZ: "kHz", MHZ: "MHz", GHZ: "GHz",
+  KW: "kW", KWH: "kWh", WH: "Wh", MAH: "mAh", MS: "ms", DB: "dB", FPS: "fps",
+  GBPS: "Gbps", MBPS: "Mbps", "KM²": "km²", "M²": "m²", "CM²": "cm²", "M³": "m³",
+};
+
+function uppercaseKeepingUnits(text) {
+  return String(text || "").toUpperCase().replace(
+    /(\d) (KM\/H|KM²|CM²|M²|M³|KHZ|MHZ|GHZ|KWH|MAH|GBPS|MBPS|FPS|KM|CM|MM|NM|ΜM|KG|MG|ML|HZ|KW|WH|MS|DB)(?![\p{L}\p{N}])/gu,
+    (_, digit, unit) => digit + " " + UPPERCASE_UNIT_RESTORE[unit],
   );
 }
 
@@ -420,7 +427,7 @@ if (typeof module !== 'undefined' && module.exports) {
     formatVietnamDateTime,
     formatVietnamIsoString,
     truncate,
-    lowercaseRepoLinks,
+    uppercaseKeepingUnits,
     Logger,
     logger,
     featureFlags

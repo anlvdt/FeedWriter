@@ -140,16 +140,13 @@ describe("streaming lifecycle", () => {
     const background = readFileSync(path.join(root, "background.js"), "utf8");
     assert.match(
       background,
-      /async function handleStream\([\s\S]*?preferredProvider = null,\s*type = "summary",\s*formatOverride = null,?\s*\)/,
+      /async function handleStream\([\s\S]*?preferredProvider = null,\s*type = "summary",\s*\)/,
     );
     assert.match(
       background,
-      /msg\.preferredProvider \|\| null,\s*msg\.type \|\| "summary",\s*msg\.formatOverride \|\| null,\s*\)/,
+      /msg\.preferredProvider \|\| null,\s*msg\.type \|\| "summary",\s*\)/,
     );
-    assert.match(
-      background,
-      /postProcessOutput\(\s*result\.summary,\s*text,\s*translateMode \? "translate" : type,\s*translateMode \? "translate" : \(contentKind \|\| "news"\),?\s*\)/,
-    );
+    assert.match(background, /postProcessOutput\(result\.summary, text, type, provenance\)/);
     assert.match(background, /saveHistory\([\s\S]*?site,\s*type,/);
   });
 
@@ -177,9 +174,10 @@ describe("streaming lifecycle", () => {
     assert.match(content, /streamBuffer = "";[\s\S]*?first = true;/);
 
     const refusalBranch = background.indexOf("if (postResult.failure)");
-    const telemetry = background.indexOf("await incrementTelemetry('summaries')", refusalBranch);
-    const history = background.indexOf("await saveHistory(", refusalBranch);
-    assert.ok(refusalBranch >= 0 && telemetry > refusalBranch && history > telemetry);
+    const record = background.indexOf("await recordSummary(result)", refusalBranch);
+    assert.ok(refusalBranch >= 0 && record > refusalBranch);
+    const recorder = background.slice(background.indexOf("async function recordSummary("));
+    assert.ok(recorder.indexOf("await incrementTelemetry('summaries')") < recorder.indexOf("await saveHistory("));
   });
 
   it("restores result actions when the UI watchdog has partial text", () => {

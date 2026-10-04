@@ -141,53 +141,21 @@ describe("glossary policy", () => {
   });
 });
 
-describe("translation fallback policy", () => {
-  it("translates a short foreign-language post", () => {
-    const r = policy.decideTranslation({ site: "x", text: "OpenAI released a new model today." });
-    assert.deepEqual([r.translate, r.reason], [true, "too_short"]);
+describe("length budget for short sources", () => {
+  it("caps output near the source length for a short post", () => {
+    const text = Array.from({ length: 60 }, (_, i) => `từ${i}`).join(" ") + " https://example.com/a";
+    const out = policy.buildLengthBudgetInstruction(text);
+    assert.match(out, /khoảng 60 từ/);
+    assert.match(out, /khoảng 66 từ/);
   });
 
-  it("translates a list-only post even when it has many items", () => {
-    const text = "- Faster inference\n- Lower latency\n- Cheaper tokens\n- Better tools\n- Longer context";
-    const r = policy.decideTranslation({ site: "facebook", text });
-    assert.deepEqual([r.translate, r.reason], [true, "list_only"]);
+  it("keeps a floor for very short posts", () => {
+    assert.match(policy.buildLengthBudgetInstruction("Apple phát hành iOS 26.1."), /khoảng 40 từ/);
   });
 
-  it("keeps summarizing long English prose", () => {
-    const text = Array.from({ length: 6 }, (_, i) => `Sentence number ${i + 1} explains a detailed product change for developers.`).join(" ");
-    assert.equal(policy.decideTranslation({ site: "facebook", text }).translate, false);
-  });
-
-  it("does not translate Vietnamese sources", () => {
-    const r = policy.decideTranslation({ site: "x", text: "Apple vừa phát hành bản cập nhật sửa lỗi pin." });
-    assert.deepEqual([r.translate, r.reason], [false, "already_vietnamese"]);
-  });
-});
-
-describe("translation fallback eligibility", () => {
-  it("allows the NO_SUMMARY fallback only for short foreign-language sources", () => {
-    assert.equal(policy.canFallbackToTranslation("Cursor can now chart in chat. Available now."), true);
-    assert.equal(policy.canFallbackToTranslation("Apple vừa phát hành bản cập nhật sửa lỗi pin."), false);
-    assert.equal(policy.canFallbackToTranslation("word ".repeat(2000)), false);
-  });
-});
-
-import { createRequire as _cr } from "node:module";
-describe("titled list posts are translated in place", () => {
-  const policy = _cr(import.meta.url)("../lib/summary-policy.js");
-  const post = [
-    "10 GITHUB REPOS THAT CAN REPLACE EXPENSIVE SOFTWARE",
-    "You might be paying for tools that already have open-source alternatives.",
-    "Here are 10 worth checking out:",
-    "1. AppFlowy", "Notion alternative.", "http://github.com/AppFlowy-IO/AppFlowy",
-    "2. NocoDB", "Spreadsheet-style workspace.", "http://github.com/nocodb/nocodb",
-    "3. Listmonk", "Self-hosted newsletters.", "http://github.com/knadh/listmonk",
-  ].join("\n");
-  it("detects headline + intro + list", () => {
-    assert.equal(policy.isTitledListPost(post), true);
-  });
-  it("ignores plain paragraphs and bare lists", () => {
-    assert.equal(policy.isTitledListPost("Just one short sentence here.\nAnother line of text that is long enough."), false);
-    assert.equal(policy.isTitledListPost("1. a\n2. b\n3. c\n4. d\n5. e"), false);
+  it("does not constrain long sources or comment threads", () => {
+    const long = Array.from({ length: 500 }, () => "chữ").join(" ");
+    assert.equal(policy.buildLengthBudgetInstruction(long), "");
+    assert.equal(policy.buildLengthBudgetInstruction("ngắn thôi", "comment_summary"), "");
   });
 });

@@ -923,7 +923,6 @@ chrome.runtime.onConnect.addListener((port) => {
         msg.tone || null,
         msg.preferredProvider || null,
         msg.type || "summary",
-        msg.formatOverride || null,
       );
       if (result && result.error)
         port.postMessage({ action: "error", error: result.error });
@@ -934,7 +933,6 @@ chrome.runtime.onConnect.addListener((port) => {
           quality: result.quality,
           issues: result.issues,
           imageUrl: msg.imageUrl || "",
-          contentKind: result.contentKind || "news",
         });
     } catch (e) {
       if (e.name !== "AbortError") {
@@ -1345,7 +1343,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       request.tone || null,
       request.preferredProvider || null,
       request.type || "summary",
-      request.formatOverride || null,
     )
       .then((r) => sendResponse(r || { error: "Unknown error" }))
       .catch((e) => sendResponse({ error: e.message }));
@@ -2029,6 +2026,87 @@ function numericEvidenceTokens(text) {
 
 // Normalize common English-style numbers and currency symbols in Vietnamese
 // prose. Identifiers, versions and bare dot-separated numbers are left alone.
+// URLs, domains, @handles, `code` and multi-part slugs are identifiers:
+// recasing or respacing them breaks links ("https://GitHub.com/...",
+// "Claude-opus-5-5-demo"). Apply `fn` only to the prose between them.
+const IDENTIFIER_SEGMENT_RE = /https?:\/\/\S+|(?<![\w@])(?:[\w-]+\.)+(?:com|io|dev|ai|org|net|sh|app|co|so|gg|xyz|me|tech|vn)\b\S*|@\w+|`[^`\n]*`|(?<![\w-])[\w.]+(?:[_/][\w.-]+|(?:-[\w.]+){2,})/gi;
+
+function mapOutsideIdentifiers(text, fn) {
+  let out = "";
+  let last = 0;
+  for (const m of String(text).matchAll(IDENTIFIER_SEGMENT_RE)) {
+    out += fn(text.slice(last, m.index)) + m[0];
+    last = m.index + m[0].length;
+  }
+  return out + fn(text.slice(last));
+}
+
+// === TCVN typography ===
+// TCVN 6909:2001 — Vietnamese text in precomposed Unicode (NFC).
+// TCVN 7870-1:2010 (ISO 80000-1) — a space between a number and its unit
+// symbol ("20 km", "5 GB", "30 °C"), SI symbol casing (km, kg, Hz, kWh),
+// no space for the plane-angle degree ("30°"). House style, chosen by the
+// user over strict TCVN: dot thousands / comma decimal ("1.234,5") and "50%"
+// written without a space, as in Vietnamese press.
+const TCVN_UNIT_SYMBOLS = {
+  km: "km", Km: "km", KM: "km", cm: "cm", mm: "mm", nm: "nm", "µm": "µm",
+  kg: "kg", Kg: "kg", KG: "kg", mg: "mg",
+  ml: "ml", mL: "ml", ML: "ml",
+  TB: "TB", tb: "TB", GB: "GB", gb: "GB", MB: "MB", KB: "KB",
+  Gb: "Gb", Mb: "Mb", Gbps: "Gbps", gbps: "Gbps", Mbps: "Mbps", mbps: "Mbps",
+  Hz: "Hz", hz: "Hz", HZ: "Hz", kHz: "kHz", khz: "kHz", KHz: "kHz",
+  MHz: "MHz", mhz: "MHz", Mhz: "MHz", MHZ: "MHz",
+  GHz: "GHz", ghz: "GHz", Ghz: "GHz", GHZ: "GHz",
+  W: "W", kW: "kW", KW: "kW", kw: "kW", Wh: "Wh",
+  kWh: "kWh", KWh: "kWh", kwh: "kWh", KWH: "kWh",
+  mAh: "mAh", mah: "mAh", MAh: "mAh", MAH: "mAh",
+  ms: "ms", dB: "dB", fps: "fps", FPS: "fps",
+};
+const TCVN_UNIT_RE = new RegExp(
+  // Not inside an identifier such as "RTX4090", "DDR5-6000MHz" or "v2.5GB",
+  // but still after a range dash: "10-20GB" → "10-20 GB".
+  "(?<![\\p{L}\\p{N}_./])(?<!\\p{L}[\\p{N}.]*[-‑])(\\d+(?:[.,]\\d+)*)\\s?(" +
+    Object.keys(TCVN_UNIT_SYMBOLS).sort((a, b) => b.length - a.length).join("|") +
+    ")(?![\\p{L}\\p{N}])",
+  "gu",
+);
+const TCVN_SUPERSCRIPT = { 2: "²", 3: "³" };
+// Tone mark on the main vowel for open "oa/oe/uy" syllables, consistent with
+// the rest of the output ("hóa", "khỏe", "thủy"): "hoà" → "hòa".
+const TCVN_TONED = {
+  a: "àáảãạ", e: "èéẻẽẹ", y: "ỳýỷỹỵ", o: "òóỏõọ", u: "ùúủũụ",
+  A: "ÀÁẢÃẠ", E: "ÈÉẺẼẸ", Y: "ỲÝỶỸỴ", O: "ÒÓỎÕỌ", U: "ÙÚỦŨỤ",
+};
+
+function moveOpenSyllableTone(first, toned) {
+  for (const base of ["a", "e", "y", "A", "E", "Y"]) {
+    const tone = TCVN_TONED[base].indexOf(toned);
+    if (tone >= 0) return TCVN_TONED[first][tone] + base;
+  }
+  return first + toned;
+}
+
+function normalizeTcvnTypography(text) {
+  const nfc = String(text || "")
+    .normalize("NFC")
+    // "km/h" looks like a slug to the identifier guard; space it up front.
+    .replace(/(?<![\p{L}\p{N}_.])(\d+(?:[.,]\d+)*)\s?(?:km\/h|Km\/h|KM\/H|kmh)(?![\p{L}\p{N}])/gu, "$1 km/h");
+  return mapOutsideIdentifiers(nfc, (segment) => segment
+    .replace(/(?<![\p{L}\p{N}_./])(\d+(?:[.,]\d+)*)\s?(km|cm|mm|m)([23])(?![\p{L}\p{N}])/gu,
+      (_, n, unit, power) => `${n} ${unit}${TCVN_SUPERSCRIPT[power]}`)
+    .replace(TCVN_UNIT_RE, (_, n, unit) => `${n} ${TCVN_UNIT_SYMBOLS[unit]}`)
+    .replace(/(\d)\s?°\s?([CF])(?![\p{L}\p{N}])/gu, "$1 °$2")
+    .replace(/(\d)\s+%/g, "$1%")
+    .replace(/(?<![qQ])([oO])([àáảãạèéẻẽẹÀÁẢÃẠÈÉẺẼẸ])(?![\p{L}\p{M}])/gu,
+      (_, first, toned) => moveOpenSyllableTone(first, toned))
+    .replace(/(?<![qQ])([uU])([ỳýỷỹỵỲÝỶỸỴ])(?![\p{L}\p{M}])/gu,
+      (_, first, toned) => moveOpenSyllableTone(first, toned))
+    // Punctuation sits on the preceding word and is followed by a space.
+    .replace(/([,;])(?=\p{L})/gu, "$1 ")
+    .replace(/(\S)[ \t]+([,;:!?])(?=\s|$)/gu, "$1$2")
+    .replace(/(\S) {2,}(?=\S)/g, "$1 "));
+}
+
 function normalizeVietnameseNumericNotation(text) {
   const normalizeEnglishNumber = (raw) => {
     const value = String(raw);
@@ -2044,7 +2122,17 @@ function normalizeVietnameseNumericNotation(text) {
     return value;
   };
 
-  let normalized = String(text || "");
+  let normalized = String(text || "")
+    // Some models (gpt-oss) emit U+2011/U+2010 hyphens: "SWE‑2",
+    // "answer‑me‑with‑html". They look identical but break copy/search of repo
+    // names, commands and model names.
+    .replace(/[\u2010\u2011]/g, "-")
+    // ...and group thousands with a narrow/non-breaking space ("84 000").
+    .replace(/(?<![\d.,])\d{1,3}(?:[\u00a0\u202f]\d{3})+(?![\d.,])/g, (m) => m.replace(/[\u00a0\u202f]/g, "."))
+    // "1.5k sao" → "1,5k sao"
+    .replace(/(?<![\d.,])(\d+)\.(\d+)(\s?[kK])(?![\p{L}\p{N}])/gu, "$1,$2$3")
+    // A model version is an identifier, not a decimal: "Opus 5,5" → "Opus 5.5".
+    .replace(/(?<![\p{L}\p{N}])((?:Opus|Sonnet|Haiku|Claude|GPT|Gemini|Gemma|Llama|Qwen|DeepSeek(?:-V)?|Grok|Kimi(?:\s?K)?|GLM|Mistral|Phi|Codex|SWE)[\s-]?)(\d+),(\d+)(?![\d,])/gu, "$1$2.$3");
   normalized = normalized
     .replace(/(^|[^\p{L}\p{N}_])(?:US\$|\$)\s*(\d+(?:,\d{3})*(?:\.\d+)?)/gmu,
       (_, prefix, number) => `${prefix}${normalizeEnglishNumber(number)} USD`)
@@ -2059,7 +2147,7 @@ function normalizeVietnameseNumericNotation(text) {
     .replace(/\b(\d+(?:,\d{3})*(?:\.\d+)?)\s*£(?!\w)/gu,
       (_, number) => `${normalizeEnglishNumber(number)} bảng Anh`)
     .replace(/(?<![\d.,])(\d{1,3}(?:,\d{3})+(?:\.\d+)?)(?![\d.,])/g, (number) => normalizeEnglishNumber(number))
-    .replace(/(?<![\d.])(\d+\.\d+)(?![\d.])(\s*(?:USD|VND|VNĐ|euro|EUR|GBP|%|°[CF]|km|cm|mm|m|kg|g|mg|l|ml|kW|W|kWh|Hz|GHz|MHz|GB|MB|KB)\b|\s*%)/giu,
+    .replace(/(?<![\d.])(\d+\.\d+)(?![\d.])(\s*(?:USD|VND|VNĐ|euro|EUR|GBP|%|°[CF]|km|cm|mm|m|kg|g|mg|l|ml|kW|W|kWh|Hz|GHz|MHz|GB|MB|KB)(?![\p{L}\p{N}])|\s*%)/giu,
       (_, number, unit) => normalizeEnglishNumber(number) + unit)
     .replace(/\b(\d[\d.]*(?:,\d+)?)\s*(?:VND|VNĐ)\b/giu, "$1 đồng")
     .replace(/\b(\d[\d.]*(?:,\d+)?)\s*(?:EUR)\b/giu, "$1 euro")
@@ -2114,100 +2202,10 @@ function hasClaudeCodePromptSettingAction(sourceText) {
   return /(?:tắt|vô hiệu hóa|turn off|disable)\s+(?:(?:tính năng|the)\s+)?(?:(?:gợi ý|đề xuất)\s+prompt|prompt\s+suggestions?)\s+(?:trong|trên|của|in)\s+Claude\s+Code\b/iu.test(source);
 }
 
-// Invisible marker prepended to translation-mode output so StatusFormatter
-// does not treat the first line as a headline (uppercase) or short lines as
-// section headers. Must match TRANSLATION_MARK in status-formatter.js.
-const TRANSLATION_MARK = "\u2063";
-
-// Drop UI chrome that the DOM scraper can leave above a tweet body
-// ("ollama @ollama · 2h", "· 2h"). Only the first lines are inspected.
-function stripSocialMetadataLines(text) {
-  const lines = String(text || "").split("\n");
-  const metaLine = /^(?:[·•]\s*)?(?:[^\n@]{0,60}\s)?@[\w.]{1,30}\s*[·•]\s*\d+\s*(?:s|m|h|d|w|giây|phút|giờ|ngày|tuần)?\b.*$|^[·•]\s*\d+\s*(?:s|m|h|d|w)$|^@[\w.]{1,30}$/iu;
-  let i = 0;
-  while (i < lines.length && i < 3) {
-    const t = lines[i].trim();
-    if (!t || metaLine.test(t)) { i++; continue; }
-    break;
-  }
-  const rest = lines.slice(i).join("\n").trim();
-  return rest.length >= 30 ? rest : String(text || "").trim();
-}
-
-// Translation must be complete: every URL, path, @mention and number in the
-// source has to survive, and no paragraph may be dropped.
-function checkTranslationCompleteness(source, output) {
-  const src = String(source || "");
-  const out = String(output || "").toLowerCase();
-  const anchors = src.match(/https?:\/\/\S+|(?<![\w])\/[\w.-]+(?:\/[\w.-]+)+|@[\w.]{2,30}|\d[\d.,]*/gu) || [];
-  const missing = [...new Set(anchors)]
-    .map((a) => a.replace(/[.,;:!?)]+$/u, "").toLowerCase())
-    .filter((a) => a && !out.includes(a));
-  const paragraphs = (t) => String(t || "").split(/\n\s*\n/).filter((p) => p.trim()).length;
-  const droppedParagraphs = paragraphs(src) > paragraphs(output);
-  // A sentence left in English means the model skipped part of the source.
-  const viChars = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i;
-  const enWords = /\b(?:the|and|is|are|was|now|in|on|for|with|to|of|available|use|you|your|this|that|from|can|new|will)\b/gi;
-  const untranslated = String(output || "")
-    .split(/(?<=[.!?])\s+|\n+/)
-    .map((sentence) => sentence.trim())
-    .filter((sentence) => {
-      if (sentence.length < 20 || /^[/`·•\-*\d]/.test(sentence)) return false;
-      if (viChars.test(sentence)) return false;
-      const words = sentence.split(/\s+/).length;
-      return words >= 4 && (sentence.match(enWords) || []).length >= 2;
-    });
-  // The loop above skips lines that start with a digit, which is exactly how a
-  // headline like "10 GITHUB REPOS THAT CAN…" slipped through untranslated.
-  const headline = String(output || "").split("\n").map((l) => l.trim()).find(Boolean) || "";
-  if (
-    headline.length >= 15 &&
-    !viChars.test(headline) &&
-    (headline.match(enWords) || []).length >= 2 &&
-    !untranslated.includes(headline)
-  ) {
-    untranslated.push(headline);
-  }
-  return {
-    ok: !missing.length && !droppedParagraphs && !untranslated.length,
-    missing,
-    droppedParagraphs,
-    untranslated,
-  };
-}
-
-// Drop bare "Phần N:" separator lines that models copy from the chunked fact
-// sheet or invent. Headings that carry text after the colon are kept.
-function stripPartLabels(text) {
-  return String(text || "")
-    .replace(/^[ \t]*Phần\s*\d+\s*[:：]?[ \t]*(?:\n|$)/gim, "")
-    .trim();
-}
-
-function countDistinctUrls(text) {
-  const urls = String(text || "").match(/https?:\/\/[^\s<>"')\]]+/gi) || [];
-  return new Set(urls.map((u) => u.replace(/[.,;:!?]+$/, "").toLowerCase())).size;
-}
-
-// Translation output opens with a headline line; show it in capitals. Lines
-// that are list items, links or already long sentences are left alone.
-function uppercaseTitleLine(text) {
-  const lines = String(text || "").split("\n");
-  const first = (lines[0] || "").trim();
-  if (!first || first.length > 140 || /https?:\/\/|^[·•\-*]|^\d+[.)]\s/.test(first)) return text;
-  lines[0] = first.toLocaleUpperCase("vi");
-  return lines.join("\n");
-}
-
 // Main post-processing function
-function postProcessOutput(output, sourceText, type, contentKind = "news") {
+function postProcessOutput(output, sourceText, type, provenance = null) {
   const issues = [];
   let processed = output.trim();
-  // News-shaped guards (attribution leads, anti-storytelling, fake-experience
-  // warnings) only apply to the news rewrite. Tutorials are legitimately
-  // sequential and addressed to "bạn"; reviews legitimately describe the
-  // author's first-person experience. Translate mode keeps "translate" here.
-  const isNewsKind = contentKind !== "tutorial" && contentKind !== "review" && contentKind !== "opinion";
 
   // 1. Empty or near-empty check
   if (!processed || processed.length < 10) {
@@ -2230,6 +2228,22 @@ function postProcessOutput(output, sourceText, type, contentKind = "news") {
     /(?:content|safety)\s+(?:policy|filter|guideline)\s+(?:violation|triggered)/i,
     /^(?:xin\s+lỗi|tôi\s+xin\s+lỗi)[,!.\s]/i,
   ];
+  // Placeholder answers saved as the summary, e.g.
+  // "[KHÔNG CÓ DỮ LIỆU SỰ KIỆN CÔNG NGHỆ ĐÁNG TIN CẬY ĐỂ BIÊN TẬP THÀNH BẢN TIN]"
+  // or "Phần 1:\n· Không có sự kiện, số liệu, tên... trong đoạn văn."
+  const placeholderBody = processed.replace(/^[\u2063\s]+/, "").replace(/^Phần\s+\d+\s*:\s*/iu, "").replace(/^[·•*\-\s]+/, "");
+  if (
+    /^\W*NO_SUMMARY\W*$/i.test(processed) ||
+    /^\[[^\]\n]*KHÔNG\s+(?:CÓ|ĐỦ)[^\]\n]*\]?\.?$/iu.test(placeholderBody) ||
+    /^không\s+(?:có|đủ)\s+(?:sự\s+kiện|dữ\s+(?:liệu|kiện)|thông\s+tin)[^\n]*(?:trong\s+(?:đoạn\s+văn|nguồn|bài(?:\s+viết)?)|để\s+(?:tóm\s+tắt|biên\s+tập|viết))[^\n]*$/iu.test(placeholderBody)
+  ) {
+    return {
+      text: processed,
+      quality: "fail",
+      failure: "invalid_output",
+      issues: ["Model trả về câu giữ chỗ thay vì bản tóm tắt."],
+    };
+  }
   if (refusalPatterns.some((p) => p.test(processed))) {
     return {
       text: processed,
@@ -2297,10 +2311,10 @@ function postProcessOutput(output, sourceText, type, contentKind = "news") {
     .trim();
   // Strip "Đoạn 1:", "Đoạn 2:" labels that AI copies from format example
   processed = processed.replace(/^Đoạn\s*\d+\s*[:：]\s*/gim, "");
-  processed = stripPartLabels(processed);
   // Normalize "*** Giải thích" → "**Giải thích" (old prompt format)
   processed = processed.replace(/^\*{3}\s*/gm, "**");
   processed = normalizeVietnameseNumericNotation(processed);
+  processed = normalizeTcvnTypography(processed);
 
   // Xử lý tiêu đề dòng đầu tiên
   if (type && type.startsWith("summary")) {
@@ -2323,83 +2337,79 @@ function postProcessOutput(output, sourceText, type, contentKind = "news") {
             "(?:cài(?:\\s+đặt)?\\s+)?((?:plugin\\s+)?[^,;.!?]+?)\\s+(cho|vào|trên)\\s+([^,;.!?]+)$",
           "i",
         );
-        // Clickbait filler: "Mới đây" lead and "chính thức" are mechanically
-        // safe to remove; they carry no fact and only pad the headline.
         let guardedTitle = lines[i]
           .trim()
+          // Clickbait filler: "Mới đây" lead and "chính thức" are mechanically
+          // safe to remove; they carry no fact and only pad the headline.
           .replace(/^mới\s+đây\s*[,;:\-–—]?\s*/iu, "")
-          .replace(/(?<![\p{L}\p{N}])chính\s+thức\s+/giu, "");
-        // News-only headline guards: terminology normalization plus source-actor
-        // stripping, attribution-lead removal, clickbait flags. Non-news titles
-        // (tutorial/review/opinion) legitimately lead with the product, the
-        // audience, or the author's stance.
-        if (isNewsKind) {
-          guardedTitle = guardedTitle
-            .replace(/(?<![\p{L}\p{N}])tăng\s+mức(?: độ)?\s+thẩm\s+mỹ(?![\p{L}\p{N}])/giu, "cải thiện khả năng thẩm mỹ")
-            .replace(/(?<![\p{L}\p{N}])không\s+mã\s+kéo[‑ -]?thả(?![\p{L}\p{N}])/giu, "no-code kéo thả")
-            .replace(/(?<![\p{L}\p{N}])(?:công\s+cụ|nền\s+tảng|giải\s+pháp|phần\s+mềm)\s+(?:AI\s+)?không\s+mã(?![\p{L}\p{N}])/giu, (m) => m.replace(/không\s+mã/i, "no-code"))
-            .replace(/(?<![\p{L}\p{N}])(?:nền\s+tảng|công\s+cụ|giải\s+pháp)\s+mã\s+thấp(?![\p{L}\p{N}])/giu, (m) => m.replace(/mã\s+thấp/i, "low-code"))
-            .replace(/(?<![\p{L}\p{N}])đại\s+lý\s+AI(?![\p{L}\p{N}])/giu, "AI agent")
-            .replace(/(?<![\p{L}\p{N}])kéo[‑-]thả(?![\p{L}\p{N}])/giu, "kéo thả")
-            .replace(/(?<=\b(?:trên|cho|chạy\s+trên)\s+)máy\s+tính\s+cá\s+nhân\b/giu, "PC");
-          const recommendationMatch = guardedTitle.match(recommendationClause);
-          if (recommendationMatch) {
-            const prefix = guardedTitle.slice(0, recommendationMatch.index).trim();
-            const object = recommendationMatch[1].trim();
-            const preposition = recommendationMatch[2].toLowerCase();
-            const target = recommendationMatch[3].trim();
-            const passiveRecommendation =
-              preposition === "cho"
-                ? `${object} được đề xuất cho ${target}`
-                : preposition === "vào"
-                  ? `${object} được đề xuất cài vào ${target}`
-                  : `${object} được đề xuất dùng trên ${target}`;
-            guardedTitle = prefix
-              ? `${prefix.replace(/[,;:\-–—|]+$/, "").trim()} và ${passiveRecommendation}`
-              : passiveRecommendation;
-            issues.push("Đã chuyển chủ thể nguồn chung chung trong tiêu đề sang cấu trúc tin tức.");
-          }
+          .replace(/(?<![\p{L}\p{N}])chính\s+thức\s+/giu, "")
+          .replace(
+            /(?<![\p{L}\p{N}])tăng\s+mức\s+thẩm\s+mỹ(?![\p{L}\p{N}])/giu,
+            "cải thiện khả năng thẩm mỹ",
+          )
+          .replace(/(?<![\p{L}\p{N}])không\s+mã\s+kéo[‑ -]?thả(?![\p{L}\p{N}])/giu, "no-code kéo thả")
+          .replace(/(?<![\p{L}\p{N}])(?:công\s+cụ|nền\s+tảng|giải\s+pháp|phần\s+mềm)\s+(?:AI\s+)?không\s+mã(?![\p{L}\p{N}])/giu, (m) => m.replace(/không\s+mã/i, "no-code"))
+          .replace(/(?<![\p{L}\p{N}])(?:nền\s+tảng|công\s+cụ|giải\s+pháp)\s+mã\s+thấp(?![\p{L}\p{N}])/giu, (m) => m.replace(/mã\s+thấp/i, "low-code"))
+          .replace(/(?<![\p{L}\p{N}])đại\s+lý\s+AI(?![\p{L}\p{N}])/giu, "AI agent")
+          .replace(/(?<![\p{L}\p{N}])kéo[‑-]thả(?![\p{L}\p{N}])/giu, "kéo thả")
+          .replace(/(?<=\b(?:trên|cho|chạy\s+trên)\s+)máy\s+tính\s+cá\s+nhân\b/giu, "PC");
+        const recommendationMatch = guardedTitle.match(recommendationClause);
+        if (recommendationMatch) {
+          const prefix = guardedTitle.slice(0, recommendationMatch.index).trim();
+          const object = recommendationMatch[1].trim();
+          const preposition = recommendationMatch[2].toLowerCase();
+          const target = recommendationMatch[3].trim();
+          const passiveRecommendation =
+            preposition === "cho"
+              ? `${object} được đề xuất cho ${target}`
+              : preposition === "vào"
+                ? `${object} được đề xuất cài vào ${target}`
+                : `${object} được đề xuất dùng trên ${target}`;
+          guardedTitle = prefix
+            ? `${prefix.replace(/[,;:\-–—|]+$/, "").trim()} và ${passiveRecommendation}`
+            : passiveRecommendation;
+          issues.push("Đã chuyển chủ thể nguồn chung chung trong tiêu đề sang cấu trúc tin tức.");
+        }
 
-          // Fallback for generic source actors that still begin the headline.
-          const forbiddenHeadlineLead = new RegExp(
-            "^" + genericSourceActor +
-              "(?=\\s|[:：,.!?\\-–—|]|$)\\s*[:：,.!?\\-–—|]?\\s*",
-            "i",
-          );
-          let strippedForbiddenLead = false;
-          while (forbiddenHeadlineLead.test(guardedTitle)) {
-            guardedTitle = guardedTitle.replace(forbiddenHeadlineLead, "").trim();
-            strippedForbiddenLead = true;
-          }
-          if (strippedForbiddenLead) {
-            issues.push("Đã loại bỏ chủ thể chung chung ở đầu tiêu đề.");
-          }
+        // Fallback for generic source actors that still begin the headline.
+        const forbiddenHeadlineLead = new RegExp(
+          "^" + genericSourceActor +
+            "(?=\\s|[:：,.!?\\-–—|]|$)\\s*[:：,.!?\\-–—|]?\\s*",
+          "i",
+        );
+        let strippedForbiddenLead = false;
+        while (forbiddenHeadlineLead.test(guardedTitle)) {
+          guardedTitle = guardedTitle.replace(forbiddenHeadlineLead, "").trim();
+          strippedForbiddenLead = true;
+        }
+        if (strippedForbiddenLead) {
+          issues.push("Đã loại bỏ chủ thể chung chung ở đầu tiêu đề.");
+        }
 
-          // Named publishers/accounts can also leak into the headline as an
-          // attribution (e.g. "Vox cho biết ...", "Theo Vox: ..."). Metadata may
-          // identify the source, but the headline must lead with the actual subject.
-          const namedAttributionLead =
-            /^(?:theo\s+)?(?:[A-Za-zÀ-ỹ][\p{L}\p{N}&.'’\-]*(?:\s+[A-Za-zÀ-ỹ][\p{L}\p{N}&.'’\-]*){0,4})\s+(?:cho\s+biết|cho\s+hay|cho\s+rằng|nói\s+rằng|tiết\s+lộ|đưa\s+tin)\s*[:：,]?\s*/iu;
-          const theoNamedLead =
-            /^theo\s+(?:[A-Za-zÀ-ỹ][\p{L}\p{N}&.'’\-]*(?:\s+[A-Za-zÀ-ỹ][\p{L}\p{N}&.'’\-]*){0,4})\s*[:：,]\s*/iu;
-          if (namedAttributionLead.test(guardedTitle)) {
-            guardedTitle = guardedTitle.replace(namedAttributionLead, "").trim();
-            issues.push("Đã loại bỏ tên nguồn ở đầu tiêu đề.");
-          } else if (theoNamedLead.test(guardedTitle)) {
-            guardedTitle = guardedTitle.replace(theoNamedLead, "").trim();
-            issues.push("Đã loại bỏ tên nguồn ở đầu tiêu đề.");
-          }
+        // Named publishers/accounts can also leak into the headline as an
+        // attribution (e.g. "Vox cho biết ...", "Theo Vox: ..."). Metadata may
+        // identify the source, but the headline must lead with the actual subject.
+        const namedAttributionLead =
+          /^(?:theo\s+)?(?:[A-Za-zÀ-ỹ][\p{L}\p{N}&.'’\-]*(?:\s+[A-Za-zÀ-ỹ][\p{L}\p{N}&.'’\-]*){0,4})\s+(?:cho\s+biết|cho\s+hay|cho\s+rằng|nói\s+rằng|tiết\s+lộ|đưa\s+tin)\s*[:：,]?\s*/iu;
+        const theoNamedLead =
+          /^theo\s+(?:[A-Za-zÀ-ỹ][\p{L}\p{N}&.'’\-]*(?:\s+[A-Za-zÀ-ỹ][\p{L}\p{N}&.'’\-]*){0,4})\s*[:：,]\s*/iu;
+        if (namedAttributionLead.test(guardedTitle)) {
+          guardedTitle = guardedTitle.replace(namedAttributionLead, "").trim();
+          issues.push("Đã loại bỏ tên nguồn ở đầu tiêu đề.");
+        } else if (theoNamedLead.test(guardedTitle)) {
+          guardedTitle = guardedTitle.replace(theoNamedLead, "").trim();
+          issues.push("Đã loại bỏ tên nguồn ở đầu tiêu đề.");
+        }
 
-          // Clickbait flag: sensational words shouldn't appear in a news
-          // headline. Removing them mechanically risks corrupting grammar, so
-          // flag for the quality chip instead.
-          if (
-            /(?<![\p{L}\p{N}])(?:gây\s+sốc|chấn\s+động|không\s+thể\s+tin\s+nổi|toang|cháy\s+hàng|bí\s+mật|bạn\s+sẽ\s+bất\s+ngờ|điều\s+không\s+tưởng)(?![\p{L}\p{N}])/iu.test(
-              guardedTitle,
-            )
-          ) {
-            issues.push("Tiêu đề còn từ giật gân — nên viết lại thủ công.");
-          }
+        // Clickbait flag: sensational words shouldn't appear in a news
+        // headline. Removing them mechanically risks corrupting grammar, so
+        // flag for the quality chip instead.
+        if (
+          /(?<![\p{L}\p{N}])(?:gây\s+sốc|chấn\s+động|không\s+thể\s+tin\s+nổi|toang|cháy\s+hàng|bí\s+mật|bạn\s+sẽ\s+bất\s+ngờ|điều\s+không\s+tưởng)(?![\p{L}\p{N}])/iu.test(
+            guardedTitle,
+          )
+        ) {
+          issues.push("Tiêu đề còn từ giật gân — nên viết lại thủ công.");
         }
         const cappedTitle = removeDanglingHeadlineTail(guardedTitle);
         const titleWords = guardedTitle.trim().split(/\s+/).filter(Boolean);
@@ -2407,7 +2417,7 @@ function postProcessOutput(output, sourceText, type, contentKind = "news") {
         if (cappedTitle && keptWords.length < titleWords.length) {
           issues.push("Đã rút tiêu đề cho trọn ý, phần chi tiết nằm ở đoạn sau.");
         }
-        if (isNewsKind && sourceText && cappedTitle) {
+        if (sourceText && cappedTitle) {
           const sourceNumbers = new Set((sourceText.match(/\d+(?:[.,]\d+)*/gu) || [])
             .map(value => value.replace(/[.,]/g, "")));
           const unsupported = (cappedTitle.match(/\d+(?:[.,]\d+)*/gu) || [])
@@ -2416,20 +2426,20 @@ function postProcessOutput(output, sourceText, type, contentKind = "news") {
             issues.push("[!] Tiêu đề cần viết lại: số liệu không có trong nguồn.");
           }
         }
-        if (isNewsKind && (headlineTokens(cappedTitle).length < 3 || /^cập nhật$/iu.test(cappedTitle))) {
+        if (headlineTokens(cappedTitle).length < 3 || /^cập nhật$/iu.test(cappedTitle)) {
           issues.push("[!] Tiêu đề cần viết lại: thiếu chủ thể hoặc sự kiện cụ thể.");
         }
-        if (isNewsKind && hasClaudeCodePromptSettingAction(sourceText) &&
+        if (hasClaudeCodePromptSettingAction(sourceText) &&
             /^Claude\s+Code\s+(?:sẽ\s+)?(?:tắt|vô hiệu hóa|giảm)\s+/iu.test(cappedTitle)) {
           issues.push("[!] Tiêu đề có thể đảo tác nhân: người dùng tắt gợi ý prompt trong Claude Code, không phải Claude Code tự tắt. Kiểm tra lại cả lead.");
         }
-        if (isNewsKind && hasClaudeCodePromptSettingAction(sourceText) &&
+        if (hasClaudeCodePromptSettingAction(sourceText) &&
             /Claude\s+Code\s+(?:sẽ\s+)?(?:giảm|tắt|vô hiệu hóa)\s+(?:giới hạn\s+)?(?:gợi ý|đề xuất)\s+prompt/iu.test(lines.slice(i + 1).join(" "))) {
           issues.push("[!] Lead có thể đảo tác nhân hoặc nhầm tùy chọn gợi ý prompt với hạn mức sử dụng; cần viết lại theo nguồn.");
         }
         lines[i] = cappedTitle || "Cập nhật";
         // Viết hoa toàn bộ tiêu đề
-        lines[i] = lines[i].toUpperCase();
+        lines[i] = typeof uppercaseKeepingUnits === "function" ? uppercaseKeepingUnits(lines[i]) : lines[i].toUpperCase();
         break;
       }
     }
@@ -2524,9 +2534,14 @@ function postProcessOutput(output, sourceText, type, contentKind = "news") {
       [/\bperplexity\b/gi, "Perplexity"],
       [/\bcursor\b/gi, "Cursor"],
     ];
-    for (const [re, fix] of brandFixes) body = body.replace(re, fix);
+    body = mapOutsideIdentifiers(body, (segment) => {
+      for (const [re, fix] of brandFixes) segment = segment.replace(re, fix);
+      return segment;
+    });
     processed = title + body;
   }
+  // Hostnames are case-insensitive; models sometimes write "https://GitHub.com/…".
+  processed = processed.replace(/\bhttps?:\/\/[^\/\s]+/gi, (m) => m.toLowerCase());
 
   // 7b. Clean translationese and awkward mechanical phrasing in body
   processed = processed
@@ -2578,12 +2593,6 @@ function postProcessOutput(output, sourceText, type, contentKind = "news") {
 
   const cleanBodyText = (text) => {
     let result = text;
-    // News-only narration cleanups: social-post retelling, self-intro and
-    // indirect-reporting rewrites force the output toward a direct news brief.
-    // Reviews/opinions legitimately attribute claims to people, and tutorials
-    // may legitimately address "bạn" — so non-news kinds keep the source's own
-    // narration structure.
-    if (isNewsKind) {
     // 9a. Strip standalone social narration sentences (with or without timestamps):
     // e.g. "Bài đăng trên X của người dùng A vào lúc 17:10 ngày 10/9 đã chia sẻ..."
     // e.g. "Theo một bài đăng trên X vào lúc 00:30, người dùng A đã giới thiệu..."
@@ -2631,30 +2640,18 @@ function postProcessOutput(output, sourceText, type, contentKind = "news") {
       }
     }
 
-    // 9d. Transform indirect retelling openings ("OpenAI cho biết...") into direct news statements:
-    // e.g. "OpenAI cho biết họ/công ty đã mở..." -> "OpenAI đã mở..."
-    // e.g. "OpenAI cho biết hệ thống..." -> "Hệ thống..."
-    const reportingLeadRe =
-      /(?:^|(\n\n))([A-ZÀ-Ỹ][\p{L}\p{N}&.'’\-]*(?:\s+[A-ZÀ-Ỹ][\p{L}\p{N}&.'’\-]*){0,3})\s+(?:cho\s+biết|cho\s+hay|tuyên\s+bố|thông\s+báo)\s+(?:rằng\s+)?(?:(?:(công\s+ty|hãng|họ)\s+)?(đã|sẽ|vừa|đang)\s+)?/giu;
-    if (reportingLeadRe.test(result)) {
-      result = result.replace(reportingLeadRe, (match, nls, subject, companyRef, tense) => {
-        issues.push("Đã chuyển đổi câu thuật lại sang đưa tin trực tiếp.");
-        const prefix = nls || "";
-        if (companyRef || tense) {
-          return prefix + subject + " " + (tense || "đã") + " ";
-        }
-        return prefix;
-      }).trimStart();
-    }
+    // Attribution ("Elon Musk tuyên bố…", "Reuters cho biết…") is kept: it
+    // separates a claim, promise or leak from a confirmed fact, and stripping
+    // it reported "Tesla sẽ ra mắt robotaxi" as fact.
 
     result = result.replace(
       /^(?:(?:được\s+biết|cụ\s+thể(?: là)?|theo\s+đó|đáng\s+chú\s+ý(?: là)?)[,:]\s*)/i,
       "",
     );
-    }
 
     // Capitalize first letter of sentence or paragraph if lowercase
-    result = result.replace(/(?:^|\n\n|[.!?]\s+)([a-zà-ỹ])/gu, (m, c) => m.slice(0, -1) + c.toUpperCase());
+    // Skip mixed-case names: "iPhone", "macOS", "eSIM" must not become "IPhone".
+    result = result.replace(/(?:^|\n\n|[.!?]\s+)([a-zà-ỹ])(?![\p{L}\p{N}]*\p{Lu})/gu, (m, c) => m.slice(0, -1) + c.toUpperCase());
     return result.replace(/\.\s+\./g, ".").replace(/[^\S\n]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
   };
 
@@ -2666,6 +2663,12 @@ function postProcessOutput(output, sourceText, type, contentKind = "news") {
   } else {
     processed = cleanBodyText(processed);
   }
+  // 9e. Community mod/repo credited to the vendor ("Claude Code ra mắt mod…").
+  if (provenance && typeof FeedWriterSummaryPolicy !== "undefined" && FeedWriterSummaryPolicy.findMisattribution) {
+    const misattribution = FeedWriterSummaryPolicy.findMisattribution(processed, provenance);
+    if (misattribution) issues.push(misattribution);
+  }
+
   // 10. Hallucination detection: check if output contains numbers not in source
   if (typeof sourceText === "string") {
     const sourceNums = numericEvidenceTokens(sourceText);
@@ -2679,54 +2682,45 @@ function postProcessOutput(output, sourceText, type, contentKind = "news") {
     }
   }
 
-  // 11. Detect "nói xạo" - writing as if personally experienced when sharing others' content.
-  // News-only: reviews and opinion pieces legitimately recount first-hand
-  // experience ("mình đã dùng", "tôi thấy") — flagging it there would be noise.
-  if (isNewsKind) {
-    const fakeExperiencePatterns = [
-      /\b(?:mình|tôi)\s+(?:vừa|đã|mới)\s+(?:thử|test|dùng|tạo|làm|mua|cài|nâng cấp|update)\b/i,
-      /\b(?:mình|tôi)\s+(?:thử|test|dùng)\s+(?:rồi|xong|thấy)\b/i,
-      /\b(?:mình|tôi)\s+(?:đã\s+)?(?:tạo|làm)\s+(?:được|ra|xong)\b/i,
-      /\bthật\s+sự\s+(?:choáng|sốc|bất ngờ|ngạc nhiên)\b/i,
-      /\b(?:mình|tôi)\s+(?:rất|cực kỳ|vô cùng)\s+(?:thích|hài lòng|ấn tượng|ngạc nhiên)\b/i,
-      /\bsau khi (?:mình|tôi)\s+(?:dùng|thử|test|cài)\b/i,
-      /\b(?:mình|tôi)\s+(?:khuyên|recommend|đề xuất)\b/i,
-    ];
-    for (const pat of fakeExperiencePatterns) {
-      if (pat.test(processed)) {
-        issues.push(
-          "[!] Output viết như người trải nghiệm trực tiếp — có thể không chính xác nếu đây là nội dung chia sẻ lại.",
-        );
-        break;
-      }
+  // 11. Detect "nói xạo" - writing as if personally experienced when sharing others' content
+  const fakeExperiencePatterns = [
+    /\b(?:mình|tôi)\s+(?:vừa|đã|mới)\s+(?:thử|test|dùng|tạo|làm|mua|cài|nâng cấp|update)\b/i,
+    /\b(?:mình|tôi)\s+(?:thử|test|dùng)\s+(?:rồi|xong|thấy)\b/i,
+    /\b(?:mình|tôi)\s+(?:đã\s+)?(?:tạo|làm)\s+(?:được|ra|xong)\b/i,
+    /\bthật\s+sự\s+(?:choáng|sốc|bất ngờ|ngạc nhiên)\b/i,
+    /\b(?:mình|tôi)\s+(?:rất|cực kỳ|vô cùng)\s+(?:thích|hài lòng|ấn tượng|ngạc nhiên)\b/i,
+    /\bsau khi (?:mình|tôi)\s+(?:dùng|thử|test|cài)\b/i,
+    /\b(?:mình|tôi)\s+(?:khuyên|recommend|đề xuất)\b/i,
+  ];
+  for (const pat of fakeExperiencePatterns) {
+    if (pat.test(processed)) {
+      issues.push(
+        "[!] Output viết như người trải nghiệm trực tiếp — có thể không chính xác nếu đây là nội dung chia sẻ lại.",
+      );
+      break;
     }
   }
 
   // 12. News-style guardrails. Do not mutate legitimate timelines, but warn
   // when multiple storytelling transitions suggest the model retold the source
-  // chronologically instead of writing a fact-first news brief. Tutorials are
-  // sequential by design, so this warning is news-only.
-  if (isNewsKind) {
-    const narrativeMarkers =
-      processed.match(
-        /\b(?:sau đó|tiếp theo|rồi thì|cuối cùng|câu chuyện bắt đầu|trên hành trình|kể từ đó)\b/gi,
-      ) || [];
-    if (narrativeMarkers.length >= 2) {
-      issues.push(
-        "[!] Output có xu hướng kể lại theo trình tự thay vì viết bản tin fact-first.",
-      );
-    }
+  // chronologically instead of writing a fact-first news brief.
+  const narrativeMarkers =
+    processed.match(
+      /\b(?:sau đó|tiếp theo|rồi thì|cuối cùng|câu chuyện bắt đầu|trên hành trình|kể từ đó)\b/gi,
+    ) || [];
+  if (narrativeMarkers.length >= 2) {
+    issues.push(
+      "[!] Output có xu hướng kể lại theo trình tự thay vì viết bản tin fact-first.",
+    );
   }
 
   // A very short answer to a long source is a strong signal that distinct ideas
   // were dropped. Length is only a warning heuristic; the prompt remains the
-  // primary coverage contract. Tutorials compress harder (steps are terse), so
-  // their floor factor is lower.
+  // primary coverage contract.
   if (type?.startsWith("summary") && sourceText?.length >= 4000) {
-    const coverageFactor = contentKind === "tutorial" ? 0.03 : 0.05;
     const coverageFloor = Math.min(
       1600,
-      Math.max(600, Math.floor(sourceText.length * coverageFactor)),
+      Math.max(600, Math.floor(sourceText.length * 0.05)),
     );
     if (processed.length < coverageFloor) {
       issues.push(
@@ -2736,18 +2730,14 @@ function postProcessOutput(output, sourceText, type, contentKind = "news") {
   }
 
   // 13. Detect excessive possessive "của bạn/mình/chúng ta"
-  // News-only: tutorials legitimately instruct the reader ("tài khoản của bạn")
-  // and opinions naturally speak first-person — the warning would be noise there.
-  if (isNewsKind) {
-    const possessiveMatches =
-      processed.match(/của\s+(?:bạn|mình|chúng ta)/gi) || [];
-    if (possessiveMatches.length >= 3) {
-      issues.push(
-        'Output dùng "của bạn/mình" ' +
-          possessiveMatches.length +
-          " lần — nên viết trực tiếp hơn.",
-      );
-    }
+  const possessiveMatches =
+    processed.match(/của\s+(?:bạn|mình|chúng ta)/gi) || [];
+  if (possessiveMatches.length >= 3) {
+    issues.push(
+      'Output dùng "của bạn/mình" ' +
+        possessiveMatches.length +
+        " lần — nên viết trực tiếp hơn.",
+    );
   }
 
   // 14. Quality score
@@ -2758,7 +2748,6 @@ function postProcessOutput(output, sourceText, type, contentKind = "news") {
     quality = "warn";
   else if (issues.length > 0) quality = "info";
 
-  if (typeof lowercaseRepoLinks === "function") processed = lowercaseRepoLinks(processed);
   return { text: processed, quality, issues };
 }
 
@@ -2971,7 +2960,6 @@ async function handleStream(
   tone = null,
   preferredProvider = null,
   type = "summary",
-  formatOverride = null,
 ) {
   // === INPUT GUARDRAILS ===
   const inputCheck = validateInput(text);
@@ -2985,7 +2973,7 @@ async function handleStream(
   // inside the active providers' context windows; silently cutting at 8,000
   // characters caused long posts to lose every idea near the end.
   const cleanedText = cleanInputText(inputCheck.text);
-  let completeSource = cleanedText;
+  const completeSource = cleanedText;
   let sourceMessage = buildSourceMessage(completeSource);
   let sourceBudget = completeSource.length;
   let sourceWasTruncated = false;
@@ -3003,73 +2991,30 @@ async function handleStream(
           glossary: { mode: "omit", candidates: [], limit: 0 },
         };
 
-  // Always try to summarize first. Only when the model reports that the source
-  // lacks facts/events (NO_SUMMARY) does a foreign-language source fall back to
-  // translation. Vietnamese sources keep the skip message instead.
-  const translateEligible =
-    type === "summary" &&
-    typeof FeedWriterSummaryPolicy !== "undefined" &&
-    FeedWriterSummaryPolicy.canFallbackToTranslation(completeSource);
-  let translateMode = false;
-  // Tone chips "Dịch" / "List + link" are explicit user requests: never let the
-  // automatic summary policy veto them.
-  const explicitRewrite = type === "summary" && (tone === "translate" || tone === "list");
-  const forceTranslate =
-    type === "summary" &&
-    tone === "translate" &&
-    typeof FeedWriterSummaryPolicy !== "undefined" &&
-    FeedWriterSummaryPolicy.canForceTranslation(completeSource);
-  if (type === "summary" && tone === "translate" && !forceTranslate) {
-    return { error: "Bài quá dài để dịch nguyên văn trong một lần (tối đa khoảng 6.000 ký tự)." };
-  }
-
   // X summaries are always explicitly requested from the per-tweet action.
   // Do not let the automatic-offer policy veto that user request.
   if (
-    !translateEligible &&
-    !explicitRewrite &&
     type === "summary" &&
     site !== "x" &&
     !summaryPolicy.summary.shouldSummarize
   ) {
     return {
-      error: "Nội dung đã đủ ngắn hoặc chưa có đủ ý để tóm tắt.",
+      error:
+        site === "x"
+          ? "Tweet này đã đủ ngắn, chưa cần tóm tắt."
+          : "Nội dung đã đủ ngắn hoặc chưa có đủ ý để tóm tắt.",
       skipped: true,
       reason: summaryPolicy.summary.reason,
     };
   }
 
-  // === CONTENT-KIND CLASSIFICATION (news | tutorial | review | opinion) ===
-  // Only real summaries route through kind templates — translate mode,
-  // comment_summary, status_share and coverage chunks keep their own prompts.
-  // An explicit formatOverride ("Đổi khuôn" chip) skips the LLM fallback.
-  let contentKind = null;
-  if (
-    type === "summary" &&
+  const lengthBudget =
     typeof FeedWriterSummaryPolicy !== "undefined" &&
-    typeof FeedWriterSummaryPolicy.decideContentType === "function"
-  ) {
-    const kindDecision = FeedWriterSummaryPolicy.decideContentType(
-      completeSource,
-      { site, formatOverride },
-    );
-    if (formatOverride) {
-      contentKind = kindDecision.kind;
-    } else if (kindDecision.confidence === "high") {
-      contentKind = kindDecision.kind;
-    } else if (kindDecision.confidence === "low") {
-      try {
-        port.postMessage({
-          action: "status",
-          message: "Đang nhận dạng thể loại bài...",
-        });
-      } catch (_) {}
-      contentKind =
-        (await classifyContentKind(completeSource, signal)) ||
-        kindDecision.kind;
-    }
-    // confidence "none" → keep null → default news path
-  }
+    FeedWriterSummaryPolicy.buildLengthBudgetInstruction
+      ? FeedWriterSummaryPolicy.buildLengthBudgetInstruction(completeSource, type)
+      : "";
+  // A glossary under a two-sentence item only adds bulk.
+  if (lengthBudget) summaryPolicy.glossary = { mode: "omit", candidates: [], limit: 0 };
 
   let systemPrompt = await getSystemPrompt(
     site,
@@ -3082,21 +3027,14 @@ async function handleStream(
     summaryPolicy.glossary,
     postTime,
     postDate,
-    contentKind,
   );
-  if (forceTranslate || (translateEligible && FeedWriterSummaryPolicy.isTitledListPost(completeSource))) {
-    // The post already has its own title + intro: translate it as is.
-    translateMode = true;
-    completeSource = stripSocialMetadataLines(completeSource);
-    sourceMessage = buildSourceMessage(completeSource);
-    systemPrompt = TRANSLATE_SOURCE_PROMPT;
-    summaryPolicy.glossary = { mode: "omit", candidates: [], limit: 0 };
-  } else {
-    if (translateEligible && tone !== "list") systemPrompt += "\n\n" + NO_SUMMARY_INSTRUCTION;
-    if (type === "summary" && (tone === "list" || countDistinctUrls(completeSource) >= 2)) {
-      systemPrompt += "\n\n" + SOURCE_LINKS_INSTRUCTION;
-    }
-  }
+  if (lengthBudget) systemPrompt += "\n\n" + lengthBudget;
+  const provenance =
+    typeof FeedWriterSummaryPolicy !== "undefined" && FeedWriterSummaryPolicy.detectProvenance
+      ? FeedWriterSummaryPolicy.detectProvenance({ text: completeSource, author, sourceUrl })
+      : null;
+  const provenanceRule = provenance ? FeedWriterSummaryPolicy.buildProvenanceInstruction(provenance) : "";
+  if (provenanceRule) systemPrompt += "\n\n" + provenanceRule;
 
   const streamFns = {
     groq: callGroqStream,
@@ -3121,15 +3059,30 @@ async function handleStream(
     Math.max(baseMaxTokens, coverageTokens),
   );
 
-  // Reasoning models spend part of max_tokens before the first visible token;
-  // a tight cap cut translations mid-sentence.
-  if (translateEligible || forceTranslate) maxTokens = Math.max(maxTokens, 2048);
-
   let activePort = port;
   let activePrompt = systemPrompt;
   let activeType = type;
   let shrinkBase = completeSource;
   let recordResult = true;
+  // The final article is recorded once, after the optional revision pass.
+  let deferRecording = false;
+
+  async function recordSummary(result) {
+    await incrementTelemetry('summaries');
+    trackEvent("summary_completed", { provider: result.provider, type });
+    incrementBadge();
+    await saveHistory(
+      text,
+      result.summary,
+      site,
+      type,
+      sourceUrl,
+      imageUrl,
+      author,
+      postTitle,
+      postDate,
+    );
+  }
   let jobMaxTokens = maxTokens;
   let coverageNote = "";
   let cooldownCleared = false;
@@ -3390,31 +3343,6 @@ async function handleStream(
         continue;
       }
 
-      if (
-        result.summary &&
-        recordResult &&
-        translateEligible &&
-        !translateMode &&
-        /^\s*NO_SUMMARY\b/i.test(result.summary)
-      ) {
-        // Not enough facts/events to write a news item: translate instead.
-        translateMode = true;
-        shrinkBase = stripSocialMetadataLines(shrinkBase);
-        sourceMessage = buildSourceMessage(shrinkBase);
-        completeSource = shrinkBase;
-        activePrompt = TRANSLATE_SOURCE_PROMPT;
-        localMax = Math.max(localMax, 2048);
-        summaryPolicy.glossary = { mode: "omit", candidates: [], limit: 0 };
-        triedKeys.clear();
-        try {
-          activePort.postMessage({
-            action: "retry",
-            message: "Thiếu dữ kiện để tóm tắt — chuyển sang dịch thuật...",
-          });
-        } catch (_) {}
-        continue;
-      }
-
       if (result.summary) {
         if (recordResult && typeof FeedWriterSummaryPolicy !== "undefined") {
           result.summary = FeedWriterSummaryPolicy.sanitizeGlossaryOutput(
@@ -3423,30 +3351,12 @@ async function handleStream(
           );
         }
         const postResult = recordResult
-          ? postProcessOutput(
-              result.summary,
-              text,
-              translateMode ? "translate" : type,
-              translateMode ? "translate" : (contentKind || "news"),
-            )
-          : postProcessOutput(result.summary, text, activeType);
-        if (!postResult.failure && recordResult && translateMode) {
-          const check = checkTranslationCompleteness(completeSource, postResult.text);
-          if (!check.ok) {
-            postResult.failure = "incomplete_translation";
-            postResult.detail = check.droppedParagraphs
-              ? "thiếu đoạn"
-              : check.untranslated.length
-                ? "còn câu chưa dịch"
-                : "thiếu " + check.missing.slice(0, 3).join(", ");
-          }
-        }
+          ? postProcessOutput(result.summary, text, type, provenance)
+          : postProcessOutput(result.summary, text, activeType, provenance);
         if (postResult.failure) {
           const reason = postResult.failure === "provider_refusal"
             ? "provider-refusal"
-            : postResult.failure === "incomplete_translation"
-              ? "incomplete-translation (" + postResult.detail + ")"
-              : "invalid-output";
+            : "invalid-output";
           await markKeyCooldown(keyInfo.key, 30_000, reason);
           attemptErrors.push(`${keyInfo.provider}: ${reason}`);
           attemptKinds.push("refusal");
@@ -3459,9 +3369,7 @@ async function handleStream(
           continue;
         }
 
-        result.summary = translateMode
-          ? TRANSLATION_MARK + uppercaseTitleLine(postResult.text)
-          : postResult.text;
+        result.summary = postResult.text;
         result.quality = postResult.quality;
         result.issues = postResult.issues;
         if (sourceWasTruncated) {
@@ -3479,23 +3387,8 @@ async function handleStream(
           ];
         }
         await markProviderSuccess(keyInfo.provider, Date.now() - t0);
-        if (recordResult) {
-          await incrementTelemetry('summaries');
-          trackEvent("summary_completed", { provider: keyInfo.provider, type });
-          incrementBadge();
-          await saveHistory(
-            text,
-            result.summary,
-            site,
-            type,
-            sourceUrl,
-            imageUrl,
-            author,
-            postTitle,
-            postDate,
-          );
-        }
-        result.contentKind = contentKind || "news";
+        result.provider = keyInfo.provider;
+        if (recordResult && !deferRecording) await recordSummary(result);
       }
       return result;
     }
@@ -3602,20 +3495,74 @@ async function handleStream(
     }
     shrinkBase = factSheet;
     activePrompt = synthesisBase +
-      "\n\nNguồn dưới đây là dữ kiện đã trích từ TOÀN BỘ bài gốc, theo thứ tự. Viết một bản tin từ mọi phần, không bỏ phần giữa. Không in nhãn \"Phần N\" trong bài.";
+      "\n\nNguồn dưới đây là dữ kiện đã trích từ TOÀN BỘ bài gốc, theo thứ tự. Viết một bản tin từ mọi phần, không bỏ phần giữa.";
     activeType = type;
     activePort = port;
     recordResult = true;
     jobMaxTokens = savedMax;
   }
 
-  const finalResult = await generateWithRotation();
+  deferRecording = true;
+  let finalResult = await generateWithRotation();
+  const firstBlocking = blockingQualityIssues(finalResult);
+  if (firstBlocking.length && !signal?.aborted) {
+    // One self-correction pass: the checks above already know what is wrong
+    // (a number not in the source, a swapped actor, an empty headline), so
+    // hand that back to the model instead of only showing a warning chip.
+    const basePrompt = activePrompt;
+    activePrompt += "\n\n" + buildRevisionInstruction(finalResult.summary, firstBlocking);
+    try {
+      port.postMessage({ action: "retry", message: "Bản đầu có lỗi dữ kiện — đang tự sửa..." });
+    } catch (_) {}
+    const revised = await generateWithRotation();
+    activePrompt = basePrompt;
+    finalResult = pickRevisedResult(finalResult, revised);
+  }
+  if (recordResult && finalResult && finalResult.summary) await recordSummary(finalResult);
   if (finalResult && finalResult.summary && coverageNote) {
     finalResult.quality = finalResult.quality === "good" ? "info" : finalResult.quality;
     finalResult.issues = [coverageNote, ...(finalResult.issues || [])];
   }
   return finalResult;
 }
+// === SELF-CORRECTION ===
+// Warnings that mean the article is factually wrong, not just stylistically
+// weak. Only these trigger the revision pass.
+const BLOCKING_ISSUE_MARKERS = [
+  "Tiêu đề cần viết lại",
+  "số liệu bịa",
+  "đảo tác nhân",
+  "Lead có thể đảo",
+  "viết như người trải nghiệm",
+  "Gán nhầm cho hãng",
+];
+
+function blockingQualityIssues(result) {
+  if (!result || !result.summary || !Array.isArray(result.issues)) return [];
+  return result.issues.filter((issue) =>
+    BLOCKING_ISSUE_MARKERS.some((marker) => String(issue).includes(marker)),
+  );
+}
+
+function buildRevisionInstruction(draft, issues) {
+  return "SỬA BẢN NHÁP — BẮT BUỘC:\n" +
+    "Bản nháp trước của bạn có các lỗi sau:\n" +
+    issues.map((issue) => "- " + String(issue).replace(/^\[!\]\s*/, "")).join("\n") +
+    "\nViết lại TOÀN BỘ bài từ nội dung nguồn, sửa đúng các lỗi trên và giữ những phần đã đúng. " +
+    "Chỉ dùng tên, số liệu và tác nhân có trong nguồn. Không nhắc tới bản nháp hay việc sửa lỗi.\n" +
+    "BẢN NHÁP TRƯỚC (chỉ để tham khảo lỗi, không phải nguồn):\n\"\"\"\n" +
+    String(draft || "").slice(0, 6000) +
+    "\n\"\"\"";
+}
+
+// Keep the revision unless it failed or came back with more blocking issues.
+function pickRevisedResult(first, revised) {
+  if (!revised || !revised.summary) return first;
+  return blockingQualityIssues(revised).length <= blockingQualityIssues(first).length
+    ? revised
+    : first;
+}
+
 // === HISTORY ===
 const HISTORY_MAX_ITEMS = 200;
 const HISTORY_MAX_BYTES = 2 * 1024 * 1024;
@@ -3739,6 +3686,18 @@ async function compactStoredHistory() {
   }
 }
 
+// document.title of the X/Facebook shell, not a headline of the post.
+function isPlaceholderPostTitle(title) {
+  const value = String(title || "").trim();
+  return !value || /^(?:\(\d+\)\s*)?(?:Home|Trang chủ|Notifications|Thông báo|Explore|Khám phá)?\s*[\/|·-]?\s*(?:X|Twitter|Facebook)$/i.test(value);
+}
+
+function historyEntriesSamePost(a, b) {
+  if (!a?.sourceUrl || !b?.sourceUrl) return false;
+  if ((a.type || "summary") !== (b.type || "summary")) return false;
+  return cleanSourceUrl(a.sourceUrl) === cleanSourceUrl(b.sourceUrl);
+}
+
 async function saveHistory(
   text,
   summary,
@@ -3757,17 +3716,22 @@ async function saveHistory(
     date: postDate ? formatVietnamIsoString(new Date(postDate)) : formatVietnamIsoString(new Date()),
     site: site || "unknown",
     type: type || "summary",
-    sourceUrl: sourceUrl || "",
+    sourceUrl: sourceUrl ? cleanSourceUrl(sourceUrl) : "",
     imageUrl: /^data:/i.test(String(imageUrl || ""))
       ? ""
       : String(imageUrl || "").slice(0, 4096),
     author: author || "",
-    postTitle: postTitle || "",
+    postTitle: isPlaceholderPostTitle(postTitle) ? "" : postTitle,
   };
 
   return queueHistoryUpdate(async () => {
     const data = await chrome.storage.local.get("history");
-    const history = data.history || [];
+    // Regenerating the same post (retry, tone change) replaces its previous
+    // entry instead of stacking near-identical copies that push older posts
+    // out of the 200-item window.
+    const history = (data.history || []).filter(
+      (old) => !historyEntriesSamePost(old, entry),
+    );
     history.unshift(entry);
     await chrome.storage.local.set({ history: compactHistoryForStorage(history) });
   });
