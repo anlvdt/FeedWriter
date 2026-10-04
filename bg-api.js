@@ -50,10 +50,32 @@ function isTpmError(errMsg, status) {
   return status === 413 || /too large|requested|limit|exceed|rate_limit/.test(m);
 }
 
+/**
+ * True when the error is a *per-interval token/request quota* rather than a
+ * fixed context-window overflow. Groq answers HTTP 413 "Request too large …
+ * on tokens per minute (TPM)" and Gemini answers RESOURCE_EXHAUSTED: both are
+ * rate limits that clear on their own, and shrinking an already-short post
+ * never helps — the budget is dominated by the system prompt + the reserved
+ * output tokens, not the user's text. Must be checked before isContextError so
+ * these never get reported as "your post is too long".
+ */
+function isTokenRateLimit(errMsg, status) {
+  const m = String(errMsg || "").toLowerCase();
+  return (
+    /tokens? per (minute|day|hour)|\btp[md]\b|requests? per (minute|day|hour)|\brp[md]\b|rate.?limit|rate_limit_exceeded|resource.?exhausted|too many requests|try again in\b|request too large/i.test(
+      m,
+    )
+  );
+}
+
 /** True when the input/output size exceeds what the model accepts. */
 function isContextError(errMsg, status) {
   if (isTpmError(errMsg, status)) return false;
   const m = String(errMsg || "").toLowerCase();
+  // A token-per-minute/day quota is a rate limit, not a context-window
+  // overflow. Groq surfaces it as HTTP 413 "Request too large … (TPM)", so the
+  // 413 status alone cannot be trusted to mean "input too long".
+  if (isTokenRateLimit(errMsg, status)) return false;
   return (
     status === 413 ||
     /context.{0,20}(length|window|size|limit)|context_length_exceeded|maximum context|too many tokens|max.?tokens.{0,30}(too large|exceed|invalid|maximum)|max.?completion|maxoutputtokens|reduce.{0,20}length|prompt.{0,20}too long|payload.{0,15}too large|request.{0,20}too large/i.test(
@@ -340,6 +362,21 @@ async function clearAllKeyCooldowns() {
   return changed;
 }
 
+function parseRetryAfter(errorMessage) {
+  const match = errorMessage?.match(/try again in (\d+)m([\d.]+)s/i);
+  if (match) return (parseInt(match[1]) * 60 + parseFloat(match[2])) * 1000;
+  const secMatch = errorMessage?.match(/retry.?after:?\s*(\d+)/i);
+  if (secMatch) return parseInt(secMatch[1]) * 1000;
+  // "Please try again in 2m30s" style
+  const m2 = errorMessage?.match(/in\s+(\d+)\s*m(?:in(?:ute)?s?)?/i);
+  if (m2) return parseInt(m2[1], 10) * 60 * 1000;
+  // Seconds-only form, e.g. Groq TPM "please try again in 8.35s" — these clear
+  // fast, so honor the real hint instead of a sticky 15-minute default.
+  const secOnly = errorMessage?.match(/(?:try again|again)\s+in\s+([\d.]+)\s*s(?:ec(?:ond)?s?)?\b/i);
+  if (secOnly) return Math.ceil(parseFloat(secOnly[1]) * 1000);
+  return 15 * 60 * 1000; // default 15 min (was 30 — less sticky)
+}
+
 /** Classify provider error for cooldown + user message */
 function classifyProviderError(errMsg = "", status = 0) {
   const m = String(errMsg || "").toLowerCase();
@@ -350,6 +387,12 @@ function classifyProviderError(errMsg = "", status = 0) {
   }
   if (isTpmError(errMsg, status)) {
     return { kind: "tpm", cooldownMs: 20 * 1000 };
+  }
+  // Per-minute/day token quotas (Groq's 413 "Request too large … (TPM)",
+  // Gemini's RESOURCE_EXHAUSTED) must be treated as rate limits, not as a
+  // context-window overflow — otherwise a short post gets blamed as "too long".
+  if (isTokenRateLimit(errMsg, status)) {
+    return { kind: "rate", cooldownMs: parseRetryAfter(errMsg) };
   }
   if (isContextError(errMsg, status)) {
     return { kind: "context", cooldownMs: 30 * 1000 };
