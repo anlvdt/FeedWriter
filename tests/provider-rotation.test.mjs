@@ -29,6 +29,7 @@ function emptyKeys() {
   return {
     groq: [],
     cerebras: [],
+    nvidia: [],
     sambanova: [],
     gemini: [],
     openrouter: [],
@@ -40,6 +41,7 @@ describe("PROVIDER_PRIORITY", () => {
     assert.deepEqual(PROVIDER_PRIORITY, [
       "groq",
       "cerebras",
+      "nvidia",
       "sambanova",
       "gemini",
       "openrouter",
@@ -373,6 +375,7 @@ describe("selectAvailableKey — circuit breaker (providerStatus)", () => {
   const keys = () => ({
     groq: ["gsk_a"],
     cerebras: ["csk_b"],
+    nvidia: [],
     sambanova: [],
     gemini: [],
     openrouter: [],
