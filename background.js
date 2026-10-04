@@ -2640,21 +2640,9 @@ function postProcessOutput(output, sourceText, type) {
       }
     }
 
-    // 9d. Transform indirect retelling openings ("OpenAI cho biết...") into direct news statements:
-    // e.g. "OpenAI cho biết họ/công ty đã mở..." -> "OpenAI đã mở..."
-    // e.g. "OpenAI cho biết hệ thống..." -> "Hệ thống..."
-    const reportingLeadRe =
-      /(?:^|(\n\n))([A-ZÀ-Ỹ][\p{L}\p{N}&.'’\-]*(?:\s+[A-ZÀ-Ỹ][\p{L}\p{N}&.'’\-]*){0,3})\s+(?:cho\s+biết|cho\s+hay|tuyên\s+bố|thông\s+báo)\s+(?:rằng\s+)?(?:(?:(công\s+ty|hãng|họ)\s+)?(đã|sẽ|vừa|đang)\s+)?/giu;
-    if (reportingLeadRe.test(result)) {
-      result = result.replace(reportingLeadRe, (match, nls, subject, companyRef, tense) => {
-        issues.push("Đã chuyển đổi câu thuật lại sang đưa tin trực tiếp.");
-        const prefix = nls || "";
-        if (companyRef || tense) {
-          return prefix + subject + " " + (tense || "đã") + " ";
-        }
-        return prefix;
-      }).trimStart();
-    }
+    // Attribution ("Elon Musk tuyên bố…", "Reuters cho biết…") is kept: it
+    // separates a claim, promise or leak from a confirmed fact, and stripping
+    // it reported "Tesla sẽ ra mắt robotaxi" as fact.
 
     result = result.replace(
       /^(?:(?:được\s+biết|cụ\s+thể(?: là)?|theo\s+đó|đáng\s+chú\s+ý(?: là)?)[,:]\s*)/i,
@@ -2662,7 +2650,8 @@ function postProcessOutput(output, sourceText, type) {
     );
 
     // Capitalize first letter of sentence or paragraph if lowercase
-    result = result.replace(/(?:^|\n\n|[.!?]\s+)([a-zà-ỹ])/gu, (m, c) => m.slice(0, -1) + c.toUpperCase());
+    // Skip mixed-case names: "iPhone", "macOS", "eSIM" must not become "IPhone".
+    result = result.replace(/(?:^|\n\n|[.!?]\s+)([a-zà-ỹ])(?![\p{L}\p{N}]*\p{Lu})/gu, (m, c) => m.slice(0, -1) + c.toUpperCase());
     return result.replace(/\.\s+\./g, ".").replace(/[^\S\n]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
   };
 

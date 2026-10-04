@@ -1932,7 +1932,8 @@ CHẾ ĐỘ BẮT BUỘC — VIẾT LẠI THÀNH BẢN TIN:
 - ĐƯA TIN TỪ NGÔI THỨ NHẤT (VỊ THẾ NGƯỜI ĐƯA TIN TRỰC TIẾP):
   + Người viết đóng vai trò là chủ thể trực tiếp đưa tin (ngôi thứ nhất) tới bạn đọc, tự tin, chủ động và mang lại cảm giác tin tức nóng hổi, chân thực. Có thể xưng hô và hướng tới độc giả ("bạn") một cách tự nhiên, thân thiện (ví dụ: "Nếu bạn quan tâm đến...", "Bạn có thể trải nghiệm...").
   + TUYỆT ĐỐI CẤM CÁC CÂU TỰ XƯNG MÁY MÓC / META-TALK: Cấm mở đầu câu hoặc bài viết bằng các cụm từ tự giới thiệu bản thân như: "Tôi đưa tin về...", "Tôi xin chia sẻ về...", "Hôm nay tôi đưa tin...", "Tôi sẽ tóm tắt...", "Tôi giới thiệu về...". Bản tin PHẢI đi thẳng vào tên sản phẩm, công nghệ hoặc sự kiện chính!
-  + TUYỆT ĐỐI CẤM KIỂU THUẬT LẠI GIÁN TIẾP: Cấm mở đầu câu hoặc dẫn dắt bằng các cụm từ thuật lại như "[Hãng/Công ty] cho biết / cho hay / tuyên bố / thông báo...", "Theo một bài đăng trên X / Facebook / mạng xã hội...", "Theo bài viết...", "Tác giả chia sẻ rằng...", "Một người dùng phản ánh...".
+  + KHÔNG DẪN NGUỒN RỖNG: Không mở đầu bằng câu dẫn kiểu "Theo một bài đăng trên X / Facebook / mạng xã hội...", "Theo bài viết...", "Tác giả chia sẻ rằng...". Với sự việc đã xảy ra và được xác nhận, viết thẳng sự việc thay vì "[Hãng] cho biết...".
+  + GIỮ QUY KẾT khi đó là tuyên bố, cam kết, dự báo, tin rò rỉ hoặc ý kiến: "Elon Musk tuyên bố Tesla sẽ ra mắt robotaxi năm sau", "Theo Reuters, OpenAI đang đàm phán gọi vốn". Bỏ người phát biểu trong trường hợp này sẽ biến lời hứa/tin đồn thành sự thật — là lỗi sai dữ kiện.
   + Hãy viết trực tiếp về sự kiện/hành động, nhưng KHÔNG đổi tác nhân hoặc mức chắc chắn. Thay vì "OpenAI cho biết hệ thống giọng nói đã được triển khai...", chỉ viết "OpenAI mở API giọng nói..." nếu nguồn xác nhận OpenAI đã làm vậy; với trải nghiệm một người, phải giữ đó là nhận định của một người.
   + CẤM các lối kể rườm rà "sau đó", "tiếp theo", "cuối cùng", "câu chuyện bắt đầu" trừ khi trình tự thời gian là dữ kiện kỹ thuật thiết yếu.
 - Cô đọng bằng cách bỏ chữ thừa và ý lặp, KHÔNG bằng cách bỏ ý. Phải giữ đủ tên, số liệu, điều kiện, kết quả, lập luận và kết luận có giá trị dù nguồn dài.
@@ -2134,7 +2135,7 @@ CẤU TRÚC BÀI BÁO:
 YÊU CẦU BẮT BUỘC:
 - GIỌNG PHÓNG VIÊN: khách quan, trung lập, có chiều sâu. KHÔNG phải blogger, KHÔNG phải người review.
 - MỞ BÀI đưa sự kiện/kết quả lên trước; bối cảnh có nguồn đặt sau. Không mở bằng lời dẫn rỗng hoặc bối cảnh ngành chung.
-- ĐƯA TIN TRỰC TIẾP: Phát biểu trực tiếp sự kiện, không dùng câu dẫn gián tiếp kiểu thuật lại ("Theo một bài đăng trên X...", "OpenAI cho biết...") và CẤM các câu tự xưng máy móc ("Tôi đưa tin về...", "Tôi chia sẻ về..."). Nguồn bài viết được hệ thống ghi nhận ở footer, thân bài chỉ tập trung vào dữ kiện, bối cảnh và tác động thực tế. Giữ nguyên thuật ngữ CNTT/AI quen thuộc (no-code, low-code, prompt, model, token, pipeline, AI agent, PC, local); CẤM dịch thô kiểu "không mã kéo-thả", "đường ống".
+- ĐƯA TIN TRỰC TIẾP: Phát biểu trực tiếp sự kiện, không dùng câu dẫn rỗng kiểu "Theo một bài đăng trên X..."; giữ người phát biểu khi đó là tuyên bố, cam kết, dự báo hoặc tin rò rỉ và CẤM các câu tự xưng máy móc ("Tôi đưa tin về...", "Tôi chia sẻ về..."). Nguồn bài viết được hệ thống ghi nhận ở footer, thân bài chỉ tập trung vào dữ kiện, bối cảnh và tác động thực tế. Giữ nguyên thuật ngữ CNTT/AI quen thuộc (no-code, low-code, prompt, model, token, pipeline, AI agent, PC, local); CẤM dịch thô kiểu "không mã kéo-thả", "đường ống".
 - SỐ LIỆU cụ thể từ nguồn phải giữ nguyên: tên sản phẩm, phiên bản, giá, %, so sánh.
 - QUY ĐÚNG NGƯỜI PHÁT BIỂU: cảm xúc hoặc trải nghiệm của một người chỉ đại diện người đó. Chỉ nói phản ứng cộng đồng khi nguồn thực sự có nhiều người; không suy rộng từ một bài đăng.
 - KHÔNG tường thuật lại diễn biến từng bước. CHỈ viết các bước khi nguồn là hướng dẫn/thủ thuật.
@@ -2728,7 +2729,7 @@ async function getSystemPrompt(
         "- Giữ tiêu đề 1 dòng + 1 dòng trống, thân bài ưu tiên 1-2 đoạn rất gọn. KHÔNG khung mở/thân/kết. CẤM câu hỏi mở.",
       reporter: "\n\nGHI ĐÈ TONE — GÓC NHÌN PHÓNG VIÊN (chỉ dẫn trình bày cuối, áp dụng lên mọi quy tắc phía trên):\n" +
         "- Viết như BÀI BÁO TIN TỨC của phóng viên: Mở bài đưa sự kiện/kết quả lên trước; chỉ bổ sung bối cảnh ngành khi nguồn có.\n" +
-        "- Đưa tin trực tiếp về sự kiện và kết quả, không viết kiểu thuật lại (\"OpenAI cho biết...\", \"Theo một bài đăng trên X...\").\n" +
+        "- Đưa tin trực tiếp về sự kiện và kết quả, không mở bằng câu dẫn rỗng (\"Theo một bài đăng trên X...\"); giữ người phát biểu khi đó là tuyên bố, cam kết hoặc tin rò rỉ.\n" +
         "- Thêm đoạn phân tích / ảnh hưởng thị trường khi nguồn cung cấp đủ dữ kiện. Giữ đúng người phát biểu và mức chắc chắn; không suy rộng một trải nghiệm thành phản ứng cộng đồng.\n" +
         "- Chỉ nêu triển vọng hoặc xu hướng tiếp theo nếu nguồn có; hết ý thì dừng.\n" +
         "- CẤM tường thuật lại diễn biến từng bước. CHỈ viết bước khi nguồn là hướng dẫn/thủ thuật.",
@@ -5779,21 +5780,9 @@ function postProcessOutput(output, sourceText, type) {
       }
     }
 
-    // 9d. Transform indirect retelling openings ("OpenAI cho biết...") into direct news statements:
-    // e.g. "OpenAI cho biết họ/công ty đã mở..." -> "OpenAI đã mở..."
-    // e.g. "OpenAI cho biết hệ thống..." -> "Hệ thống..."
-    const reportingLeadRe =
-      /(?:^|(\n\n))([A-ZÀ-Ỹ][\p{L}\p{N}&.'’\-]*(?:\s+[A-ZÀ-Ỹ][\p{L}\p{N}&.'’\-]*){0,3})\s+(?:cho\s+biết|cho\s+hay|tuyên\s+bố|thông\s+báo)\s+(?:rằng\s+)?(?:(?:(công\s+ty|hãng|họ)\s+)?(đã|sẽ|vừa|đang)\s+)?/giu;
-    if (reportingLeadRe.test(result)) {
-      result = result.replace(reportingLeadRe, (match, nls, subject, companyRef, tense) => {
-        issues.push("Đã chuyển đổi câu thuật lại sang đưa tin trực tiếp.");
-        const prefix = nls || "";
-        if (companyRef || tense) {
-          return prefix + subject + " " + (tense || "đã") + " ";
-        }
-        return prefix;
-      }).trimStart();
-    }
+    // Attribution ("Elon Musk tuyên bố…", "Reuters cho biết…") is kept: it
+    // separates a claim, promise or leak from a confirmed fact, and stripping
+    // it reported "Tesla sẽ ra mắt robotaxi" as fact.
 
     result = result.replace(
       /^(?:(?:được\s+biết|cụ\s+thể(?: là)?|theo\s+đó|đáng\s+chú\s+ý(?: là)?)[,:]\s*)/i,
@@ -5801,7 +5790,8 @@ function postProcessOutput(output, sourceText, type) {
     );
 
     // Capitalize first letter of sentence or paragraph if lowercase
-    result = result.replace(/(?:^|\n\n|[.!?]\s+)([a-zà-ỹ])/gu, (m, c) => m.slice(0, -1) + c.toUpperCase());
+    // Skip mixed-case names: "iPhone", "macOS", "eSIM" must not become "IPhone".
+    result = result.replace(/(?:^|\n\n|[.!?]\s+)([a-zà-ỹ])(?![\p{L}\p{N}]*\p{Lu})/gu, (m, c) => m.slice(0, -1) + c.toUpperCase());
     return result.replace(/\.\s+\./g, ".").replace(/[^\S\n]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
   };
 

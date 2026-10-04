@@ -48,7 +48,8 @@ describe("Vietnam Timezone & Smart Time Conversion System", () => {
     it("NEWS_REWRITE_POLICY enforces first-person direct reporting and forbids retelling/narration", () => {
       const policy = vm.runInContext("NEWS_REWRITE_POLICY", context);
       assert.match(policy, /ĐƯA TIN TỪ NGÔI THỨ NHẤT/);
-      assert.match(policy, /TUYỆT ĐỐI CẤM KIỂU THUẬT LẠI GIÁN TIẾP/);
+      assert.match(policy, /KHÔNG DẪN NGUỒN RỖNG/);
+      assert.match(policy, /GIỮ QUY KẾT/);
       assert.match(policy, /QUY ĐỔI THÔNG MINH MỐC THỜI GIAN SANG GIỜ VIỆT NAM/);
       assert.match(policy, /CẤM TUYỆT ĐỐI đưa mốc thời gian đăng bài\/tweet/);
       assert.match(policy, /Riêng khối "GHI ĐÈ TONE"/);
@@ -158,14 +159,20 @@ describe("Vietnam Timezone & Smart Time Conversion System", () => {
       assert.ok(result.issues.some((i) => i.includes("mệnh đề dẫn dắt mạng xã hội")));
     });
 
-    it("transforms indirect retelling leads (OpenAI cho biết...) into direct news statements", () => {
-      const text =
-        "TIÊU ĐỀ BẢN TIN\n\n" +
-        "OpenAI cho biết hệ thống giọng nói đã được triển khai cho hơn 1 tỷ người dùng ChatGPT.";
-      const result = process(text, "Source");
-      assert.doesNotMatch(result.text, /OpenAI cho biết/);
-      assert.match(result.text, /Hệ thống giọng nói đã được triển khai cho hơn 1 tỷ người dùng ChatGPT\./);
-      assert.ok(result.issues.some((i) => i.includes("chuyển đổi câu thuật lại")));
+    it("keeps attribution so claims and leaks are not reported as facts", () => {
+      for (const sentence of [
+        "Elon Musk tuyên bố Tesla sẽ ra mắt robotaxi vào năm sau.",
+        "Reuters cho biết OpenAI đang đàm phán gọi vốn.",
+        "Apple cho biết iPhone 17 bán chạy hơn dự kiến.",
+      ]) {
+        assert.equal(process("TIÊU ĐỀ BẢN TIN\n\n" + sentence, "Source").text.split("\n\n")[1], sentence);
+      }
+    });
+
+    it("does not capitalize mixed-case names at sentence start", () => {
+      const result = process("TIÊU ĐỀ BẢN TIN\n\niPhone 17 có pin lớn hơn. macOS 27 cũng được cập nhật.", "Source");
+      assert.match(result.text, /\n\niPhone 17/);
+      assert.match(result.text, /\. macOS 27/);
     });
 
     it("cleans user's exact reported failure case end-to-end", () => {
@@ -174,9 +181,8 @@ describe("Vietnam Timezone & Smart Time Conversion System", () => {
         "OpenAI cho biết hệ thống giọng nói đã được triển khai cho hơn 1 tỷ người dùng ChatGPT và hiện nay cho phép các nhà phát triển xây dựng ứng dụng dựa trên cùng công nghệ.\n\n" +
         "Theo một bài đăng trên X vào lúc 00:30 ngày 11/9 (giờ Việt Nam), OpenAI đã mở cổng đăng ký thử nghiệm.";
       const result = process(userExample, "OpenAI voice API source text");
-      assert.doesNotMatch(result.text, /OpenAI cho biết/);
+      assert.match(result.text, /OpenAI cho biết hệ thống giọng nói đã được triển khai/);
       assert.doesNotMatch(result.text, /Theo một bài đăng trên X vào lúc/);
-      assert.match(result.text, /Hệ thống giọng nói đã được triển khai/);
       assert.match(result.text, /OpenAI đã mở cổng đăng ký thử nghiệm\./);
     });
 

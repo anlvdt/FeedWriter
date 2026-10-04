@@ -562,7 +562,7 @@ async function getSystemPrompt(
         "- Giữ tiêu đề 1 dòng + 1 dòng trống, thân bài ưu tiên 1-2 đoạn rất gọn. KHÔNG khung mở/thân/kết. CẤM câu hỏi mở.",
       reporter: "\n\nGHI ĐÈ TONE — GÓC NHÌN PHÓNG VIÊN (chỉ dẫn trình bày cuối, áp dụng lên mọi quy tắc phía trên):\n" +
         "- Viết như BÀI BÁO TIN TỨC của phóng viên: Mở bài đưa sự kiện/kết quả lên trước; chỉ bổ sung bối cảnh ngành khi nguồn có.\n" +
-        "- Đưa tin trực tiếp về sự kiện và kết quả, không viết kiểu thuật lại (\"OpenAI cho biết...\", \"Theo một bài đăng trên X...\").\n" +
+        "- Đưa tin trực tiếp về sự kiện và kết quả, không mở bằng câu dẫn rỗng (\"Theo một bài đăng trên X...\"); giữ người phát biểu khi đó là tuyên bố, cam kết hoặc tin rò rỉ.\n" +
         "- Thêm đoạn phân tích / ảnh hưởng thị trường khi nguồn cung cấp đủ dữ kiện. Giữ đúng người phát biểu và mức chắc chắn; không suy rộng một trải nghiệm thành phản ứng cộng đồng.\n" +
         "- Chỉ nêu triển vọng hoặc xu hướng tiếp theo nếu nguồn có; hết ý thì dừng.\n" +
         "- CẤM tường thuật lại diễn biến từng bước. CHỈ viết bước khi nguồn là hướng dẫn/thủ thuật.",
