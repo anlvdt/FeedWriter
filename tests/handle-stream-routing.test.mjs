@@ -100,3 +100,22 @@ describe("list posts keep every source link", () => {
     }
   });
 });
+
+describe("a community tool is not called a mod", () => {
+  it("revises once, then replaces a leftover 'mod' with the source's kind", async () => {
+    const saved = article;
+    article = "MOD AGENT MONITOR CHO CLAUDE CODE GIÚP HIỂN THỊ TRỰC QUAN CÁC TRACE\n\nMod Agent Monitor của donvito cho phép xem trực quan trace của Claude Code, Codex hoặc Pi.";
+    try {
+      const source = "If you want to entertain yourself, download Agent Monitor\n\nIt's a visualizer of your Codex, Claude Code or Pi traces\n\nMore fun if you're using subagents\nhttps://github.com/donvito/agent-monitor";
+      const { result, calls: made } = await summarize(source, "gemini");
+      assert.ok(result.summary, result.error);
+      assert.equal(made.length, 2, "first draft + one revision");
+      assert.match(made[0].system, /là công cụ do @someone/);
+      assert.match(made[1].system, /Gọi sai loại sản phẩm/);
+      assert.match(result.summary, /^CÔNG CỤ AGENT MONITOR/);
+      assert.doesNotMatch(result.summary, /\bmod\b/i);
+    } finally {
+      article = saved;
+    }
+  });
+});
