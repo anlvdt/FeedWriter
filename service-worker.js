@@ -2083,6 +2083,13 @@ function cleanSourceUrl(rawUrl) {
       }
       return u.toString().replace(/\?$/, "");
     }
+    // X permalinks picked up from a photo/video viewer or edit-history view
+    // ("/status/123/photo/1", "/status/123/history") point at the same post;
+    // keep only the canonical status URL so links and history entries match.
+    if (/^(?:www\.|mobile\.)?(?:x|twitter)\.com$/i.test(u.hostname)) {
+      const m = u.pathname.match(/^\/([A-Za-z0-9_]{1,30})\/status(?:es)?\/(\d+)(?:\/|$)/);
+      if (m) return "https://x.com/" + m[1] + "/status/" + m[2];
+    }
     return stripTrackingParams(rawUrl);
   } catch (_) {
     return rawUrl;
@@ -2357,6 +2364,9 @@ QUY TẮC CHÍNH TẢ VÀ HÀNH VĂN BẮT BUỘC:
     * Metadata mạng xã hội: TUYỆT ĐỐI KHÔNG đưa mốc thời gian đăng bài, chia sẻ link hay bình luận của người dùng trên mạng xã hội vào bản tin (CẤM các câu như: 'Bài đăng trên X của người dùng A vào lúc 17:10 ngày 10/9 đã chia sẻ...', 'Lúc 8h sáng một tài khoản đăng bài...', 'Theo một bài đăng trên X vào lúc...'). Thời điểm ai đó bấm nút đăng status/tweet là metadata vô nghĩa, không phải tin tức công nghệ. Đi thẳng vào sản phẩm, tính năng và bản chất sự kiện.
 - Không viết tắt địa danh trong văn xuôi: Việt Nam, Hà Nội. Không thêm emoji hoặc icon; chữ tiếng Việt và ký hiệu đơn vị vẫn được giữ.
 - Không bịa tên, số, thông số, mức độ phổ biến hay phản ứng cộng đồng. Một lời kể chỉ đại diện người kể; không biến thành 'nhiều người dùng' hoặc cam kết của sản phẩm.
+- ĐÚNG CHỦ THỂ TẠO RA SẢN PHẨM: khi nguồn viết ở ngôi thứ nhất ("my new mod", "I've released", "we built") hoặc nói về dự án/repo/skill/mod/plugin của cộng đồng, chủ thể là tác giả hoặc dự án đó — KHÔNG gán cho thương hiệu lớn được nhắc tới. Ví dụ: mod do một lập trình viên làm cho Claude Code → "Mod 'typing-speed' cho Claude Code…", KHÔNG viết "Claude Code ra mắt mod"; repo cộng đồng tổng hợp demo Opus → "Repo GitHub tổng hợp 475 demo…", KHÔNG viết "Claude Opus được cung cấp qua repository"; người được nhắc tới như nguồn cảm hứng (ví dụ "Karpathy taught a trick") KHÔNG phải tác giả của dự án.
+- KHÔNG tự thêm mô tả/định danh cho công ty, sản phẩm, người nếu nguồn không nêu (CẤM kiểu "Claude Code, nền tảng lập trình không mã của Anthropic", "mô hình AI mới của Anthropic, được tích hợp vào GitHub"). Không đoán quan hệ giữa các thực thể ("chạy trên Opus" khi nguồn chỉ nói chạy cùng/dưới Opus).
+- Tên riêng, tên sản phẩm/dự án, tên repo, câu lệnh giữ NGUYÊN VĂN kể cả chữ hoa/thường và dấu gạch nối ASCII "-" (viết "claude-opus-5-5-demo", không viết "Claude-opus-5-5-demo"). Số phiên bản giữ dấu chấm: "Opus 5.5", không viết "Opus 5,5".
 - Diễn đạt gãy gọn, chuẩn tiếng Việt hiện đại. CẤM các cấu trúc dịch máy thô: không dùng 'cung cấp khả năng cho phép', 'được thiết kế nhằm mục đích', 'đóng vai trò như là', 'mang lại sự cải thiện', 'tiến hành thực hiện'. CẤM dịch thô từng chữ các cụm thành ngữ tiếng Anh: không dùng 'vào cuối ngày' (thay bằng 'xét cho cùng'), 'chơi một vai trò' (thay bằng 'đóng vai trò'), 'có ý nghĩa' khi dịch make sense (thay bằng 'hợp lý/dễ hiểu'). Dùng từ nối tự nhiên khi chuyển ý: 'Tuy nhiên', 'Ngoài ra', 'May thay', 'Đó là lý do'.
 - Độ dài câu hợp lý: ưu tiên câu 15-25 từ, tối đa 35 từ. Ngắt câu mạch lạc bằng dấu chấm, tránh câu ghép quá nhiều vế phụ rườm rà.
 - Giữ giọng điệu trung lập, khách quan: loại bỏ các từ ngữ tâng bốc PR (đột phá mang tính cách mạng, hoàn hảo, siêu phẩm, đỉnh cao, thần thánh).
@@ -2463,7 +2473,7 @@ YÊU CẦU BẮT BUỘC:
 const TRANSLATE_SOURCE_PROMPT = `Bạn là dịch giả Anh/đa ngữ → Việt chuyên công nghệ, AI và IT.
 CHẾ ĐỘ DỊCH THUẬT: nội dung nguồn quá ngắn hoặc chỉ là danh sách, nên KHÔNG tóm tắt, KHÔNG viết lại thành bản tin, KHÔNG thêm/bớt ý.
 - Dịch ĐẦY ĐỦ từng câu, từng dòng đến hết nguồn, sát nghĩa sang tiếng Việt tự nhiên, đúng văn phong công nghệ. Tuyệt đối không bỏ câu cuối, không rút gọn, không kết thúc bằng "...".
-- NẾU nguồn đã có sẵn tiêu đề và đoạn mở đầu/tóm tắt: DỊCH SANG TIẾNG VIỆT chính tiêu đề (VIẾT HOA TOÀN BỘ, không để nguyên tiếng Anh; chỉ giữ nguyên tên riêng/thương hiệu như GitHub, AppFlowy) và đoạn đó ở đầu bài, KHÔNG tự thêm tiêu đề hay tóm tắt mới.
+- NẾU nguồn đã có sẵn tiêu đề và đoạn mở đầu/tóm tắt: DỊCH SANG TIẾNG VIỆT chính tiêu đề (VIẾT HOA TOÀN BỘ, không để nguyên tiếng Anh; chỉ giữ nguyên tên riêng/thương hiệu/tên sản phẩm như GitHub, AppFlowy, Antigravity — KHÔNG dịch nghĩa tên sản phẩm, ví dụ "Claude 5.5 Is in Antigravity" → "CLAUDE 5.5 ĐÃ CÓ TRÊN ANTIGRAVITY", không phải "PHẢN TRỌNG LỰC") và đoạn đó ở đầu bài, KHÔNG tự thêm tiêu đề hay tóm tắt mới.
 - NẾU nguồn chưa có tiêu đề: BỐ CỤC: dòng đầu là một tiêu đề ngắn (tối đa ~12 từ, nêu đúng chủ đề nguồn, VIẾT HOA TOÀN BỘ, không thêm nhãn "Tiêu đề:"); xuống dòng trống; rồi 1-2 câu tóm tắt ngắn nội dung chính; xuống dòng trống; sau đó là bản dịch đầy đủ. Tiêu đề và tóm tắt chỉ dùng dữ kiện có trong nguồn.
 - Trong phần bản dịch, giữ nguyên thứ tự, số lượng ý và cấu trúc: đoạn vẫn là đoạn, danh sách vẫn là danh sách (mỗi mục một dòng, ký hiệu đầu dòng "·"), xuống dòng như nguồn.
 - CẤM in nhãn chia phần như "Phần 1:", "Phần 2:", "Đoạn 1:".
@@ -5549,7 +5559,17 @@ function normalizeVietnameseNumericNotation(text) {
     return value;
   };
 
-  let normalized = String(text || "");
+  let normalized = String(text || "")
+    // Some models (gpt-oss) emit U+2011/U+2010 hyphens: "SWE‑2",
+    // "answer‑me‑with‑html". They look identical but break copy/search of repo
+    // names, commands and model names.
+    .replace(/[\u2010\u2011]/g, "-")
+    // ...and group thousands with a narrow/non-breaking space ("84 000").
+    .replace(/(?<![\d.,])\d{1,3}(?:[\u00a0\u202f]\d{3})+(?![\d.,])/g, (m) => m.replace(/[\u00a0\u202f]/g, "."))
+    // "1.5k sao" → "1,5k sao"
+    .replace(/(?<![\d.,])(\d+)\.(\d+)(\s?[kK])(?![\p{L}\p{N}])/gu, "$1,$2$3")
+    // A model version is an identifier, not a decimal: "Opus 5,5" → "Opus 5.5".
+    .replace(/(?<![\p{L}\p{N}])((?:Opus|Sonnet|Haiku|Claude|GPT|Gemini|Gemma|Llama|Qwen|DeepSeek(?:-V)?|Grok|Kimi(?:\s?K)?|GLM|Mistral|Phi|Codex|SWE)[\s-]?)(\d+),(\d+)(?![\d,])/gu, "$1$2.$3");
   normalized = normalized
     .replace(/(^|[^\p{L}\p{N}_])(?:US\$|\$)\s*(\d+(?:,\d{3})*(?:\.\d+)?)/gmu,
       (_, prefix, number) => `${prefix}${normalizeEnglishNumber(number)} USD`)
@@ -5564,7 +5584,7 @@ function normalizeVietnameseNumericNotation(text) {
     .replace(/\b(\d+(?:,\d{3})*(?:\.\d+)?)\s*£(?!\w)/gu,
       (_, number) => `${normalizeEnglishNumber(number)} bảng Anh`)
     .replace(/(?<![\d.,])(\d{1,3}(?:,\d{3})+(?:\.\d+)?)(?![\d.,])/g, (number) => normalizeEnglishNumber(number))
-    .replace(/(?<![\d.])(\d+\.\d+)(?![\d.])(\s*(?:USD|VND|VNĐ|euro|EUR|GBP|%|°[CF]|km|cm|mm|m|kg|g|mg|l|ml|kW|W|kWh|Hz|GHz|MHz|GB|MB|KB)\b|\s*%)/giu,
+    .replace(/(?<![\d.])(\d+\.\d+)(?![\d.])(\s*(?:USD|VND|VNĐ|euro|EUR|GBP|%|°[CF]|km|cm|mm|m|kg|g|mg|l|ml|kW|W|kWh|Hz|GHz|MHz|GB|MB|KB)(?![\p{L}\p{N}])|\s*%)/giu,
       (_, number, unit) => normalizeEnglishNumber(number) + unit)
     .replace(/\b(\d[\d.]*(?:,\d+)?)\s*(?:VND|VNĐ)\b/giu, "$1 đồng")
     .replace(/\b(\d[\d.]*(?:,\d+)?)\s*(?:EUR)\b/giu, "$1 euro")
@@ -5617,6 +5637,21 @@ function removeDanglingHeadlineTail(title) {
 function hasClaudeCodePromptSettingAction(sourceText) {
   const source = String(sourceText || "");
   return /(?:tắt|vô hiệu hóa|turn off|disable)\s+(?:(?:tính năng|the)\s+)?(?:(?:gợi ý|đề xuất)\s+prompt|prompt\s+suggestions?)\s+(?:trong|trên|của|in)\s+Claude\s+Code\b/iu.test(source);
+}
+
+// History review (2026-10-04): sources under ~300 chars came back 2.4x longer
+// than the original — the news template's lead + body + glossary has nothing
+// to be filled with, so models padded it with invented context ("Claude Code,
+// nền tảng lập trình không mã của Anthropic…"). Cap output to the source.
+const SHORT_SOURCE_CHARS = 500;
+function shortSourceInstruction(source) {
+  const prose = String(source || "").replace(/https?:\/\/\S+/g, "").replace(/\s+/g, " ").trim();
+  if (!prose || prose.length >= SHORT_SOURCE_CHARS) return "";
+  const budget = Math.max(280, Math.round(prose.length * 1.3));
+  return "NGUỒN NGẮN (" + prose.length + " ký tự) — GHI ĐÈ ĐỘ DÀI:\n" +
+    "- Toàn bộ bài viết (kể cả tiêu đề) KHÔNG quá khoảng " + budget + " ký tự: tiêu đề 1 dòng + 1 dòng trống + 1-3 câu thân bài.\n" +
+    "- Chỉ diễn đạt lại những gì nguồn nói. KHÔNG thêm bối cảnh, mô tả công ty/sản phẩm, lợi ích, tác động hay kết luận mà nguồn không có; KHÔNG giải thích thuật ngữ.\n" +
+    "- Nguồn ngắn thì bài ngắn. Viết dài hơn nguồn là lỗi.";
 }
 
 // Invisible marker prepended to translation-mode output so StatusFormatter
@@ -5735,6 +5770,23 @@ function postProcessOutput(output, sourceText, type, contentKind = "news") {
     /(?:content|safety)\s+(?:policy|filter|guideline)\s+(?:violation|triggered)/i,
     /^(?:xin\s+lỗi|tôi\s+xin\s+lỗi)[,!.\s]/i,
   ];
+  // Placeholder answers instead of the NO_SUMMARY token, e.g.
+  // "[KHÔNG CÓ DỮ LIỆU SỰ KIỆN CÔNG NGHỆ ĐÁNG TIN CẬY ĐỂ BIÊN TẬP THÀNH BẢN TIN]"
+  // or "Phần 1:\n· Không có sự kiện, số liệu, tên... trong đoạn văn." —
+  // these were being saved and shown as the summary.
+  const placeholderBody = processed.replace(/^[\u2063\s]+/, "").replace(/^Phần\s+\d+\s*:\s*/iu, "").replace(/^[·•*\-\s]+/, "");
+  if (
+    /^\W*NO_SUMMARY\W*$/i.test(processed) ||
+    /^\[[^\]\n]*KHÔNG\s+(?:CÓ|ĐỦ)[^\]\n]*\]?\.?$/iu.test(placeholderBody) ||
+    /^không\s+(?:có|đủ)\s+(?:sự\s+kiện|dữ\s+(?:liệu|kiện)|thông\s+tin)[^\n]*(?:trong\s+(?:đoạn\s+văn|nguồn|bài(?:\s+viết)?)|để\s+(?:tóm\s+tắt|biên\s+tập|viết))[^\n]*$/iu.test(placeholderBody)
+  ) {
+    return {
+      text: processed,
+      quality: "fail",
+      failure: "invalid_output",
+      issues: ["Model trả về câu giữ chỗ thay vì bản tóm tắt."],
+    };
+  }
   if (refusalPatterns.some((p) => p.test(processed))) {
     return {
       text: processed,
@@ -6029,9 +6081,24 @@ function postProcessOutput(output, sourceText, type, contentKind = "news") {
       [/\bperplexity\b/gi, "Perplexity"],
       [/\bcursor\b/gi, "Cursor"],
     ];
-    for (const [re, fix] of brandFixes) body = body.replace(re, fix);
+    // Never touch URLs, domains, @handles, `code` or multi-part slugs: this
+    // was producing "https://GitHub.com/..." and "Claude-opus-5-5-demo".
+    const protectedRe = /https?:\/\/\S+|(?<![\w@])(?:[\w-]+\.)+(?:com|io|dev|ai|org|net|sh|app|co|so|gg|xyz|me|tech|vn)\b\S*|@\w+|`[^`\n]*`|(?<![\w-])[\w.]+(?:[_/][\w.-]+|(?:-[\w.]+){2,})/gi;
+    let fixedBody = "";
+    let last = 0;
+    const fixSegment = (segment) => {
+      for (const [re, fix] of brandFixes) segment = segment.replace(re, fix);
+      return segment;
+    };
+    for (const m of body.matchAll(protectedRe)) {
+      fixedBody += fixSegment(body.slice(last, m.index)) + m[0];
+      last = m.index + m[0].length;
+    }
+    body = fixedBody + fixSegment(body.slice(last));
     processed = title + body;
   }
+  // Hostnames are case-insensitive; models sometimes write "https://GitHub.com/…".
+  processed = processed.replace(/\bhttps?:\/\/[^\/\s]+/gi, (m) => m.toLowerCase());
 
   // 7b. Clean translationese and awkward mechanical phrasing in body
   processed = processed
@@ -6576,6 +6643,13 @@ async function handleStream(
     // confidence "none" → keep null → default news path
   }
 
+  const shortSourceRule =
+    type === "summary" && tone !== "list" && tone !== "translate"
+      ? shortSourceInstruction(completeSource)
+      : "";
+  // A glossary line under a two-sentence item only adds bulk.
+  if (shortSourceRule) summaryPolicy.glossary = { mode: "omit", candidates: [], limit: 0 };
+
   let systemPrompt = await getSystemPrompt(
     site,
     author,
@@ -6598,6 +6672,7 @@ async function handleStream(
     summaryPolicy.glossary = { mode: "omit", candidates: [], limit: 0 };
   } else {
     if (translateEligible && tone !== "list") systemPrompt += "\n\n" + NO_SUMMARY_INSTRUCTION;
+    if (shortSourceRule) systemPrompt += "\n\n" + shortSourceRule;
     if (type === "summary" && (tone === "list" || countDistinctUrls(completeSource) >= 2)) {
       systemPrompt += "\n\n" + SOURCE_LINKS_INSTRUCTION;
     }
@@ -6900,7 +6975,7 @@ async function handleStream(
         recordResult &&
         translateEligible &&
         !translateMode &&
-        /^\s*NO_SUMMARY\b/i.test(result.summary)
+        /^\W*NO_SUMMARY\b/i.test(result.summary)
       ) {
         // Not enough facts/events to write a news item: translate instead.
         translateMode = true;
@@ -6998,6 +7073,7 @@ async function handleStream(
             author,
             postTitle,
             postDate,
+            keyInfo.provider,
           );
         }
         result.contentKind = contentKind || "news";
@@ -7143,6 +7219,7 @@ function compactHistoryForStorage(items) {
         : String(raw?.imageUrl || "").slice(0, 4096),
       author: String(raw?.author || "").slice(0, 300),
       postTitle: String(raw?.postTitle || "").slice(0, 500),
+      ...(raw?.provider ? { provider: String(raw.provider).slice(0, 40) } : {}),
     };
     const entryBytes = new TextEncoder().encode(JSON.stringify(entry)).length + 1;
     if (compacted.length >= HISTORY_MAX_ITEMS || bytes + entryBytes > HISTORY_MAX_BYTES) break;
@@ -7244,6 +7321,18 @@ async function compactStoredHistory() {
   }
 }
 
+// document.title of the X/Facebook shell, not a headline of the post.
+function isPlaceholderPostTitle(title) {
+  const value = String(title || "").trim();
+  return !value || /^(?:\(\d+\)\s*)?(?:Home|Trang chủ|Notifications|Thông báo|Explore|Khám phá)?\s*[\/|·-]?\s*(?:X|Twitter|Facebook)$/i.test(value);
+}
+
+function historyEntriesSamePost(a, b) {
+  if (!a?.sourceUrl || !b?.sourceUrl) return false;
+  if ((a.type || "summary") !== (b.type || "summary")) return false;
+  return cleanSourceUrl(a.sourceUrl) === cleanSourceUrl(b.sourceUrl);
+}
+
 async function saveHistory(
   text,
   summary,
@@ -7254,6 +7343,7 @@ async function saveHistory(
   author,
   postTitle,
   postDate = null,
+  provider = "",
 ) {
   const entry = {
     id: crypto.randomUUID(),
@@ -7262,17 +7352,25 @@ async function saveHistory(
     date: postDate ? formatVietnamIsoString(new Date(postDate)) : formatVietnamIsoString(new Date()),
     site: site || "unknown",
     type: type || "summary",
-    sourceUrl: sourceUrl || "",
+    sourceUrl: sourceUrl ? cleanSourceUrl(sourceUrl) : "",
     imageUrl: /^data:/i.test(String(imageUrl || ""))
       ? ""
       : String(imageUrl || "").slice(0, 4096),
     author: author || "",
-    postTitle: postTitle || "",
+    postTitle: isPlaceholderPostTitle(postTitle) ? "" : postTitle,
+    // Which provider wrote it — needed to tell a weak model from a prompt bug
+    // when reviewing exported history.
+    provider: String(provider || "").slice(0, 40),
   };
 
   return queueHistoryUpdate(async () => {
     const data = await chrome.storage.local.get("history");
-    const history = data.history || [];
+    // Regenerating the same post (retry, tone change) replaces its previous
+    // entry instead of stacking near-identical copies that push older posts
+    // out of the 200-item window.
+    const history = (data.history || []).filter(
+      (old) => !historyEntriesSamePost(old, entry),
+    );
     history.unshift(entry);
     await chrome.storage.local.set({ history: compactHistoryForStorage(history) });
   });
